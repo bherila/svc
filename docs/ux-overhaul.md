@@ -1420,23 +1420,34 @@ subscription. Decisions, made unattended and conservatively:
 - **One list.** `StripeWebhookService::EVENTS` is every type the service handles
   and `REQUIRED_EVENTS` is that list without the legacy alias
   `charge.refund.updated`. The endpoint SVC creates subscribes to `EVENTS`
-  (as before); the check requires `REQUIRED_EVENTS`. `STAND_INS` records that a
-  subscription to `charge.refund.updated` satisfies `refund.updated` (the docs
-  already said it may stand in), so a manually made endpoint with the old name is
-  not reported broken. `StripeWebhookEventsTest` reads the service's source and
+  (as before); the check requires `REQUIRED_EVENTS`. `refund.updated` is required
+  on its own: `charge.refund.updated` is still handled when it arrives but never
+  counts in its place (the earlier `STAND_INS` is gone). `StripeWebhookEventsTest` reads the service's source and
   fails if a handled type is not listed or a listed type is not named in a
   handler. The old `StripeKeyAdapter::EVENTS` is gone.
 - **Required, not minimal.** The dispute hint events (`updated`, `funds_withdrawn`,
   `funds_reinstated`) are handled and registered by SVC today, so they are
   required: an endpoint following only the documented list is told to add them.
-- **One endpoint is judged.** Of the account's endpoints at SVC's URL for the
-  connection, the one SVC created (the stored `webhook_endpoint_id`), else the first
-  enabled one, else the first. Its signing secret is the one SVC holds, so a
-  second endpoint's subscriptions prove nothing. "Missing" is relative to it, and
-  so is the fix. URLs compare by scheme, host, port (default dropped) and path,
-  case-insensitively for scheme and host, trailing slash and query ignored.
-  The connection made from the environment also accepts the legacy
-  `/api/webhooks/stripe` URL.
+- **Only the stored endpoint is judged.** The signing secret SVC holds belongs to
+  the endpoint SVC created (the stored `webhook_endpoint_id`); a different endpoint
+  at the same URL signs with another secret and every delivery would fail
+  verification, so it is never adopted and its subscriptions prove nothing. If the
+  stored id is not listed at Stripe the status is `endpoint_missing` ("The webhook
+  endpoint SVC was set up with no longer exists"), never healthy, with no event
+  patch offered. If the connection has no stored id (migrated from environment
+  configuration), a URL match is reported as `endpoint_unverified` ("SVC cannot
+  confirm which webhook endpoint is its own"): decided conservatively, since even
+  a fully subscribed match at the legacy URL cannot be shown to be the one the
+  stored secret belongs to; with no match at all it stays `not_found`. A stored
+  endpoint that now has another URL is `not_found`. The repair for both identity
+  statuses is the explicit **Reconnect webhook** (`reconnect`), which creates a new
+  endpoint and stores its id and signing secret in one save (the Stripe call is
+  outside any transaction; if the save fails the new endpoint is deleted again).
+  The plain **Create endpoint** (`create`) remains only for `not_found`.
+  **Add missing events** requires the judged endpoint to be the stored one.
+  URLs compare by scheme, host, port (default dropped) and path, case-insensitively
+  for scheme and host, trailing slash and query ignored. The connection made from
+  the environment also accepts the legacy `/api/webhooks/stripe` URL.
 - **Stored on the connection row**, three nullable columns
   (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`): the
   row is already workspace-scoped, so no new table or foreign key. A failed check
@@ -1455,13 +1466,16 @@ subscription. Decisions, made unattended and conservatively:
 - **Fix never removes an event and never touches another endpoint.** Add events
   sends the union of what the endpoint has and what it lacks. A disabled endpoint
   is reported with instructions, not re-enabled: the owner may have disabled it
-  on purpose. Create is offered only when no endpoint matches; it creates at the
-  connection's URL with `EVENTS`, stores the new signing secret and endpoint id
-  on the same row through the model's `encrypted` cast (replacing the old
-  secret, which belonged to an endpoint that no longer exists), and deletes the
-  endpoint again if the secret cannot be stored. The browser sends the action
+  on purpose. Create (nothing at the URL, no recorded id) and Reconnect (see above) create at
+  the connection's URL with `EVENTS`, store the new signing secret and endpoint id
+  together on the same row through the model's `encrypted` cast (replacing the old
+  secret, which belonged to an endpoint that no longer exists or could not be
+  confirmed), and delete the endpoint again if they cannot be stored. The browser sends the action
   the person confirmed; the server re-reads Stripe first and refuses (422) a
   fix that the fresh state no longer calls for.
+- **Daily order.** `svc:payments:check-stripe-webhooks` takes connections never
+  checked first, then by `webhook_checked_at` ascending, then by id, so a run bounded
+  by `--limit` does not starve the same workspaces.
 - **Errors name the permission.** A 403 on the read says to set Webhook
   Endpoints to Read; on the write, Write.
 - **Visibility.** Everyone in the workspace sees the sentence and the time; the

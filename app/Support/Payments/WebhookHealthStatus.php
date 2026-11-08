@@ -22,6 +22,20 @@ enum WebhookHealthStatus: string
     /** No endpoint in the account points at SVC's URL for this connection. */
     case NotFound = 'not_found';
 
+    /**
+     * The connection records the endpoint SVC created, and Stripe no longer has
+     * it. Another endpoint at the same URL is not that one: its signing secret
+     * is not the one SVC holds, so it is never judged in its place.
+     */
+    case EndpointMissing = 'endpoint_missing';
+
+    /**
+     * The connection records no endpoint (it came from environment
+     * configuration), so SVC cannot confirm which endpoint at its URL the stored
+     * signing secret belongs to. A URL match is not proof.
+     */
+    case EndpointUnverified = 'endpoint_unverified';
+
     /** The endpoint is in the other mode (test or live) than the key. */
     case ModeMismatch = 'mode_mismatch';
 
@@ -39,7 +53,7 @@ enum WebhookHealthStatus: string
     {
         return match ($this) {
             self::Healthy => 'ok',
-            self::MissingEvents, self::Disabled, self::NotFound, self::ModeMismatch, self::PermissionDenied, self::KeyRejected => 'warning',
+            self::MissingEvents, self::Disabled, self::NotFound, self::EndpointMissing, self::EndpointUnverified, self::ModeMismatch, self::PermissionDenied, self::KeyRejected => 'warning',
             self::Unreachable => 'unknown',
         };
     }

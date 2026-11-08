@@ -28,16 +28,22 @@ use Throwable;
  * connection's row (workspace-scoped like the key) for the Payments page. Every
  * Stripe call here is made outside any database transaction of this class.
  *
- * Fixing never removes an event and never touches another endpoint: it adds the
- * missing events to the endpoint SVC found, or creates the endpoint when there
- * is none. A created endpoint has a new signing secret, which is stored
- * encrypted on the same row as the old one was, before anything is reported.
+ * Fixing never removes an event and never touches another endpoint. Adding
+ * events is offered only for the stored endpoint SVC created. When that endpoint
+ * is gone, or the connection records none, SVC cannot say which endpoint the
+ * stored signing secret belongs to; the repair is an explicit reconnect that
+ * creates a new endpoint and stores its id and its signing secret together
+ * (never one without the other), encrypted on the same row, before anything is
+ * reported.
  */
 final class StripeWebhookHealthService
 {
     public const string ADD_EVENTS = 'add_events';
 
     public const string CREATE = 'create';
+
+    /** Create a new endpoint to replace one that is gone or cannot be confirmed. */
+    public const string RECONNECT = 'reconnect';
 
     public function __construct(
         private readonly WorkspacePaymentConnections $connections,
@@ -128,7 +134,8 @@ final class StripeWebhookHealthService
 
         return match ($action) {
             self::ADD_EVENTS => $this->addEvents($row, $health),
-            self::CREATE => $this->createEndpoint($row, $health),
+            self::CREATE => $this->createEndpoint($row, [WebhookHealthStatus::NotFound], 'Created the Stripe webhook endpoint and stored its signing secret.', $health),
+            self::RECONNECT => $this->createEndpoint($row, [WebhookHealthStatus::EndpointMissing, WebhookHealthStatus::EndpointUnverified], 'Created a new Stripe webhook endpoint and stored its id and signing secret together.', $health),
             default => throw new DomainException('Choose what to fix.'),
         };
     }
@@ -136,7 +143,8 @@ final class StripeWebhookHealthService
     /** @return array{message: string, health: WebhookHealth} */
     private function addEvents(WorkspacePaymentConnection $row, WebhookHealth $health): array
     {
-        if ($health->status !== WebhookHealthStatus::MissingEvents || $health->endpointId === null) {
+        // Only the endpoint SVC created and holds the secret of: never one that merely shares its URL.
+        if ($health->status !== WebhookHealthStatus::MissingEvents || $health->endpointId === null || $health->endpointId !== $row->webhook_endpoint_id) {
             throw new DomainException('The webhook changed since this page was loaded; it no longer lacks events. Check again.');
         }
         // The union of what the endpoint has and what it lacks: nothing is removed.
@@ -152,11 +160,14 @@ final class StripeWebhookHealthService
         return ['message' => $this->afterFix($after, 'Added '.count($health->missing).' missing '.(count($health->missing) === 1 ? 'event' : 'events').' to the Stripe webhook.'), 'health' => $after];
     }
 
-    /** @return array{message: string, health: WebhookHealth} */
-    private function createEndpoint(WorkspacePaymentConnection $row, WebhookHealth $health): array
+    /**
+     * @param  list<WebhookHealthStatus>  $allowed  the states this repair is for
+     * @return array{message: string, health: WebhookHealth}
+     */
+    private function createEndpoint(WorkspacePaymentConnection $row, array $allowed, string $done, WebhookHealth $health): array
     {
-        if ($health->status !== WebhookHealthStatus::NotFound) {
-            throw new DomainException('The webhook changed since this page was loaded; an endpoint now exists. Check again.');
+        if (! in_array($health->status, $allowed, true)) {
+            throw new DomainException('The webhook changed since this page was loaded; it no longer calls for this. Check again.');
         }
         $credentials = new PaymentCredentials((string) $row->secret(), environment: $row->environment);
         try {
@@ -193,7 +204,7 @@ final class StripeWebhookHealthService
         $row = $this->connections->activeRow(Workspace::query()->findOrFail($row->workspace_id), PaymentProcessor::Stripe) ?? $row;
         $after = $this->check($row);
 
-        return ['message' => $this->afterFix($after, 'Created the Stripe webhook endpoint and stored its signing secret.'), 'health' => $after];
+        return ['message' => $this->afterFix($after, $done), 'health' => $after];
     }
 
     private function afterFix(WebhookHealth $after, string $done): string
@@ -208,7 +219,7 @@ final class StripeWebhookHealthService
         return match ($outcome) {
             WebhookHealthStatus::PermissionDenied => 'This restricted key cannot change webhook endpoints. In Stripe, edit the key, set Webhook Endpoints to Write, and try again.',
             WebhookHealthStatus::KeyRejected => 'Stripe did not accept the saved key. Replace the key, then try again.',
-            WebhookHealthStatus::Healthy, WebhookHealthStatus::MissingEvents, WebhookHealthStatus::Disabled, WebhookHealthStatus::NotFound, WebhookHealthStatus::ModeMismatch, WebhookHealthStatus::Unreachable => 'SVC could not reach Stripe to change the webhook. Nothing was changed; try again.',
+            WebhookHealthStatus::Healthy, WebhookHealthStatus::MissingEvents, WebhookHealthStatus::Disabled, WebhookHealthStatus::NotFound, WebhookHealthStatus::EndpointMissing, WebhookHealthStatus::EndpointUnverified, WebhookHealthStatus::ModeMismatch, WebhookHealthStatus::Unreachable => 'SVC could not reach Stripe to change the webhook. Nothing was changed; try again.',
         };
     }
 
@@ -223,7 +234,6 @@ final class StripeWebhookHealthService
 
         return StripeWebhookHealthDecision::decide(
             StripeWebhookService::REQUIRED_EVENTS,
-            StripeWebhookService::STAND_INS,
             $this->expectedUrls($row),
             $row->environment,
             $row->webhook_endpoint_id,
