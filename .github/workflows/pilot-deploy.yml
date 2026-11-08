@@ -70,11 +70,6 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Authorize the private build dependency
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.MCP_BRIDGE_DEPLOY_KEY }}
-
       - name: Build this exact source revision
         run: |
           set -euo pipefail
