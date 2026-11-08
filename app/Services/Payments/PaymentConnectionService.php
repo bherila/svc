@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Payments\WebhookUrl;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ final class PaymentConnectionService
         private readonly WorkspacePaymentConnections $connections,
         private readonly StripeKeyAdapter $stripe,
         private readonly SquareTokenAdapter $square,
+        private readonly StripeWebhookHealthService $webhookHealth,
     ) {}
 
     public function adapter(PaymentProcessor $processor): PaymentConnectionAdapter
@@ -41,7 +43,7 @@ final class PaymentConnectionService
     /** The URL the processor delivers this connection's events to. */
     public function webhookUrl(PaymentProcessor $processor, string $token): string
     {
-        return rtrim((string) config('app.url'), '/').'/api/webhooks/'.$processor->value.'/'.$token;
+        return WebhookUrl::forConnection($processor, $token);
     }
 
     /**
@@ -65,7 +67,7 @@ final class PaymentConnectionService
         }
 
         try {
-            return DB::transaction(function () use ($workspace, $processor, $credentials, $actor, $adapter, $account, $token, $registered, $webhookSecret): WorkspacePaymentConnection {
+            $saved = DB::transaction(function () use ($workspace, $processor, $credentials, $actor, $adapter, $account, $token, $registered, $webhookSecret): WorkspacePaymentConnection {
                 $retired = $this->retiredWebhook($workspace, $processor);
                 $connection = $this->connections->connect($workspace, $processor, ConnectionOrigin::Entered, $actor, [
                     'external_account_id' => $account->externalAccountId,
@@ -93,6 +95,14 @@ final class PaymentConnectionService
 
             throw $failure;
         }
+
+        // Once the save is final, and never able to undo it: record whether the
+        // account's endpoint is subscribed to every event SVC needs.
+        if ($processor === PaymentProcessor::Stripe) {
+            $this->webhookHealth->checkQuietly($saved);
+        }
+
+        return $saved;
     }
 
     /**

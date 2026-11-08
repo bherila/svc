@@ -665,6 +665,12 @@ Connect and no Square OAuth. Each workspace stores its own keys.
     answer refuses the save, never accepts it silently. The restricted key
     therefore needs SetupIntents: Write when a publishable key is entered.
   - Charges use the workspace's own key.
+  - **Webhook health.** SVC checks that the workspace's webhook endpoint is
+    subscribed to every event it handles (`StripeWebhookService::REQUIRED_EVENTS`),
+    on save, on the Payments page's Check again, and daily
+    (`svc:payments:check-stripe-webhooks --apply`); the result is stored on the
+    connection and shown on the card, with an owner/admin Fix behind a confirm
+    dialog. See `docs/client-management/stripe-billing.md`.
 - **Square:** an owner or admin enters an access token, location,
   environment and webhook signature key once per workspace.
 - **Secrets** are encrypted at rest, never logged, never sent to the browser
@@ -1400,6 +1406,66 @@ Answers the owner gave in an interview on 2026-11-06.
     parallel and is not a need of the required `ci` aggregate (advisory for now). It runs on
     billing-path pull requests, pushes to `main` and nightly, and succeeds with a notice when
     the secret is unavailable (forks, Dependabot).
+
+### Stripe webhook health (check and fix)
+
+SVC checks, and for an owner or admin can fix, its own Stripe webhook
+subscription. Decisions, made unattended and conservatively:
+
+- **One list.** `StripeWebhookService::EVENTS` is every type the service handles
+  and `REQUIRED_EVENTS` is that list without the legacy alias
+  `charge.refund.updated`. The endpoint SVC creates subscribes to `EVENTS`
+  (as before); the check requires `REQUIRED_EVENTS`. `STAND_INS` records that a
+  subscription to `charge.refund.updated` satisfies `refund.updated` (the docs
+  already said it may stand in), so a manually made endpoint with the old name is
+  not reported broken. `StripeWebhookEventsTest` reads the service's source and
+  fails if a handled type is not listed or a listed type is not named in a
+  handler. The old `StripeKeyAdapter::EVENTS` is gone.
+- **Required, not minimal.** The dispute hint events (`updated`, `funds_withdrawn`,
+  `funds_reinstated`) are handled and registered by SVC today, so they are
+  required: an endpoint following only the documented list is told to add them.
+- **One endpoint is judged.** Of the account's endpoints at SVC's URL for the
+  connection, the one SVC created (the stored `webhook_endpoint_id`), else the first
+  enabled one, else the first. Its signing secret is the one SVC holds, so a
+  second endpoint's subscriptions prove nothing. "Missing" is relative to it, and
+  so is the fix. URLs compare by scheme, host, port (default dropped) and path,
+  case-insensitively for scheme and host, trailing slash and query ignored.
+  The connection made from the environment also accepts the legacy
+  `/api/webhooks/stripe` URL.
+- **Stored on the connection row**, three nullable columns
+  (`webhook_check_status`, `webhook_check_missing`, `webhook_checked_at`): the
+  row is already workspace-scoped, so no new table or foreign key. A failed check
+  (Stripe unreachable) is stored as `unreachable` and shown as "could not be
+  checked", never as a webhook problem.
+- **Non-blocking on save.** The check runs after the save has committed, outside
+  any transaction, and any failure is logged (class and workspace id, never the
+  key) and swallowed.
+- **Reused connections have no health of their own.** They are served by their
+  source's endpoint with the source's key, which the borrowing workspace may not
+  use; the source workspace shows and fixes it. The check and fix routes answer
+  404 for them, and the daily command skips them.
+- **The command only checks.** `svc:payments:check-stripe-webhooks` (preview
+  calls nothing; `--apply` checks, `--workspace=`, `--limit=`) runs daily at
+  03:35 UTC without a queue. Fixing stays a button.
+- **Fix never removes an event and never touches another endpoint.** Add events
+  sends the union of what the endpoint has and what it lacks. A disabled endpoint
+  is reported with instructions, not re-enabled: the owner may have disabled it
+  on purpose. Create is offered only when no endpoint matches; it creates at the
+  connection's URL with `EVENTS`, stores the new signing secret and endpoint id
+  on the same row through the model's `encrypted` cast (replacing the old
+  secret, which belonged to an endpoint that no longer exists), and deletes the
+  endpoint again if the secret cannot be stored. The browser sends the action
+  the person confirmed; the server re-reads Stripe first and refuses (422) a
+  fix that the fresh state no longer calls for.
+- **Errors name the permission.** A 403 on the read says to set Webhook
+  Endpoints to Read; on the write, Write.
+- **Visibility.** Everyone in the workspace sees the sentence and the time; the
+  endpoint URL (which carries the connection token) and the buttons are for
+  owners and admins only, as the Square webhook URL already is.
+- **No REST or MCP.** Payment connections have no agent reads or writes today, so
+  there is nothing to sit beside; the check and fix are browser-only routes in
+  `WebApiParityTest` with reasons.
+- **No Stripe calls on page load.** The page prints the stored result.
 
 ## Open questions
 

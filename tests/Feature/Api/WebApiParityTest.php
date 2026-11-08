@@ -36,6 +36,8 @@ final class WebApiParityTest extends TestCase
         'workspaces.reviewers.store' => 'deliberate:letting someone outside the business vouch for its hours is given only by a signed-in owner or admin',
         'workspaces.payments.destroy' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
         'workspaces.payments.reuse' => 'deliberate:payment keys are managed only by a signed-in owner or admin',
+        'workspaces.payments.webhook.check' => 'deliberate:rereading the Stripe webhook endpoint with the workspace\'s stored restricted key is done only by a signed-in owner or admin; it changes nothing at Stripe and the daily svc:payments:check-stripe-webhooks command records the same result',
+        'workspaces.payments.webhook.fix' => 'deliberate:subscribing the Stripe webhook endpoint to the events SVC needs, or creating it and storing the new signing secret, uses the workspace\'s payment key and is confirmed in the browser by a signed-in owner or admin; payment connections have no agent writes',
         'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
         'logout' => 'web-only:sign-out',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',

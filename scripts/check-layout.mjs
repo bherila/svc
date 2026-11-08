@@ -742,6 +742,56 @@ try {
             await assertNoOverflowRisks(`payments/${state}`, width);
         }
 
+        // The Stripe webhook line, in every result the card can show. The
+        // endpoint URL carries an unbroken token and must wrap; a member sees the
+        // sentence but neither the URL nor a button.
+        const webhookStates = [
+            ['webhook-healthy', 'payments_stripe', 'Webhook: all', true, 'none'],
+            ['webhook-missing', 'payments_webhook_missing', 'Missing: ', true, 'Add missing events'],
+            ['webhook-notfound', 'payments_webhook_notfound', 'No webhook endpoint found', true, 'Create endpoint'],
+            ['webhook-denied', 'payments_webhook_denied', 'SVC cannot read', true, 'none'],
+            ['webhook-disabled', 'payments_webhook_disabled', 'Webhook endpoint is disabled', true, 'none'],
+            ['webhook-member', 'payments_webhook_member', 'Missing: ', false, 'none'],
+        ];
+
+        for (const [state, key, summary, showsUrl, fix] of webhookStates) {
+            await page.goto(origin + fixture[key]);
+            const health = page.locator('[data-test="stripe-webhook-health"]');
+            await expect(health).toBeVisible();
+            await expect(
+                health.locator('[data-test="stripe-webhook-summary"]'),
+            ).toContainText(summary);
+            await expect(
+                health.locator('[data-test="stripe-webhook-url"]'),
+            ).toHaveCount(showsUrl ? 1 : 0);
+            await expect(
+                health.getByRole('button', { name: 'Check again' }),
+            ).toHaveCount(showsUrl ? 1 : 0);
+
+            if (fix !== 'none') {
+                await expect(
+                    health.getByRole('button', { name: fix }),
+                ).toBeVisible();
+            }
+
+            await capture('payments', state, width);
+            await assertNoOverflowRisks(`payments/${state}`, width);
+        }
+
+        // The confirmation dialog, with the long list of missing events.
+        await page.goto(origin + fixture.payments_webhook_missing);
+        await page
+            .locator('[data-test="stripe-webhook-health"]')
+            .getByRole('button', { name: 'Add missing events' })
+            .click();
+        await expect(page.getByRole('alertdialog')).toBeVisible();
+        await page.screenshot({
+            path: path.join(artifacts, `payments-webhook-confirm-${width}.png`),
+            animations: 'disabled',
+        });
+        await assertNoOverflowRisks('payments/webhook-confirm', width);
+        await page.keyboard.press('Escape');
+
         // The reuse list, open, with its unbroken workspace names.
         await page.goto(origin + fixture.payments);
         await page.locator('#stripe-reuse').click();

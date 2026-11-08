@@ -209,6 +209,8 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'store'])->name('workspaces.payments.store');
     Route::post('/workspaces/{workspace}/payments/{processor}/reuse', [WorkspacePaymentConnectionController::class, 'reuse'])->name('workspaces.payments.reuse');
     Route::delete('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'destroy'])->name('workspaces.payments.destroy');
+    Route::post('/workspaces/{workspace}/payments/{processor}/webhook-check', [WorkspacePaymentConnectionController::class, 'checkWebhook'])->name('workspaces.payments.webhook.check');
+    Route::post('/workspaces/{workspace}/payments/{processor}/webhook-fix', [WorkspacePaymentConnectionController::class, 'fixWebhook'])->name('workspaces.payments.webhook.fix');
 
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 
