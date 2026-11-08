@@ -686,7 +686,7 @@ function AddContact({
                 </p>
             ))}
             <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={busy}>
+                <Button variant="outline" type="submit" disabled={busy}>
                     Give portal access
                 </Button>
                 {offerInvitation && (

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { useScrollable } from '@/hooks/use-scrollable';
 import { useUnknownWriteGuard } from '@/hooks/use-unknown-write-guard';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api';
@@ -115,6 +116,7 @@ function InvoiceCompose({
     const [subject, setSubject] = useState(initial.email.default_subject);
     const [message, setMessage] = useState('');
     const [bccSelf, setBccSelf] = useState(true);
+    const [attachScroll, scrollProps] = useScrollable<HTMLFieldSetElement>();
     const [busy, setBusy] = useState(false);
     const [checking, setChecking] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -373,6 +375,8 @@ function InvoiceCompose({
                 </DialogHeader>
 
                 <fieldset
+                    ref={attachScroll}
+                    {...scrollProps}
                     disabled={busy || unresolved}
                     className="grid min-h-0 min-w-0 grid-cols-1 gap-4 overflow-y-auto pr-1"
                 >

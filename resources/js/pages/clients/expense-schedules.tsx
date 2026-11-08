@@ -259,6 +259,7 @@ function ScheduleGeneration({
     return (
         <div className="min-w-0 space-y-2">
             <Button
+                variant="outline"
                 disabled={mutation.busy || (pageLocked && !mutation.locked)}
                 onClick={() => {
                     if (schedule.generate_url !== null || mutation.locked) {
@@ -315,7 +316,11 @@ export default function ExpenseSchedules(page: Props) {
                     resuming.
                 </p>
                 <div className="flex flex-wrap gap-3">
-                    <Button disabled={locked} onClick={() => setEditing('new')}>
+                    <Button
+                        variant="outline"
+                        disabled={locked}
+                        onClick={() => setEditing('new')}
+                    >
                         New schedule
                     </Button>
                 </div>

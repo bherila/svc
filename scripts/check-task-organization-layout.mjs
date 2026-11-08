@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
+import { accessibilityFindingsBothThemes } from './layout/a11y.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -211,6 +212,7 @@ try {
         for (const width of [390, 820, 1440, 1920]) {
             const context = await browser.newContext({
                 viewport: { width, height: 1080 },
+                reducedMotion: 'reduce',
                 extraHTTPHeaders: headers,
             });
             await context.route('**/*', (route) =>
@@ -272,6 +274,12 @@ try {
                     Math.max(...metrics.centers) -
                         Math.min(...metrics.centers) <=
                         2;
+                failures.push(
+                    ...(await accessibilityFindingsBothThemes(
+                        page,
+                        `${state}/${width}`,
+                    )),
+                );
                 const screenshot = `${state}-${width}.png`;
                 await page.screenshot({
                     path: path.join(artifacts, screenshot),

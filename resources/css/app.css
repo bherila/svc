@@ -71,10 +71,10 @@
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
+    --muted-foreground: oklch(0.5 0 0);
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
+    --destructive: oklch(0.48 0.215 27.3);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     /* 3:1 or better against --background and --card: a focus indicator. */
@@ -118,7 +118,7 @@
     --muted-foreground: oklch(0.708 0 0);
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
+    --destructive: oklch(0.78 0.15 22);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.68 0 0);
@@ -187,6 +187,17 @@
         color: var(--foreground);
     }
 
+    :where(.dark [data-appearance-bridge]).text-slate-700,
+    :where(.dark [data-appearance-bridge]) .text-slate-700 {
+        color: var(--muted-foreground);
+    }
+
+    /* A link in the operations palette: cyan-700 is 3.4:1 on the dark card. */
+    :where(.dark [data-appearance-bridge]).text-cyan-700,
+    :where(.dark [data-appearance-bridge]) .text-cyan-700 {
+        color: oklch(0.8 0.12 215);
+    }
+
     :where(.dark [data-appearance-bridge]).text-slate-400,
     :where(.dark [data-appearance-bridge]) .text-slate-400,
     :where(.dark [data-appearance-bridge]).text-slate-500,
@@ -216,7 +227,15 @@
      * a mid grey in each theme, at least 3:1 against `--background` and
      * `--card`, which is what a focus indicator needs.
      */
-    :where(a, button, summary, input, textarea, select, [tabindex]):focus-visible {
+    :where(
+        a,
+        button,
+        summary,
+        input,
+        textarea,
+        select,
+        [tabindex]
+    ):focus-visible {
         outline: 2px solid var(--ring);
         outline-offset: 2px;
     }

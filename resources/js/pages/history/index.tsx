@@ -69,9 +69,7 @@ export default function HistoryIndex({
                                     label: kind.label,
                                 })),
                             ]}
-                            onValueChange={(next) =>
-                                form.setData('kind', next)
-                            }
+                            onValueChange={(next) => form.setData('kind', next)}
                         />
                     </div>
                     <Button type="submit" disabled={form.processing}>

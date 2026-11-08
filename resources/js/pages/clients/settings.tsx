@@ -506,7 +506,11 @@ function CompanyForm({ company }: { company: ManagedCompany }) {
                         {change.error}
                     </p>
                 )}
-                <Button type="submit" disabled={change.locked}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={change.locked}
+                >
                     Save client
                 </Button>
                 {change.unresolved && (
@@ -765,7 +769,11 @@ function NewProjectForm({ capability }: { capability: ProjectCreate }) {
                 </p>
             )}
             <div>
-                <Button type="submit" disabled={mutation.busy}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={mutation.busy}
+                >
                     {mutation.unresolved
                         ? 'Check project creation'
                         : 'Add project'}

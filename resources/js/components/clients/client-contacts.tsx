@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
+import { useClientChange } from '@/components/clients/use-client-change';
+import { useClientDraft } from '@/components/clients/use-client-draft';
 import {
     FieldError,
     fieldErrorProps,
     useFocusFirstInvalid,
 } from '@/components/form-field';
-import { useClientChange } from '@/components/clients/use-client-change';
-import { useClientDraft } from '@/components/clients/use-client-draft';
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -183,7 +183,11 @@ function ContactForm({
                         </Label>
                     </>
                 )}
-                <Button type="submit" disabled={change.locked}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={change.locked}
+                >
                     {contact ? 'Save contact' : 'Add contact'}
                 </Button>
                 {change.unresolved && !confirming && (

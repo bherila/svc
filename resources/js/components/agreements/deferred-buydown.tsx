@@ -217,6 +217,7 @@ export function DeferredBuyDownForm({
                                 and send it separately when ready.
                             </p>
                             <Button
+                                variant="outline"
                                 type="button"
                                 className="justify-self-start"
                                 disabled={

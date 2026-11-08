@@ -541,7 +541,11 @@ export function UploadAttachment({
                     'New files are private. Choose “Visible to client” after uploading to share a file.'}
             </p>
             <div>
-                <Button type="submit" disabled={busy || stale || file === null}>
+                <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={busy || stale || file === null}
+                >
                     {unresolved ? 'Check upload' : 'Upload file'}
                 </Button>
             </div>

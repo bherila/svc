@@ -634,6 +634,7 @@ export default function TimeSheet({
                                 </Button>
                                 {selectionMode === 'invoice' ? (
                                     <Button
+                                        variant="outline"
                                         onClick={() => {
                                             if (invoiceDraft !== null) {
                                                 setInvoiceSelection(
@@ -898,7 +899,9 @@ function MonthCard({
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-8" />
+                                <TableHead className="w-8">
+                                    <span className="sr-only">Select</span>
+                                </TableHead>
                                 <TableHead className="w-28">Date</TableHead>
                                 <TableHead className="min-w-64">Work</TableHead>
                                 <TableHead className="w-20 text-right">

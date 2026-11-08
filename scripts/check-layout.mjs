@@ -292,7 +292,14 @@ try {
     expect(wrongHostStatus).toBe(403);
 
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ extraHTTPHeaders: headers });
+    // Reduced motion: popups and dialogs fade in, and axe measures contrast on
+    // whatever is on screen at that instant - a half-faded dialog or a colour
+    // mid-transition after the theme switch reads as a contrast failure that
+    // no reader sees. It also exercises the app's reduced-motion rules.
+    const context = await browser.newContext({
+        extraHTTPHeaders: headers,
+        reducedMotion: 'reduce',
+    });
     await context.route('**/*', (route) => {
         return new URL(route.request().url()).origin === origin
             ? route.continue()
@@ -640,8 +647,12 @@ try {
             }
 
             await expect(appendix.getByText('scan.pdf')).toHaveCount(0);
-            await expect(appendix.getByText(/SyntheticReceiptScan/)).toHaveCount(0);
-            await expect(appendix.getByText('No receipt on file')).toHaveCount(0);
+            await expect(
+                appendix.getByText(/SyntheticReceiptScan/),
+            ).toHaveCount(0);
+            await expect(appendix.getByText('No receipt on file')).toHaveCount(
+                0,
+            );
             await expect(appendix.getByText(/hidden|withheld/i)).toHaveCount(0);
         } else {
             // The proforma reads as the client and carries no receipts.
@@ -723,12 +734,48 @@ try {
         // endpoint URL carries an unbroken token and must wrap; a member sees the
         // sentence but neither the URL nor a button.
         const webhookStates = [
-            ['webhook-healthy', 'payments_stripe', 'Webhook: all', true, 'none'],
-            ['webhook-missing', 'payments_webhook_missing', 'Missing: ', true, 'Add missing events'],
-            ['webhook-notfound', 'payments_webhook_notfound', 'No webhook endpoint found', true, 'Create endpoint'],
-            ['webhook-denied', 'payments_webhook_denied', 'SVC cannot read', true, 'none'],
-            ['webhook-disabled', 'payments_webhook_disabled', 'Webhook endpoint is disabled', true, 'none'],
-            ['webhook-member', 'payments_webhook_member', 'Missing: ', false, 'none'],
+            [
+                'webhook-healthy',
+                'payments_stripe',
+                'Webhook: all',
+                true,
+                'none',
+            ],
+            [
+                'webhook-missing',
+                'payments_webhook_missing',
+                'Missing: ',
+                true,
+                'Add missing events',
+            ],
+            [
+                'webhook-notfound',
+                'payments_webhook_notfound',
+                'No webhook endpoint found',
+                true,
+                'Create endpoint',
+            ],
+            [
+                'webhook-denied',
+                'payments_webhook_denied',
+                'SVC cannot read',
+                true,
+                'none',
+            ],
+            [
+                'webhook-disabled',
+                'payments_webhook_disabled',
+                'Webhook endpoint is disabled',
+                true,
+                'none',
+            ],
+            [
+                'webhook-member',
+                'payments_webhook_member',
+                'Missing: ',
+                false,
+                'none',
+            ],
         ];
 
         for (const [state, key, summary, showsUrl, fix] of webhookStates) {
