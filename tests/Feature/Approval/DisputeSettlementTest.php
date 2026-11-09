@@ -16,12 +16,14 @@ use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Approval\DisputedDraftRebuilder;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -244,6 +246,60 @@ final class DisputeSettlementTest extends TestCase
     }
 
     // --- refusals -------------------------------------------------------
+
+    /** @return iterable<string, array{bool}> */
+    public static function buyDownPlacements(): iterable
+    {
+        yield 'on its own draft' => [false];
+        yield 'attached to a cadence draft' => [true];
+    }
+
+    /**
+     * Writing the hour off would strand the draft: its line keeps the hour, so
+     * it could not issue, and no dispute would be left to answer.
+     */
+    #[DataProvider('buyDownPlacements')]
+    public function test_a_write_off_is_refused_while_a_draft_buy_down_holds_the_hour(bool $attached): void
+    {
+        // The draft comes first: generated afterwards, its free capacity would take the hour.
+        $target = $attached
+            ? app(ClientInvoicingService::class)->generateCadencePeriod($this->company, $this->agreement, Carbon::parse('2026-10-01'))
+            : null;
+        $entry = $this->hours('2026-08-10', 60, ['is_deferred' => true, 'status' => 'approved', 'billing_rate_amount' => 10000]);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1, 'round_up' => true]);
+        $draft = $billing->create($this->workspace, $this->agreement, $request, $billing->preview($this->workspace, $this->agreement, $request)->version, $target);
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic question', 'lock_version' => DB::raw('lock_version + 1')]);
+
+        try {
+            $this->settleTime($entry->fresh() ?? $entry, DisputeSettlement::WrittenOff);
+            $this->fail('The write-off should have been refused.');
+        } catch (HttpException $refusal) {
+            $this->assertSame(409, $refusal->getStatusCode());
+            $this->assertSame(DisputeSettlements::ON_A_BUY_DOWN_MESSAGE, $refusal->getMessage());
+        }
+        $fresh = $entry->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertNotNull($fresh->client_disputed_at, 'A refused write-off settles nothing.');
+        $this->assertTrue((bool) $fresh->is_billable);
+
+        app(InvoiceLifecycleService::class)->discardDraft($draft->fresh() ?? $draft, $this->workspace, 'Synthetic discard');
+        $settled = $this->settleTime($entry->fresh() ?? $entry, DisputeSettlement::WrittenOff);
+        $this->assertFalse((bool) $settled->is_billable);
+    }
+
+    public function test_answering_is_still_allowed_while_a_draft_buy_down_holds_the_hour(): void
+    {
+        $entry = $this->hours('2026-08-10', 60, ['is_deferred' => true, 'status' => 'approved', 'billing_rate_amount' => 10000]);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 1, 'round_up' => true]);
+        $billing->create($this->workspace, $this->agreement, $request, $billing->preview($this->workspace, $this->agreement, $request)->version);
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic question', 'lock_version' => DB::raw('lock_version + 1')]);
+
+        $settled = $this->settleTime($entry->fresh() ?? $entry, DisputeSettlement::Answered);
+
+        $this->assertNull($settled->client_disputed_at);
+    }
 
     public function test_only_the_author_or_a_manager_answers_and_only_an_approver_writes_off(): void
     {
