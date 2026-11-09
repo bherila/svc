@@ -301,6 +301,51 @@ class RecurringItemBillerTest extends TestCase
     }
 
     // =========================================================================
+    // The agreement's end
+    // =========================================================================
+
+    public function test_an_item_without_an_expiry_ends_with_its_agreement(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null, anchorDay: 20);
+        $agreement = $this->makeAgreement([$item], endsOn: '2024-02-15');
+
+        $lines = $this->biller->linesForCycle($agreement, Carbon::parse('2024-01-01'), Carbon::parse('2024-03-31'));
+
+        $this->assertSame(['2024-01-20'], array_map(fn (array $line): string => $line['line_date']->toDateString(), $lines));
+    }
+
+    public function test_an_incidence_on_the_agreements_last_day_is_still_billed(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null, anchorDay: 15);
+        $agreement = $this->makeAgreement([$item], endsOn: '2024-02-15');
+
+        $lines = $this->biller->linesForCycle($agreement, Carbon::parse('2024-02-01'), Carbon::parse('2024-02-29'));
+
+        $this->assertCount(1, $lines);
+        $this->assertSame('2024-02-15', $lines[0]['line_date']->toDateString());
+    }
+
+    public function test_an_item_expiring_after_its_agreement_still_ends_with_the_agreement(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', '2024-12-31', anchorDay: 1);
+        $agreement = $this->makeAgreement([$item], endsOn: '2024-03-31');
+
+        $lines = $this->biller->linesForCycle($agreement, Carbon::parse('2024-04-01'), Carbon::parse('2024-06-30'));
+
+        $this->assertSame([], $lines);
+    }
+
+    public function test_a_cycle_opening_after_the_agreement_ends_sells_no_periodic_item(): void
+    {
+        // The item's own opening would otherwise stand in for an anchor that
+        // precedes it, and land on 10 July, after the end.
+        $item = $this->makeItem(ChargeCadence::Annual, '2024-07-10', null, anchorDay: 1, anchorMonth: 1);
+        $agreement = $this->makeAgreement([$item], endsOn: '2024-06-30');
+
+        $this->assertSame([], $this->biller->linesForCycle($agreement, Carbon::parse('2024-07-10'), Carbon::parse('2024-12-31')));
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -333,11 +378,12 @@ class RecurringItemBillerTest extends TestCase
         return $item;
     }
 
-    private function makeAgreement(array $items): ClientAgreement
+    private function makeAgreement(array $items, ?string $endsOn = null): ClientAgreement
     {
         $agreement = new ClientAgreement;
         $agreement->setRawAttributes([
             'active_date' => '2024-01-01',
+            'ends_on' => $endsOn,
             'billing_cadence' => 'monthly',
             'first_cycle_proration' => 'prorate_hours',
             'monthly_retainer_hours' => 10,
