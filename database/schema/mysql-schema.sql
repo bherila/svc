@@ -2447,6 +2447,7 @@ CREATE TABLE `service_package_enrollments` (
   `signer_name` varchar(200) DEFAULT NULL,
   `signer_title` varchar(200) DEFAULT NULL,
   `accepted_version_id` bigint(20) unsigned DEFAULT NULL,
+  `current_version_id` bigint(20) unsigned DEFAULT NULL,
   `signup_invoice_id` bigint(20) unsigned DEFAULT NULL,
   `activated_at` timestamp NULL DEFAULT NULL,
   `activated_by_user_id` bigint(20) unsigned DEFAULT NULL,
@@ -2477,6 +2478,7 @@ CREATE TABLE `service_package_enrollments` (
   KEY `svpke_ws_company_package_idx` (`workspace_id`,`client_company_id`,`service_package_id`,`status`),
   KEY `svpke_ws_signup_invoice_idx` (`workspace_id`,`signup_invoice_id`),
   KEY `svpke_ws_auto_invoice_idx` (`workspace_id`,`auto_invoice_id`),
+  KEY `svpke_ws_current_version_idx` (`workspace_id`,`current_version_id`),
   CONSTRAINT `service_package_enrollments_workspace_id_foreign` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
   CONSTRAINT `svpke_acceptor_fk` FOREIGN KEY (`accepted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `svpke_activator_fk` FOREIGN KEY (`activated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
@@ -2485,11 +2487,90 @@ CREATE TABLE `service_package_enrollments` (
   CONSTRAINT `svpke_ws_agreement_fk` FOREIGN KEY (`workspace_id`, `client_agreement_id`) REFERENCES `client_agreements` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_auto_invoice_fk` FOREIGN KEY (`workspace_id`, `auto_invoice_id`) REFERENCES `client_invoices` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_company_fk` FOREIGN KEY (`workspace_id`, `client_company_id`) REFERENCES `client_companies` (`workspace_id`, `id`),
+  CONSTRAINT `svpke_ws_current_version_fk` FOREIGN KEY (`workspace_id`, `current_version_id`) REFERENCES `service_package_versions` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_package_fk` FOREIGN KEY (`workspace_id`, `service_package_id`) REFERENCES `service_packages` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_project_fk` FOREIGN KEY (`workspace_id`, `client_project_id`) REFERENCES `client_projects` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_request_fk` FOREIGN KEY (`workspace_id`, `service_package_request_id`) REFERENCES `service_package_requests` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_signup_invoice_fk` FOREIGN KEY (`workspace_id`, `signup_invoice_id`) REFERENCES `client_invoices` (`workspace_id`, `id`),
   CONSTRAINT `svpke_ws_version_fk` FOREIGN KEY (`workspace_id`, `service_package_version_id`) REFERENCES `service_package_versions` (`workspace_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `service_package_migration_targets`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `service_package_migration_targets` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `public_id` char(36) NOT NULL,
+  `workspace_id` bigint(20) unsigned NOT NULL,
+  `service_package_migration_id` bigint(20) unsigned NOT NULL,
+  `service_package_enrollment_id` bigint(20) unsigned NOT NULL,
+  `client_company_id` bigint(20) unsigned NOT NULL,
+  `client_agreement_id` bigint(20) unsigned NOT NULL,
+  `successor_agreement_id` bigint(20) unsigned DEFAULT NULL,
+  `effective_on` date NOT NULL,
+  `status` varchar(16) NOT NULL,
+  `outcome_code` varchar(64) DEFAULT NULL,
+  `outcome_detail` varchar(1000) DEFAULT NULL,
+  `outcome_recorded_at` timestamp NULL DEFAULT NULL,
+  `new_price_amount` int(11) NOT NULL,
+  `new_price_currency` varchar(3) NOT NULL,
+  `autopay_limit_amount` int(11) DEFAULT NULL,
+  `settled_at` timestamp NULL DEFAULT NULL,
+  `lock_version` bigint(20) unsigned NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `svpkt_ws_id_unique` (`workspace_id`,`id`),
+  UNIQUE KEY `svpkt_public_id_unique` (`public_id`),
+  KEY `svpkt_status_idx` (`status`,`id`),
+  KEY `svpkt_ws_migration_idx` (`workspace_id`,`service_package_migration_id`),
+  KEY `svpkt_ws_enrollment_status_idx` (`workspace_id`,`service_package_enrollment_id`,`status`),
+  KEY `svpkt_ws_company_idx` (`workspace_id`,`client_company_id`),
+  KEY `svpkt_ws_agreement_idx` (`workspace_id`,`client_agreement_id`),
+  KEY `svpkt_ws_successor_idx` (`workspace_id`,`successor_agreement_id`),
+  CONSTRAINT `service_package_migration_targets_workspace_id_foreign` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `svpkt_ws_agreement_fk` FOREIGN KEY (`workspace_id`, `client_agreement_id`) REFERENCES `client_agreements` (`workspace_id`, `id`),
+  CONSTRAINT `svpkt_ws_company_fk` FOREIGN KEY (`workspace_id`, `client_company_id`) REFERENCES `client_companies` (`workspace_id`, `id`),
+  CONSTRAINT `svpkt_ws_enrollment_fk` FOREIGN KEY (`workspace_id`, `service_package_enrollment_id`) REFERENCES `service_package_enrollments` (`workspace_id`, `id`),
+  CONSTRAINT `svpkt_ws_migration_fk` FOREIGN KEY (`workspace_id`, `service_package_migration_id`) REFERENCES `service_package_migrations` (`workspace_id`, `id`),
+  CONSTRAINT `svpkt_ws_successor_fk` FOREIGN KEY (`workspace_id`, `successor_agreement_id`) REFERENCES `client_agreements` (`workspace_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `service_package_migrations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `service_package_migrations` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `public_id` char(36) NOT NULL,
+  `workspace_id` bigint(20) unsigned NOT NULL,
+  `service_package_id` bigint(20) unsigned NOT NULL,
+  `from_version_id` bigint(20) unsigned NOT NULL,
+  `to_version_id` bigint(20) unsigned NOT NULL,
+  `effective_on` date NOT NULL,
+  `message` varchar(2000) DEFAULT NULL,
+  `status` varchar(16) NOT NULL,
+  `scheduled_by_user_id` bigint(20) unsigned DEFAULT NULL,
+  `scheduled_at` timestamp NOT NULL,
+  `cancelled_by_user_id` bigint(20) unsigned DEFAULT NULL,
+  `cancelled_at` timestamp NULL DEFAULT NULL,
+  `completed_at` timestamp NULL DEFAULT NULL,
+  `lock_version` bigint(20) unsigned NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `svpkm_ws_id_unique` (`workspace_id`,`id`),
+  UNIQUE KEY `svpkm_public_id_unique` (`public_id`),
+  KEY `svpkm_scheduler_fk` (`scheduled_by_user_id`),
+  KEY `svpkm_canceller_fk` (`cancelled_by_user_id`),
+  KEY `svpkm_ws_package_status_idx` (`workspace_id`,`service_package_id`,`status`),
+  KEY `svpkm_ws_from_version_idx` (`workspace_id`,`from_version_id`),
+  KEY `svpkm_ws_to_version_idx` (`workspace_id`,`to_version_id`),
+  CONSTRAINT `service_package_migrations_workspace_id_foreign` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `svpkm_canceller_fk` FOREIGN KEY (`cancelled_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `svpkm_scheduler_fk` FOREIGN KEY (`scheduled_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `svpkm_ws_from_version_fk` FOREIGN KEY (`workspace_id`, `from_version_id`) REFERENCES `service_package_versions` (`workspace_id`, `id`),
+  CONSTRAINT `svpkm_ws_package_fk` FOREIGN KEY (`workspace_id`, `service_package_id`) REFERENCES `service_packages` (`workspace_id`, `id`),
+  CONSTRAINT `svpkm_ws_to_version_fk` FOREIGN KEY (`workspace_id`, `to_version_id`) REFERENCES `service_package_versions` (`workspace_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `service_package_requests`;
@@ -2974,9 +3055,6 @@ CREATE TABLE `workspaces` (
   UNIQUE KEY `ws_package_catalog_token_unique` (`package_catalog_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
---
--- WARNING: can't read the INFORMATION_SCHEMA.libraries table. It's most probably an old server 5.5.5-10.11.19-MariaDB.
---
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -3122,3 +3200,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (135,'2026_11_13_09
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (136,'2026_11_14_090000_add_signup_payment_to_service_package_enrollments',1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (137,'2026_11_15_090000_add_automatic_invoicing_to_service_package_enrollments',1);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (138,'2026_11_16_090000_add_cancellation_to_client_agreements',1);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (139,'2026_11_17_090000_create_service_package_migrations',1);
