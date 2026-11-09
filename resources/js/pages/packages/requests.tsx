@@ -2,6 +2,7 @@ import { Head } from '@inertiajs/react';
 import { CheckIcon } from 'lucide-react';
 import { useState } from 'react';
 import { ClientsTabs } from '@/components/packages/clients-tabs';
+import { PageLinks } from '@/components/packages/page-links';
 import { ConfirmedAction } from '@/components/shared-projects/participation-panels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -375,6 +376,8 @@ function Panel({
 export default function PackageRequests({
     requests,
     clients,
+    next_page_url: nextPageUrl,
+    first_page_url: firstPageUrl,
 }: PackageRequestsProps) {
     const [chosen, setChosen] = useState<string | null>(null);
     // The first open request is the one to look at; a reload that removed the
@@ -507,6 +510,11 @@ export default function PackageRequests({
                         )}
                     </div>
                 )}
+                <PageLinks
+                    label="Request pages"
+                    firstPageUrl={firstPageUrl}
+                    nextPageUrl={nextPageUrl}
+                />
             </main>
         </WorkspaceShell>
     );

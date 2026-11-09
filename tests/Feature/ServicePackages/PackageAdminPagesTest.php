@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\ServicePackages;
 
+use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
@@ -48,7 +49,7 @@ final class PackageAdminPagesTest extends TestCase
     public function test_a_long_list_pages_with_finished_urls(): void
     {
         [$workspace, $owner] = $this->packageWorkspace();
-        $first = $this->createPackage($workspace, $owner, ['link_name' => 'first-package']);
+        $this->createPackage($workspace, $owner, ['link_name' => 'first-package']);
         $this->createPackage($workspace, $owner, ['link_name' => 'second-package']);
         $this->actingAs($owner);
         $next = null;
@@ -64,7 +65,28 @@ final class PackageAdminPagesTest extends TestCase
             ->has('packages', 1)
             ->where('packages.0.link_name', 'second-package')
             ->where('first_page_url', "/workspaces/{$workspace->public_id}/packages"));
-        $this->assertNotNull($first);
+    }
+
+    #[Requirement('ADM-1')]
+    public function test_the_request_queue_pages_with_finished_urls(): void
+    {
+        [$workspace, $owner] = $this->packageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner);
+        $this->packageRequest($workspace, $package, ['email' => 'first-visitor@example.com']);
+        $this->packageRequest($workspace, $package, ['email' => 'second-visitor@example.com']);
+        $this->actingAs($owner);
+
+        $this->get("/workspaces/{$workspace->public_id}/packages/requests")->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('packages/requests')
+            ->has('requests', 2)
+            ->where('next_page_url', null)
+            ->where('first_page_url', null));
+
+        $cursor = app(PackageRequestReadService::class)->list($owner, $workspace, limit: 1)['meta']['next_cursor'];
+        $this->get("/workspaces/{$workspace->public_id}/packages/requests?cursor=".urlencode((string) $cursor))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('requests', 1)
+            ->where('requests.0.untrusted.email', 'first-visitor@example.com')
+            ->where('first_page_url', "/workspaces/{$workspace->public_id}/packages/requests"));
     }
 
     #[Requirement('PKG-1')]
