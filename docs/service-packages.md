@@ -2,7 +2,7 @@
 
 Status: **design, not built.** Decisions below were settled with the owner on
 2026-11-09. Mockups live in [`ux-mockups/`](ux-mockups/README.md) under
-"Service packages". Every name, amount and address in them is made up.
+"Service packages". The MCP and REST surface is at the end of this document. Every name, amount and address in them is made up.
 
 ## What it is
 
@@ -315,39 +315,117 @@ company with `access_scope = company`.
 | Migration consent | Notice, then automatic |
 | Autopay limit | Set by the package |
 | The defaults listed above | Accepted |
+| Package authoring by agents | Full authoring (publish and retire need `confirm`) |
+| Agents approving requests | Yes, with `confirm` |
+| Client agents | Read services only |
+| Scope grouping | A new `packages` scope group |
 
 ## Open items for the next round
 
-- MCP and REST surface: see the draft below, to be settled in discussion.
 - Wording of the client emails and the "Approving will" summary.
 - Whether "first period in advance" covers the whole first cycle or the
   prorated part only. The mockup assumes **prorated**, matching
   `first_cycle_proration`.
 
-## MCP and REST surface (draft for discussion)
+## MCP and REST surface
+
+Settled on 2026-11-09:
+
+- Owner/admin agents get **full authoring**.
+- Agents may **approve or decline requests**, with `confirm`.
+- Client agents may **read services only**.
+- The operations go in a **new `packages` scope group**.
 
 The conventions are the ones every existing operation follows. Each operation
-is declared once in `AgentOperationCatalog`, with REST and MCP generated from
-the same declaration. Writes take an idempotency key, versioned writes an
-opaque `expected_version`, and irreversible or client-facing acts
-`confirm: true`. A new scope group becomes a toolset automatically, and its
-writes sit behind a deployment switch that is off by default. Public pages
-are not part of the agent API.
+is declared once in `AgentOperationCatalog`, with REST bindings, MCP tools and
+the OpenAPI paths generated from that one declaration. Writes take an
+idempotency key, versioned writes an opaque `expected_version`, and acts that
+reach a client or cannot be undone take `confirm: true`. Public pages are not
+part of the agent API.
 
-| Operation | Scope | Notes |
-| --- | --- | --- |
-| `packages.list`, `packages.get` | `packages:read` | Includes versions, subscriber counts and the public URL |
-| `packages.create`, `packages.update` | `packages:write` | Edits the draft version only |
-| `packages.publish`, `packages.retire` | `packages:write` | `confirm` |
-| `package_requests.list`, `package_requests.get` | `packages:read` | Request text is visitor-supplied and marked untrusted |
-| `package_requests.approve`, `package_requests.decline` | `packages:write` | `confirm`; approve sends the invitation, decline emails |
-| `enrollments.list`, `enrollments.get` | `packages:read` | |
-| `enrollments.activate` | `packages:write` | `confirm`; same rule as `agreements.activate` |
-| `cancellation_requests.list`, `cancellation_requests.get` | `billing:read` | |
-| `cancellation_requests.approve`, `cancellation_requests.decline` | `clients:write` | `confirm` |
-| `agreements.update` | `clients:write` | Gains `notice_days`, `minimum_term_months`, `cancellation_mode` |
-| `package_migrations.preview`, `package_migrations.schedule`, `package_migrations.cancel` | `packages:write` | `schedule` and `cancel` take `confirm`, since they email clients |
+### Scopes and switches
 
-Deliberately not exposed: acceptance and payment (they need the client's own
-browser and Stripe), the invitation link (a bearer secret, as today), and any
-write by a client agent beyond what the portal allows.
+- **New scopes:** `packages:read` and `packages:write` (`packages:write`
+  implies `packages:read`). The new scope group automatically becomes a
+  `packages` toolset.
+- **Write switch:** package writes sit behind their own deployment switch,
+  `AGENT_API_PACKAGE_WRITES_ENABLED`, which is off by default. Like the other
+  write groups, it appears in the visibility snapshot.
+- **Feature flag:** while `SVC_SERVICE_PACKAGES_ENABLED` is off, none of these
+  operations is registered or listed.
+- **Cancellation decisions** stay under `clients:write`, next to
+  `agreements.terminate`, behind the existing clients cutover. Reading
+  cancellation requests uses `billing:read`, like `agreements.list`.
+- **Admin (sensitive) tier:** `packages:write` goes in this tier of the scope
+  table in [mcp.md](mcp.md), because it can email outside people.
+
+### Operations
+
+| Operation | Scope | Who | Notes |
+| --- | --- | --- | --- |
+| `packages.list`, `packages.get` | `packages:read` | owner/admin | Versions, subscriber counts, public URL, readiness (Stripe, auto-issue eligibility) |
+| `packages.create` | `packages:write` | owner/admin | Creates a package with a draft version |
+| `packages.update` | `packages:write` | owner/admin | Edits the draft version only (creates one from the published version if none exists); `expected_version` |
+| `packages.publish` | `packages:write` | owner/admin | `confirm`; refused under PKG-4 and PKG-5 with coded refusals |
+| `packages.retire` | `packages:write` | owner/admin | `confirm` |
+| `package_requests.list`, `package_requests.get` | `packages:read` | owner/admin | Visitor-supplied fields are returned under an `untrusted` object and named as untrusted in the tool description |
+| `package_requests.approve` | `packages:write` | owner/admin | `confirm`; takes `client` (new, or an existing client's public id); sends the invitation as the token's user |
+| `package_requests.decline` | `packages:write` | owner/admin | `confirm`; optional reason; emails the visitor |
+| `enrollments.list`, `enrollments.get` | `packages:read` | owner/admin | Status, payment state, lapse date |
+| `enrollments.activate` | `packages:write` | owner/admin | `confirm`; the same rule as `agreements.activate`, refused until acceptance (and payment, if required) |
+| `cancellation_requests.list`, `cancellation_requests.get` | `billing:read` | owner/admin | |
+| `cancellation_requests.approve`, `cancellation_requests.decline` | `clients:write` | owner/admin | `confirm`; approve takes an end date from the offered dates |
+| `agreements.update` (extended) | `clients:write` | owner/admin | Gains `notice_days`, `minimum_term_months`, `cancellation_mode` |
+| `agreements.get` (extended) | `billing:read` | owner/admin | Adds cancellation terms, the earliest end date, the package version, and any pending cancellation or scheduled move |
+| `package_migrations.preview` | `packages:read` | owner/admin | Term differences, eligible subscribers, earliest effective date, autopay-limit flags; changes nothing |
+| `package_migrations.schedule`, `package_migrations.cancel` | `packages:write` | owner/admin | `confirm`; both email clients |
+| `client_services.list`, `client_services.get` | `packages:read` | company contact | Client side, read-only. The company's service agreements and terms, the earliest end date and offered end dates, any pending cancellation or scheduled move, and the portal-addable packages. Project-limited contacts see only their projects' services. |
+
+### Not exposed
+
+- Acceptance, signing and payment. These need the client's own browser and
+  Stripe.
+- Adding a service, or requesting, withdrawing or scheduling a cancellation,
+  for client agents. The portal only.
+- The provider invitation link, as today.
+- Anything on the public request form.
+
+### Files and tests this touches
+
+These are the inventories listed in the research for this design:
+
+- `AgentOperationCatalog` (routes and tools), `AgentRestDocumentation`,
+  `public/openapi/svc-agent-v1.json`, `routes/api.php`, the controllers and
+  mutation actions, and an MCP tools class.
+- `AgentApiScopes`, the deployment flags, `docs/mcp.md`, and
+  `resources/js/types/api.generated.ts`.
+- These tests and snapshots:
+  - `AgentOperationRegistryTest` (the confirmed-operation list)
+  - `OpenApiDocumentGenerationTest`
+  - `VersionedApiRouteInventoryTest`
+  - `AgentMcpInventoryTest` (the tool count)
+  - the visibility snapshot
+  - `AgentMcpProgressiveDiscoveryTest`
+  - a REST/MCP parity test
+  - `WorkspaceConcealmentTest`
+
+### Requirements (API)
+
+- **API-1** Every operation above is declared once and is reachable through
+  both REST and MCP, with matching request and response schemas (a parity
+  test).
+- **API-2** `packages.publish`, `packages.retire`, `package_requests.approve`,
+  `package_requests.decline`, `enrollments.activate`,
+  `cancellation_requests.approve`, `cancellation_requests.decline`,
+  `package_migrations.schedule` and `package_migrations.cancel` refuse to run
+  without `confirm: true`. They are added to the confirmed-operation list and
+  to the server instructions.
+- **API-3** Visitor-supplied request content is never returned outside an
+  `untrusted` envelope.
+- **API-4** No operation returns an invitation link, a Stripe secret or a
+  card detail.
+- **API-5** A company contact's token reaches only `client_services.*`,
+  scoped to their companies and projects. Owner/admin operations answer them
+  as if the resource does not exist.
+- **API-6** With the feature flag off, the `packages` toolset and its
+  operations are absent from discovery, OpenAPI and the route inventory.
