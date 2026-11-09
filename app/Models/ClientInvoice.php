@@ -15,6 +15,7 @@ use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -146,6 +147,40 @@ class ClientInvoice extends Model implements WorkspaceOwned
     public function agreement(): BelongsTo
     {
         return $this->belongsTo(ClientAgreement::class, 'client_agreement_id');
+    }
+
+    /**
+     * Invoices whose work the agreement could also reach - the ones a cadence
+     * period of it must not overlap (`ClientInvoicingService::assertNoOverlappingInvoice()`).
+     *
+     * Every selector a period reconciles reads through the agreement's project
+     * scope ({@see ClientTimeEntry::scopeForAgreementScope()} and its
+     * counterparts for milestones, expenses and the ledger), so a project
+     * agreement's work and an agreement on another project's are disjoint. An
+     * invoice is left out only when it names an agreement of the same company
+     * scoped to a different project, and this agreement is project-scoped too.
+     * Everything else is kept: a company-wide agreement on either side reaches
+     * every project; an invoice naming no agreement, or one this company
+     * cannot account for, fails closed. Explicitly null-safe: `NOT IN` drops a
+     * null agreement id, which must stay in.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeSharingWorkWith(Builder $query, ClientAgreement $agreement): Builder
+    {
+        if ($agreement->client_project_id === null) {
+            return $query;
+        }
+
+        return $query->where(fn (Builder $scope): Builder => $scope
+            ->whereNull('client_agreement_id')
+            ->orWhereNotIn('client_agreement_id', ClientAgreement::query()
+                ->where('workspace_id', $agreement->workspace_id)
+                ->where('client_company_id', $agreement->client_company_id)
+                ->whereNotNull('client_project_id')
+                ->where('client_project_id', '!=', $agreement->client_project_id)
+                ->select('id')));
     }
 
     /** @return HasMany<ClientInvoiceLine, $this> */

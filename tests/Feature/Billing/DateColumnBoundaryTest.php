@@ -242,6 +242,7 @@ final class DateColumnBoundaryTest extends TestCase
         'client_invoice_payments' => ['provider_payout_arrival_date' => '2026_10_20_000000_add_settlement_facts_to_client_invoice_payments'],
         'processor_payouts' => ['arrival_date' => '2026_10_20_000100_create_processor_payouts'],
         'processor_movements' => ['occurred_on' => '2026_10_21_210000_create_processor_movements'],
+        'service_package_enrollments' => ['auto_invoice_period_start' => '2026_11_15_090000_add_automatic_invoicing_to_service_package_enrollments'],
     ];
 
     /**

@@ -87,7 +87,7 @@ final class PackageEnrollmentReadService
         return $query->with([
             'clientCompany' => $scoped, 'project' => $scoped, 'agreement' => $scoped, 'package' => $scoped,
             'version' => $withComponents, 'acceptedVersion' => $withComponents, 'packageRequest' => $scoped,
-            'signupInvoice' => $scoped,
+            'signupInvoice' => $scoped, 'autoInvoice' => $scoped,
         ]);
     }
 

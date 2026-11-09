@@ -813,7 +813,7 @@ final class ClientInvoicingService
                 );
             }
 
-            $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
+            $this->assertNoOverlappingInvoice($company, $agreement, $periodStart, $periodEnd, $invoice);
 
             $this->releaseDraftForRebuild($invoice);
 
@@ -1282,7 +1282,7 @@ final class ClientInvoicingService
                 );
             }
 
-            $this->assertNoOverlappingInvoice($company, $periodStart, $periodEnd, $invoice);
+            $this->assertNoOverlappingInvoice($company, $agreement, $periodStart, $periodEnd, $invoice);
 
             $agreement->loadMissing('recurringItems');
 
@@ -1927,9 +1927,18 @@ final class ClientInvoicingService
      * Interim and ad-hoc invoices are excluded: neither is tied to an agreement
      * cycle, and an ad-hoc invoice raised mid-quarter must not block that
      * quarter's cadence invoice.
+     *
+     * "Another invoice" means one whose work this agreement could also reach
+     * ({@see ClientInvoice::scopeSharingWorkWith()}): two agreements of one
+     * company on two different projects reconcile disjoint work, so each bills
+     * its own periods (docs/service-packages.md, slice 4). A company-wide
+     * agreement's invoices, another agreement's on the same project, and any
+     * invoice naming no agreement, or one this company cannot account for,
+     * still refuse.
      */
     private function assertNoOverlappingInvoice(
         ClientCompany $company,
+        ClientAgreement $agreement,
         Carbon $periodStart,
         Carbon $periodEnd,
         ?ClientInvoice $invoice,
@@ -1940,6 +1949,7 @@ final class ClientInvoicingService
                 $query->whereNull('invoice_kind')
                     ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
             })
+            ->sharingWorkWith($agreement)
             ->where(function ($query) use ($periodStart, $periodEnd): void {
                 // Inclusive on both ends, matching how entries are selected:
                 // a strict comparison lets a new period start on an existing

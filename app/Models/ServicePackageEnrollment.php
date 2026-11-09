@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\EnrollmentStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -40,9 +42,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable|null $activated_at
  * @property int|null $activated_by_user_id
  * @property CarbonImmutable|null $lapsed_at
+ * @property string|null $auto_invoice_outcome
+ * @property CarbonImmutable|null $auto_invoice_period_start
+ * @property string|null $auto_invoice_refusal
+ * @property string|null $auto_invoice_detail
+ * @property int|null $auto_invoice_id
+ * @property CarbonImmutable|null $auto_invoice_recorded_at
  * @property int $lock_version
  */
-#[Hidden(['id', 'workspace_id', 'service_package_id', 'service_package_version_id', 'client_company_id', 'client_project_id', 'client_agreement_id', 'service_package_request_id', 'offered_by_user_id', 'accepted_by_user_id', 'accepted_version_id', 'signup_invoice_id', 'activated_by_user_id', 'lock_version'])]
+#[Hidden(['id', 'workspace_id', 'service_package_id', 'service_package_version_id', 'client_company_id', 'client_project_id', 'client_agreement_id', 'service_package_request_id', 'offered_by_user_id', 'accepted_by_user_id', 'accepted_version_id', 'signup_invoice_id', 'auto_invoice_id', 'activated_by_user_id', 'lock_version'])]
 class ServicePackageEnrollment extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -54,6 +62,8 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
             'accepted_at' => 'immutable_datetime',
             'activated_at' => 'immutable_datetime',
             'lapsed_at' => 'immutable_datetime',
+            'auto_invoice_period_start' => DateOnly::class,
+            'auto_invoice_recorded_at' => 'immutable_datetime',
             'lock_version' => 'integer',
         ];
     }
@@ -91,6 +101,18 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
     public function signupInvoice(): BelongsTo
     {
         return $this->belongsTo(ClientInvoice::class, 'signup_invoice_id');
+    }
+
+    /** @return BelongsTo<ClientInvoice, $this> the invoice automatic recurring invoicing last issued, if its last result was one (INV-1) */
+    public function autoInvoice(): BelongsTo
+    {
+        return $this->belongsTo(ClientInvoice::class, 'auto_invoice_id');
+    }
+
+    /** The last result automatic recurring invoicing recorded, if any (INV-1). */
+    public function autoInvoiceOutcome(): ?AutoInvoiceOutcome
+    {
+        return $this->auto_invoice_outcome === null ? null : AutoInvoiceOutcome::from($this->auto_invoice_outcome);
     }
 
     /** @return BelongsTo<ServicePackageRequest, $this> the sign-up request it answers, if any */

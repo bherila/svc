@@ -32,6 +32,7 @@ export type QueueKind =
     | 'enrollment_review'
     | 'enrollment_paid_after_lapse'
     | 'enrollment_autopay_off'
+    | 'enrollment_auto_invoice_refused'
     | 'my_draft_time'
     | 'my_task';
 
@@ -70,6 +71,7 @@ const ICONS = {
     enrollment_review: FileSignatureIcon,
     enrollment_paid_after_lapse: AlertCircleIcon,
     enrollment_autopay_off: AlertCircleIcon,
+    enrollment_auto_invoice_refused: AlertCircleIcon,
     my_draft_time: ClockIcon,
     my_task: CheckSquareIcon,
 } satisfies Record<QueueKind, typeof ClockIcon>;
@@ -128,6 +130,10 @@ function detail(row: QueueRow, style: DurationStyle): string {
         case 'enrollment_autopay_off':
             // The row's date is the day the service started.
             fact = day === null ? 'Active' : `Active since ${day}`;
+            break;
+        case 'enrollment_auto_invoice_refused':
+            // The row's date is the first day of the period not invoiced.
+            fact = day === null ? 'Not invoiced' : `Period from ${day}`;
             break;
         case 'my_task':
             fact = day === null ? 'No due date' : `Due ${day}`;

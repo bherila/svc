@@ -2197,7 +2197,17 @@ the client typed them) and when - and `payment`: the sign-up's own payment
 `state` (`not_charged`, `not_invoiced`, `due`, `paid` or `voided`), the sign-up
 invoice with its page, what an enrollment `awaiting_payment` is `waiting_for`
 (`payment`, `autopay`), the payment terms that decide it, and `lapses_on`, the
-day an open offer or an unpaid acceptance lapses (`lapsed_at` once it has). No
+day an open offer or an unpaid acceptance lapses (`lapsed_at` once it has).
+`invoicing` says how its recurring invoices are made (INV-1, INV-2): `issuing`
+(`automatic` or `draft`, from the version signed), `next_period_start` (the
+first day of its next billing period, or null when none is to come), and
+`last_automatic`, what `svc:packages:issue-invoices` last did for it - `issued`
+with the invoice and its page, `nothing_to_bill`, `covered` (a refused period
+since invoiced another way) or `refused` with a `refusal` code
+(`collected_in_square`, `company_wide_agreement`, `period_unbillable`,
+`issue_refused` or `failed`), its
+message, and the billing engine's own words in `detail`. A refused period is
+retried every hour and listed in Needs you until it is invoiced. No
 card detail, processor id, secret or invitation link is ever returned. Clients
 accept, pay and add packages in the portal only; none of that is an agent
 operation. `enrollments.activate` starts an accepted enrollment that waits for
@@ -2212,7 +2222,9 @@ instructions ask for the user's confirmation first.
 a portal contact's companies' services (only their projects' for a contact limited
 to projects), each with the terms the client agreed to (or, before acceptance, the
 terms on offer), never the operator's settings, its status, acceptance, payment
-(with the sign-up invoice's portal page) and portal links. `addable_packages` lists, for a company-wide contact, the packages they
+(with the sign-up invoice's portal page), `next_period_start` (when the next
+billing period, and its invoice, begins; not how that invoice is made) and
+portal links. `addable_packages` lists, for a company-wide contact, the packages they
 could add in the portal, each with `add_refusal` when it cannot be added now.
 Workspace staff who are not a client's portal contacts see none.
 

@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Billing;
 
 use App\Console\Commands\MutationCommand;
+use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\Workspace;
@@ -10,6 +11,7 @@ use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\UncoveredCadencePeriods;
+use App\Services\Packages\PackageRecurringInvoices;
 use App\Support\Billing\EmptyCadenceDraft;
 use App\Support\WorkspaceClock;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +35,11 @@ use Throwable;
  *
  * An agreement with an active billing schedule is left to that schedule,
  * which issues its own invoices: a draft here would claim its period without
- * billing it, and the schedule halts on a pending draft. Only the period
+ * billing it, and the schedule halts on a pending draft. So, while service
+ * packages are on, is a package agreement set to issue automatically: it is
+ * `svc:packages:issue-invoices`'s to invoice and issue (INV-1), and a draft
+ * here would leave its period claimed and unissued. A draft-mode package
+ * agreement is an ordinary agreement here and gets its draft (INV-2). Only the period
  * containing today is considered; an older gap may have been settled off the
  * books and is an operator's to reopen.
  *
@@ -55,7 +61,7 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
 
     protected $description = 'Create the draft for each recurring agreement whose current cadence period has started with no invoice';
 
-    public function handle(UncoveredCadencePeriods $uncovered, CadencePeriodGuard $guard, ClientInvoicingService $cadence, WorkspaceClock $clock): int
+    public function handle(UncoveredCadencePeriods $uncovered, CadencePeriodGuard $guard, ClientInvoicingService $cadence, WorkspaceClock $clock, PackageRecurringInvoices $packages): int
     {
         $limit = max(1, min(500, (int) $this->option('limit')));
         $only = $this->option('workspace');
@@ -74,8 +80,9 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
         $due = [];
         foreach ($workspaces->lazyById(100) as $workspace) {
             $scheduled = ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->where('is_active', true)->pluck('client_agreement_id')->flip();
-            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, &$due): void {
-                if (! $scheduled->has($agreement->id)) {
+            $automatic = EnsureServicePackagesEnabled::enabled() ? $packages->automaticEnrollments($workspace) : [];
+            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, $automatic, &$due): void {
+                if (! $scheduled->has($agreement->id) && ! isset($automatic[$agreement->id])) {
                     $due[] = [$workspace, $agreement, $cycle];
                 }
             });

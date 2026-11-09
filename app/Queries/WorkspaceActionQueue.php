@@ -16,6 +16,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\WorkspaceClock;
@@ -244,7 +245,21 @@ final class WorkspaceActionQueue
                 ])
                 ->orderBy('activated_at')->orderBy('id')
                 ->limit(self::LIMIT)->get();
-            $names = $this->companyNames($workspace, array_merge($paidAfterLapse->pluck('client_company_id')->all(), $autopayOff->pluck('client_company_id')->all()));
+            // INV-1: a billing period automatic invoicing could not invoice -
+            // refused by the cadence engine, or Square collects the agreement
+            // (INV-3). Each run tries again; the row goes once the period is
+            // invoiced, by the run or by hand.
+            $autoRefused = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', EnrollmentStatus::Active->value)
+                ->where('auto_invoice_outcome', AutoInvoiceOutcome::Refused->value)
+                ->with([
+                    'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
+                    'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                ])
+                ->orderBy('auto_invoice_period_start')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            $names = $this->companyNames($workspace, array_merge($paidAfterLapse->pluck('client_company_id')->all(), $autopayOff->pluck('client_company_id')->all(), $autoRefused->pluck('client_company_id')->all()));
 
             foreach ($paidAfterLapse as $enrollment) {
                 $company = $this->company($names, $enrollment->client_company_id);
@@ -268,6 +283,18 @@ final class WorkspaceActionQueue
                 $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->acceptedVersion->name ?? $agreement->title).': autopay required but off', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->activated_at?->toDateString());
+            }
+
+            foreach ($autoRefused as $enrollment) {
+                $company = $this->company($names, $enrollment->client_company_id);
+                $agreement = $enrollment->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('enrollment-auto-invoice-'.$enrollment->public_id, 'enrollment_auto_invoice_refused', ($enrollment->acceptedVersion->name ?? $agreement->title).': invoice not issued automatically', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    date: $enrollment->auto_invoice_period_start?->toDateString());
             }
         }
 
