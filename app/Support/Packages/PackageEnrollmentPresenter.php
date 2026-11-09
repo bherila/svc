@@ -4,12 +4,14 @@ namespace App\Support\Packages;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\InvoiceStatus;
 use LogicException;
 
 /**
@@ -17,18 +19,23 @@ use LogicException;
  * the client's (`client_services.*` and the portal's Services pages).
  *
  * Reads only what the caller loaded - the company, project, agreement,
- * package, the version offered and the version accepted - so it issues no
- * queries. URLs are finished here, after the caller's authorization: an owner
+ * package, the version offered and the version accepted with their
+ * components, the sign-up invoice - and the company's client-consented
+ * autopay limit the caller read for the page, so it issues no queries. URLs are finished here, after the caller's authorization: an owner
  * is pointed at the operator screens and a client at the portal, never at a
  * page their route family does not serve.
  */
 final class PackageEnrollmentPresenter
 {
-    /** @return array<string, mixed> */
-    public static function forManager(Workspace $workspace, ServicePackageEnrollment $enrollment): array
+    /**
+     * @param  int|null  $clientAutopayLimit  the limit the company's autopay stands at on the client's own consent, if it does
+     * @return array<string, mixed>
+     */
+    public static function forManager(Workspace $workspace, ServicePackageEnrollment $enrollment, ?int $clientAutopayLimit = null): array
     {
         [$company, $project, $agreement, $package, $offered, $accepted] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
+        $invoice = self::signupInvoice($enrollment);
 
         return [
             'id' => $enrollment->public_id,
@@ -45,7 +52,49 @@ final class PackageEnrollmentPresenter
             'offered_at' => $enrollment->offered_at->toIso8601String(),
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
+            'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
+            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopayLimit, (string) $workspace->timezone, $invoice === null ? null
+                : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
             'version' => AgentApiVersion::for($enrollment),
+        ];
+    }
+
+    /**
+     * Where the sign-up's own payment stands (ACC-3 to ACC-6): the state of
+     * the sign-up invoice, what an enrollment `awaiting_payment` waits for,
+     * the terms that decide it, and the day it lapses while it is open.
+     * Nothing about the card or the processor: no method, no Stripe id, no
+     * secret (API-4).
+     *
+     * @param  ServicePackageVersion  $carried  the version whose terms apply, components loaded
+     * @param  string|null  $invoiceUrl  the sign-up invoice's page for this reader, finished
+     * @return array{state: string, waiting_for: list<string>, signup_invoice: array<string, mixed>|null, requires_autopay: bool, autopay_limit_amount: int|null, pay_before_activation: bool, lapses_on: string|null}
+     */
+    public static function payment(ServicePackageEnrollment $enrollment, ServicePackageVersion $carried, ?int $clientAutopayLimit, string $timezone, ?string $invoiceUrl): array
+    {
+        $terms = PackageTerms::fromVersion($carried);
+        $invoice = self::signupInvoice($enrollment);
+        $status = $enrollment->enrollmentStatus();
+        $waiting = $status === EnrollmentStatus::AwaitingPayment
+            ? SignupGate::waitingFor($terms, SignupGate::invoiceSettled($invoice), $terms->requireAutopay && $clientAutopayLimit === $terms->autopayLimitAmount)
+            : [];
+
+        return [
+            'state' => SignupPaymentState::of($terms->chargesAtSignup(), $invoice === null ? null : InvoiceStatus::from($invoice->status))->value,
+            'waiting_for' => array_map(static fn (SignupWait $wait): string => $wait->value, $waiting),
+            'signup_invoice' => $invoice === null ? null : [
+                'id' => $invoice->public_id,
+                'number' => $invoice->invoice_number,
+                'status' => $invoice->status,
+                'currency' => $invoice->currency,
+                'total_amount' => (int) $invoice->total_amount,
+                'balance_amount' => (int) $invoice->balance_amount,
+                'url' => $invoiceUrl,
+            ],
+            'requires_autopay' => $terms->requireAutopay,
+            'autopay_limit_amount' => $terms->requireAutopay ? $terms->autopayLimitAmount : null,
+            'pay_before_activation' => $terms->payBeforeActivation,
+            'lapses_on' => EnrollmentLapse::lapsesOn($status, $enrollment->offered_at, $enrollment->accepted_at, $terms->paymentLapseDays, $timezone)?->toDateString(),
         ];
     }
 
@@ -55,12 +104,14 @@ final class PackageEnrollmentPresenter
      *
      * @param  ServicePackageVersion  $terms  the version whose terms to show, components loaded
      * @param  string  $url  the service's own portal page: review and sign while offered, its record after
+     * @param  int|null  $clientAutopayLimit  the limit the company's autopay stands at on the client's own consent, if it does
      * @return array<string, mixed>
      */
-    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, string $url): array
+    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, string $url, ?int $clientAutopayLimit = null, string $timezone = 'UTC'): array
     {
         [$company, $project, $agreement] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
+        $invoice = self::signupInvoice($enrollment);
         $status = $enrollment->enrollmentStatus();
         // The portal never serves a draft agreement; a started one is the client's to read.
         $agreementUrl = match ($status) {
@@ -81,6 +132,8 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'agreement_url' => $agreementUrl,
+            'payment' => self::payment($enrollment, $terms, $clientAutopayLimit, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
+                : $base.route('portal.invoice', [$company, $invoice], false)),
             'url' => $url,
         ];
     }
@@ -143,6 +196,19 @@ final class PackageEnrollmentPresenter
     private static function versionRef(ServicePackageVersion $version): array
     {
         return ['id' => $version->public_id, 'number' => $version->number];
+    }
+
+    private static function signupInvoice(ServicePackageEnrollment $enrollment): ?ClientInvoice
+    {
+        if ($enrollment->signup_invoice_id === null) {
+            return null;
+        }
+        $invoice = $enrollment->signupInvoice;
+        if (! $invoice instanceof ClientInvoice) {
+            throw new LogicException('An enrollment names a sign-up invoice outside its workspace, or was presented without it loaded.');
+        }
+
+        return $invoice;
     }
 
     /** @return array{ClientCompany, ClientProject, ClientAgreement, ServicePackage, ServicePackageVersion, ServicePackageVersion|null} */

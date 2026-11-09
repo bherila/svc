@@ -61,8 +61,9 @@ final class PortalServicesPagesTest extends TestCase
             ->where('addable_packages.0.add_url', "/portal/{$company->public_id}/services")
             ->where('addable_packages.0.add_refusal', null)
             ->where('addable_packages.1.id', $paying->public_id)
-            ->where('addable_packages.1.add_url', null)
-            ->where('addable_packages.1.add_refusal.code', 'package_payment_not_available_yet')
+            // A sign-up that takes a payment is offered while Stripe is connected.
+            ->where('addable_packages.1.add_url', "/portal/{$company->public_id}/services")
+            ->where('addable_packages.1.add_refusal', null)
             ->where('workspaceNavigation.clients.0.destinations.services', "/portal/{$company->public_id}/services"));
     }
 
@@ -173,11 +174,13 @@ final class PortalServicesPagesTest extends TestCase
         $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
         app(ServicePackageWorkflow::class)->update($owner, $workspace, $package->refresh(), ['charge_first_period' => true]);
         app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package->refresh());
+        // The Stripe connection it was published with has gone since.
+        $this->disconnectStripe();
         $this->actingAs($contact);
 
         $this->get("/portal/{$company->public_id}/services/{$offer->public_id}")->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
             ->where('accept_url', null)
-            ->where('accept_refusal.code', 'package_payment_not_available_yet'));
+            ->where('accept_refusal.code', 'package_payment_unavailable'));
         $this->post("/portal/{$company->public_id}/services/{$offer->public_id}/accept", $this->signature())->assertSessionHasErrors('acceptance');
         $this->assertSame('offered', $offer->refresh()->status);
     }

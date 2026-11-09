@@ -19,6 +19,7 @@ use App\Models\Workspace;
 use App\Services\Accounting\InvoiceAccountingJournal;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Approval\ClientApprovalByPayment;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Square\SquareCollectionGuard;
 use App\Services\Square\SquareLinkRepository;
 use App\Services\WorkspaceAuthorization;
@@ -2557,6 +2558,32 @@ final class InvoiceLifecycleService
             ['total_amount' => $invoice->total_amount, 'currency' => $invoice->currency],
             occurrence: $occurrence,
         );
+
+        $this->continueSignupOnceCommitted($invoice);
+    }
+
+    /**
+     * An invoice just became paid. If it is a service package's sign-up
+     * invoice, the enrollment waiting on it moves on (docs/service-packages.md,
+     * ACC-5) - once this payment has committed, deferred to commit explicitly
+     * rather than by asking how deep the transaction is, and in this request:
+     * nothing is queued. A payment that rolls back never reaches it, so no
+     * service starts and no activation email goes (X-5). A failure there
+     * leaves the payment recorded and the enrollment waiting, which the lapse
+     * command finds paid and moves on; it is reported, not swallowed.
+     */
+    private function continueSignupOnceCommitted(ClientInvoice $invoice): void
+    {
+        $workspaceId = (int) $invoice->workspace_id;
+        $invoiceId = (int) $invoice->id;
+
+        DB::afterCommit(static function () use ($workspaceId, $invoiceId): void {
+            try {
+                app(PackageEnrollmentWorkflow::class)->signupInvoicePaid($workspaceId, $invoiceId);
+            } catch (Throwable $failure) {
+                report($failure);
+            }
+        });
     }
 
     /**

@@ -130,7 +130,7 @@ describe('portal service review and sign', () => {
                 {...portalServiceProps({
                     accept_url: null,
                     accept_refusal: {
-                        code: 'package_payment_not_available_yet',
+                        code: 'package_payment_unavailable',
                         message: 'Online payment is not available yet.',
                     },
                 })}

@@ -22,7 +22,9 @@ enum PackageRefusal: string
     case NotAddable = 'package_not_addable';
     case OfferNotOpen = 'package_offer_not_open';
     case AlreadyAccepted = 'package_already_accepted';
-    case PaymentNotAvailableYet = 'package_payment_not_available_yet';
+    case PaymentUnavailable = 'package_payment_unavailable';
+    case CollectedInSquare = 'package_collected_in_square';
+    case FirstPeriodUnbillable = 'package_first_period_unbillable';
     case NotAwaitingReview = 'package_enrollment_not_awaiting_review';
     case ActivationConflict = 'package_activation_conflict';
 
@@ -34,6 +36,9 @@ enum PackageRefusal: string
     case PayBeforeActivationNeedsCharge = 'package_pay_before_activation_needs_charge';
     case SetupFeeAtSignupNeedsSetupFee = 'package_setup_fee_at_signup_needs_setup_fee';
     case MinimumTermNeedsRecurringCadence = 'package_minimum_term_needs_recurring_cadence';
+    case FirstPeriodNeedsRecurringCadence = 'package_first_period_needs_recurring_cadence';
+    case CurrencyNotChargeable = 'package_currency_not_chargeable';
+    case StripeCurrenciesUnknown = 'package_stripe_currencies_unknown';
 
     public function message(): string
     {
@@ -51,8 +56,10 @@ enum PackageRefusal: string
             self::NotAddable => 'This service can\'t be added from the portal.',
             self::OfferNotOpen => 'This offer is no longer open.',
             self::AlreadyAccepted => 'This service has already been accepted by someone else.',
-            // Slice 3b takes the payment; until then nothing half-works.
-            self::PaymentNotAvailableYet => 'This service takes a payment at sign-up, and signing up for it online is not available yet.',
+            self::PaymentUnavailable => 'This service takes a payment at sign-up, and online payment is not available right now. Please contact us to sign up.',
+            // X-2: Square is read-only here, so SVC never asks for money it collects.
+            self::CollectedInSquare => 'This service\'s agreement is billed in Square, so SVC cannot take its sign-up payment. Please contact us to sign up.',
+            self::FirstPeriodUnbillable => 'The first period of this service cannot be invoiced yet, because it overlaps an invoice already issued. Please contact us to finish signing up.',
             self::NotAwaitingReview => 'Only a service the client has accepted, and that is waiting for review, can be activated.',
             self::ActivationConflict => 'This service\'s agreement would overlap another active agreement on its project. End or correct that agreement, then activate again.',
             self::NothingToPublish => 'There is no draft to publish.',
@@ -63,6 +70,9 @@ enum PackageRefusal: string
             self::PayBeforeActivationNeedsCharge => 'Starting only once paid needs something to pay at sign-up: the setup fee or the first period.',
             self::SetupFeeAtSignupNeedsSetupFee => 'Add a setup fee component, or stop charging one at sign-up.',
             self::MinimumTermNeedsRecurringCadence => 'A minimum term needs a recurring billing cadence.',
+            self::FirstPeriodNeedsRecurringCadence => 'Charging the first period in advance needs a recurring billing cadence.',
+            self::CurrencyNotChargeable => 'The workspace\'s Stripe account cannot charge in this package\'s currency. Choose a currency the account supports.',
+            self::StripeCurrenciesUnknown => 'Stripe could not be asked which currencies the account can charge. Try publishing again in a few minutes.',
         };
     }
 }

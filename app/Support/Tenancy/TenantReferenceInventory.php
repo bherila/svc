@@ -123,6 +123,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('service_package_enrollments', 'client_agreement_id', 'client_agreements', 'svpke_ws_agreement_fk'),
             TenantReference::enforcedBy('service_package_enrollments', 'service_package_request_id', 'service_package_requests', 'svpke_ws_request_fk'),
             TenantReference::enforcedBy('service_package_enrollments', 'accepted_version_id', 'service_package_versions', 'svpke_ws_accepted_version_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'signup_invoice_id', 'client_invoices', 'svpke_ws_signup_invoice_fk'),
 
             // Projects.
             TenantReference::enforcedBy('client_task_graph_states', 'client_project_id', 'client_projects', 'task_graph_ws_project_fk'),

@@ -8,6 +8,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
@@ -409,8 +410,8 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $this->assertSame($contact->id, ClientAgreement::query()->whereKey($active->client_agreement_id)->value('signed_by_user_id'));
     }
 
-    /** A version that takes a payment at sign-up waits for slice 3b; nothing half-works. */
-    public function test_a_version_that_takes_a_payment_is_refused_when_added_and_when_accepted(): void
+    /** A version that takes a payment at sign-up needs Stripe still connected when it is added and accepted; nothing half-works. */
+    public function test_a_version_that_takes_a_payment_is_refused_once_stripe_has_gone(): void
     {
         $this->connectStripe();
         [$workspace, $owner, $package, $company, $contact] = $this->world();
@@ -418,6 +419,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         app(ServicePackageWorkflow::class)->update($owner, $workspace, $package->refresh(), ['charge_first_period' => true]);
         app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package->refresh());
         $paying = $this->publishedPackage($workspace, $owner, ['link_name' => 'paid-hosting', 'require_autopay' => true, 'autopay_limit_amount' => 50000]);
+        $this->disconnectStripe();
 
         foreach ([
             fn () => $this->workflow()->accept($contact, $company, $offer, $this->signature()),
@@ -425,15 +427,16 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         ] as $attempt) {
             try {
                 $attempt();
-                $this->fail('A sign-up that takes a payment went ahead.');
+                $this->fail('A sign-up that takes a payment went ahead without Stripe.');
             } catch (ServicePackageRefused $refused) {
-                $this->assertSame(PackageRefusal::PaymentNotAvailableYet->value, $refused->refusalCode());
+                $this->assertSame(PackageRefusal::PaymentUnavailable->value, $refused->refusalCode());
             }
         }
         $this->assertSame('offered', $offer->refresh()->status);
         $this->assertNull($offer->accepted_at);
         $this->assertSame('draft', ClientAgreement::query()->whereKey($offer->client_agreement_id)->value('status'));
         $this->assertSame(1, ServicePackageEnrollment::query()->count());
+        $this->assertSame(0, ClientInvoice::query()->count());
     }
 
     public function test_another_companys_or_workspaces_offer_cannot_be_accepted_or_activated(): void

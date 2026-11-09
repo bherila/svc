@@ -439,7 +439,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['client_services.list'];
         put?: never;
         post?: never;
@@ -1014,7 +1014,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read one package enrollment with its package, versions, client, project, agreement, acceptance and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date) and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['enrollments.get'];
         put?: never;
         post?: never;
@@ -1031,7 +1031,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, and the acceptance: who signed (signer_name and signer_title as the client typed them) and when. An enrollment awaiting_review waits for enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up's own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['enrollments.list'];
         put?: never;
         post?: never;
@@ -3670,7 +3670,9 @@ export interface components {
                     | 'package_not_addable'
                     | 'package_offer_not_open'
                     | 'package_already_accepted'
-                    | 'package_payment_not_available_yet'
+                    | 'package_payment_unavailable'
+                    | 'package_collected_in_square'
+                    | 'package_first_period_unbillable'
                     | 'package_enrollment_not_awaiting_review'
                     | 'package_activation_conflict'
                     | 'package_nothing_to_publish'
@@ -3680,7 +3682,10 @@ export interface components {
                     | 'package_autopay_needs_limit'
                     | 'package_pay_before_activation_needs_charge'
                     | 'package_setup_fee_at_signup_needs_setup_fee'
-                    | 'package_minimum_term_needs_recurring_cadence';
+                    | 'package_minimum_term_needs_recurring_cadence'
+                    | 'package_first_period_needs_recurring_cadence'
+                    | 'package_currency_not_chargeable'
+                    | 'package_stripe_currencies_unknown';
                 message: string;
             } | null;
         };
@@ -3793,6 +3798,7 @@ export interface components {
             activated_at: string | null;
             /** Format: uri */
             agreement_url: string | null;
+            payment: components['schemas']['ServicePackageSignupPayment'];
             /** Format: uri */
             url: string;
         };
@@ -6276,7 +6282,9 @@ export interface components {
                     | 'package_not_addable'
                     | 'package_offer_not_open'
                     | 'package_already_accepted'
-                    | 'package_payment_not_available_yet'
+                    | 'package_payment_unavailable'
+                    | 'package_collected_in_square'
+                    | 'package_first_period_unbillable'
                     | 'package_enrollment_not_awaiting_review'
                     | 'package_activation_conflict'
                     | 'package_nothing_to_publish'
@@ -6286,7 +6294,10 @@ export interface components {
                     | 'package_autopay_needs_limit'
                     | 'package_pay_before_activation_needs_charge'
                     | 'package_setup_fee_at_signup_needs_setup_fee'
-                    | 'package_minimum_term_needs_recurring_cadence';
+                    | 'package_minimum_term_needs_recurring_cadence'
+                    | 'package_first_period_needs_recurring_cadence'
+                    | 'package_currency_not_chargeable'
+                    | 'package_stripe_currencies_unknown';
                 message: string;
             }[];
             version: components['schemas']['Version'];
@@ -6401,6 +6412,9 @@ export interface components {
             } | null;
             /** Format: date-time */
             activated_at: string | null;
+            /** Format: date-time */
+            lapsed_at: string | null;
+            payment: components['schemas']['ServicePackageSignupPayment'];
             version: components['schemas']['Version'];
         };
         ServicePackageEnrollmentListResponse: {
@@ -6503,6 +6517,33 @@ export interface components {
         };
         ServicePackageResponse: {
             data: components['schemas']['ServicePackage'];
+        };
+        ServicePackageSignupPayment: {
+            /** @enum {string} */
+            state: 'not_charged' | 'not_invoiced' | 'due' | 'paid' | 'voided';
+            waiting_for: ('payment' | 'autopay')[];
+            signup_invoice: {
+                id: components['schemas']['Uuid'];
+                number: string;
+                /** @enum {string} */
+                status:
+                    | 'draft'
+                    | 'issued'
+                    | 'partially_paid'
+                    | 'paid'
+                    | 'disputed'
+                    | 'void';
+                currency: string;
+                total_amount: number;
+                balance_amount: number;
+                /** Format: uri */
+                url: string | null;
+            } | null;
+            requires_autopay: boolean;
+            autopay_limit_amount: number | null;
+            pay_before_activation: boolean;
+            /** Format: date */
+            lapses_on: string | null;
         };
         ServicePackageTerms: {
             name: string;

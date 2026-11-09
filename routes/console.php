@@ -41,6 +41,12 @@ Schedule::command('svc:billing:charge-autopay --apply --limit=50')->everyFifteen
 // is on. Hourly, so the first of the month is reached in every workspace's own
 // time zone; drafts only - issuing and sending stay an operator's.
 Schedule::command('svc:billing:generate-cadence-drafts --apply --limit=50')->hourly()->when(static fn (): bool => (bool) config('svc.billing.scheduled_cadence_drafts'))->withoutOverlapping(30);
+// Service package sign-ups left unaccepted or unpaid past their lapse date
+// (ACC-6): each is lapsed under its own lock, its unpaid sign-up invoice voided
+// and its draft agreement left a draft, so a repeated run changes nothing.
+// Hourly, so a lapse date is reached in every workspace's own time zone; only
+// while the feature is on (X-1). In process; no queue worker.
+Schedule::command('svc:packages:lapse-enrollments --apply --limit=200')->hourly()->when(static fn (): bool => (bool) config('svc.service_packages.enabled'))->withoutOverlapping(30);
 // Is each workspace's Stripe webhook endpoint subscribed to every event SVC needs?
 // One read of Stripe per connection, recorded for the Payments page; it changes
 // nothing at Stripe (the fix is a button an owner or admin presses). No queue.

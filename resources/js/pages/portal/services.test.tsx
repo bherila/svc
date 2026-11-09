@@ -124,7 +124,7 @@ describe('portal services', () => {
                         ...pkg,
                         add_url: null,
                         add_refusal: {
-                            code: 'package_payment_not_available_yet',
+                            code: 'package_payment_unavailable',
                             message: 'Online payment is not available yet.',
                         },
                     },

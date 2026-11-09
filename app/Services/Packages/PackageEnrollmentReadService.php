@@ -22,7 +22,10 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class PackageEnrollmentReadService
 {
-    public function __construct(private readonly AgentAccess $access) {}
+    public function __construct(
+        private readonly AgentAccess $access,
+        private readonly PackageAutopayRequirement $autopay,
+    ) {}
 
     /** @return array{data: list<array<string, mixed>>, meta: array{next_cursor: string|null}} */
     public function list(User|AgentPrincipal $actor, Workspace $workspace, ?EnrollmentStatus $status = null, int $limit = 25, ?string $cursor = null): array
@@ -45,8 +48,10 @@ final class PackageEnrollmentReadService
         }
         $last = $enrollments->last();
 
+        $limits = $this->autopay->clientLimits($workspace, array_values($enrollments->pluck('client_company_id')->all()));
+
         return [
-            'data' => array_values($enrollments->map(static fn (ServicePackageEnrollment $enrollment): array => PackageEnrollmentPresenter::forManager($workspace, $enrollment))->all()),
+            'data' => array_values($enrollments->map(static fn (ServicePackageEnrollment $enrollment): array => PackageEnrollmentPresenter::forManager($workspace, $enrollment, $limits[$enrollment->client_company_id] ?? null))->all()),
             'meta' => ['next_cursor' => $more && $last !== null ? AgentApiCursor::encode($last->id, $workspace->public_id, $key) : null],
         ];
     }
@@ -59,7 +64,7 @@ final class PackageEnrollmentReadService
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        return PackageEnrollmentPresenter::forManager($workspace, $enrollment);
+        return PackageEnrollmentPresenter::forManager($workspace, $enrollment, $this->autopay->clientLimits($workspace, [$enrollment->client_company_id])[$enrollment->client_company_id] ?? null);
     }
 
     public function find(User|AgentPrincipal $actor, Workspace $workspace, string $publicId): ServicePackageEnrollment
@@ -76,10 +81,13 @@ final class PackageEnrollmentReadService
     public static function withRelations(Workspace $workspace, Builder $query): Builder
     {
         $scoped = static fn ($related) => $related->where('workspace_id', $workspace->id);
+        $withComponents = static fn ($version) => $version->where('workspace_id', $workspace->id)
+            ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)]);
 
         return $query->with([
             'clientCompany' => $scoped, 'project' => $scoped, 'agreement' => $scoped, 'package' => $scoped,
-            'version' => $scoped, 'acceptedVersion' => $scoped, 'packageRequest' => $scoped,
+            'version' => $withComponents, 'acceptedVersion' => $withComponents, 'packageRequest' => $scoped,
+            'signupInvoice' => $scoped,
         ]);
     }
 

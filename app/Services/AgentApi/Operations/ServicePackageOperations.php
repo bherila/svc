@@ -13,6 +13,7 @@ use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\FirstCycleProration;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Packages\CancellationMode;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\IntakeQuestionKind;
@@ -24,6 +25,8 @@ use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use App\Support\Packages\ServicePackageRules;
+use App\Support\Packages\SignupPaymentState;
+use App\Support\Packages\SignupWait;
 use BackedEnum;
 use InvalidArgumentException;
 use LogicException;
@@ -135,7 +138,7 @@ final class ServicePackageOperations
             'ServicePackageRequestResponse', 'ServicePackageRequestListResponse', 'ServicePackageRequestApprovalResponse',
             'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
             'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse',
-            'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
+            'ServicePackageSignupPayment', 'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
         ];
     }
 
@@ -160,10 +163,10 @@ final class ServicePackageOperations
             'package_requests.get' => 'Read one sign-up request with its package, decision, client or suggested_client, and the version to send with a decision. '.$untrusted.' '.$whoRequests.' '.$flag,
             'package_requests.approve' => 'Only after explicit user confirmation, approve an open sign-up request: create the client (or attach it to the existing client named by client_id, such as suggested_client), give the subscription its own project and a draft agreement from the package\'s currently published version, and offer it to the contact. Someone who already signs in here is given company-wide portal access and an email; anyone else is invited through the identity provider as the token\'s user, and if the provider refuses, nothing is created. Answers with the request and its enrollment; never with the invitation or its link. Refused with package_request_not_open once decided, package_not_offered when the package is no longer published, package_invitations_off or package_address_held_elsewhere when the contact cannot be admitted. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
             'package_requests.decline' => 'Only after explicit user confirmation, decline an open sign-up request and email the visitor, with the optional reason (which the visitor reads). Creates nothing. Refused with package_request_not_open once decided. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
-            'enrollments.list' => 'List the workspace\'s package enrollments (each client\'s subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement\'s page, the request it answers, and the acceptance: who signed (signer_name and signer_title as the client typed them) and when. An enrollment awaiting_review waits for enrollments.activate. '.$whoEnrollments.' '.$flag,
-            'enrollments.get' => 'Read one package enrollment with its package, versions, client, project, agreement, acceptance and the version to send with enrollments.activate. '.$whoEnrollments.' '.$flag,
+            'enrollments.list' => 'List the workspace\'s package enrollments (each client\'s subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement\'s page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up\'s own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. '.$whoEnrollments.' '.$flag,
+            'enrollments.get' => 'Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date) and the version to send with enrollments.activate. '.$whoEnrollments.' '.$flag,
             'enrollments.activate' => 'Only after explicit user confirmation, start a service the client has accepted that waits for review (status awaiting_review): its agreement starts today, is activated through the same rule as agreements.activate and signed as the contact who accepted, the enrollment becomes active, and the client is emailed. Activating one already active changes nothing. Refused with package_enrollment_not_awaiting_review before acceptance (or while a payment is due), and package_activation_conflict when the agreement would overlap another active agreement on its project. Current version and confirm: true required. '.$whoEnrollments.' '.$writeFlags,
-            'client_services.list' => 'For a client\'s portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance and portal links; a contact limited to some projects sees only those projects\' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. '.$flag,
+            'client_services.list' => 'For a client\'s portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date) and portal links; a contact limited to some projects sees only those projects\' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. '.$flag,
             'client_services.get' => 'For a client\'s portal contact: read one of your company\'s services with its terms, status, acceptance and portal links. Another company\'s service, or one outside your projects, is answered as not found. '.$flag,
             'package_requests.erase' => 'Only after explicit user confirmation, irreversibly erase what the visitor typed into a decided request (contact details, answers and the decline reason), leaving a stub with its package, dates and outcome. Refused with package_request_not_closed while the request is open. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
         ];
@@ -412,7 +415,28 @@ final class ServicePackageOperations
                 'offered_at' => ['type' => 'string', 'format' => 'date-time'],
                 'acceptance' => $acceptance,
                 'activated_at' => $nullableInstant,
+                'lapsed_at' => $nullableInstant,
+                'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
                 'version' => $version,
+            ]),
+            // Where a sign-up's own payment stands (PackageEnrollmentPresenter::payment).
+            // Nothing about the card or the processor (API-4).
+            'ServicePackageSignupPayment' => self::object([
+                'state' => ['type' => 'string', 'enum' => self::values(SignupPaymentState::cases())],
+                'waiting_for' => ['type' => 'array', 'maxItems' => count(SignupWait::cases()), 'items' => ['type' => 'string', 'enum' => self::values(SignupWait::cases())]],
+                'signup_invoice' => ['oneOf' => [self::object([
+                    'id' => $uuid,
+                    'number' => $text,
+                    'status' => ['type' => 'string', 'enum' => InvoiceStatus::all()],
+                    'currency' => ['type' => 'string', 'pattern' => '^[A-Z]{3}$'],
+                    'total_amount' => ['type' => 'integer', 'minimum' => 0],
+                    'balance_amount' => ['type' => 'integer', 'minimum' => 0],
+                    'url' => ['type' => ['string', 'null'], 'format' => 'uri'],
+                ]), ['type' => 'null']]],
+                'requires_autopay' => $bool,
+                'autopay_limit_amount' => $nullableInt,
+                'pay_before_activation' => $bool,
+                'lapses_on' => ['type' => ['string', 'null'], 'format' => 'date'],
             ]),
             'ServicePackageEnrollmentResponse' => self::object(['data' => ['$ref' => '#/components/schemas/ServicePackageEnrollment']]),
             'ServicePackageEnrollmentListResponse' => self::object([
@@ -432,6 +456,7 @@ final class ServicePackageOperations
                 'acceptance' => $acceptance,
                 'activated_at' => $nullableInstant,
                 'agreement_url' => ['type' => ['string', 'null'], 'format' => 'uri'],
+                'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
                 'url' => ['type' => 'string', 'format' => 'uri'],
             ]),
             'ClientServiceTerms' => self::object([

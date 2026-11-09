@@ -14,10 +14,12 @@ use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\WorkspaceClock;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * The Dashboard's "Needs you" list: one row per thing to do, most urgent first.
@@ -195,6 +197,77 @@ final class WorkspaceActionQueue
                 $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->acceptedVersion->name ?? $agreement->title).' to activate', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->accepted_at?->toDateString());
+            }
+
+            // EDGE-1: money arrived for a sign-up after the lapse voided its
+            // invoice. Nothing was refunded or activated; an owner or admin
+            // decides. Seen as a payment on the void invoice that succeeded,
+            // or whose success Stripe reported and SVC refused to apply.
+            $paidAfterLapse = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', EnrollmentStatus::Lapsed->value)
+                ->whereNotNull('signup_invoice_id')
+                ->whereExists(fn (QueryBuilder $payment): QueryBuilder => $payment->selectRaw('1')->from('client_invoice_payments')
+                    ->whereColumn('client_invoice_payments.workspace_id', 'service_package_enrollments.workspace_id')
+                    ->whereColumn('client_invoice_payments.client_invoice_id', 'service_package_enrollments.signup_invoice_id')
+                    ->where(fn (QueryBuilder $money): QueryBuilder => $money
+                        ->where('client_invoice_payments.status', InvoicePaymentStatus::Succeeded->value)
+                        ->orWhereExists(fn (QueryBuilder $event): QueryBuilder => $event->selectRaw('1')->from('client_stripe_events')
+                            ->whereColumn('client_stripe_events.object_id', 'client_invoice_payments.provider_payment_identifier')
+                            ->where('client_stripe_events.event_type', 'payment_intent.succeeded')
+                            ->where('client_stripe_events.status', 'failed'))))
+                ->with(['signupInvoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)])
+                ->orderBy('lapsed_at')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            // EDGE-2: a running service whose version requires autopay, while
+            // the company's autopay is off or has no default card to charge.
+            // Nothing is suspended; this only says so.
+            $autopayOff = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', EnrollmentStatus::Active->value)
+                ->whereExists(fn (QueryBuilder $version): QueryBuilder => $version->selectRaw('1')->from('service_package_versions')
+                    ->whereColumn('service_package_versions.workspace_id', 'service_package_enrollments.workspace_id')
+                    ->whereColumn('service_package_versions.id', 'service_package_enrollments.accepted_version_id')
+                    ->where('service_package_versions.require_autopay', true))
+                ->where(fn ($off) => $off
+                    ->whereExists(fn (QueryBuilder $company): QueryBuilder => $company->selectRaw('1')->from('client_companies')
+                        ->whereColumn('client_companies.workspace_id', 'service_package_enrollments.workspace_id')
+                        ->whereColumn('client_companies.id', 'service_package_enrollments.client_company_id')
+                        ->whereNull('client_companies.autopay_enabled_at'))
+                    ->orWhereNotExists(fn (QueryBuilder $method): QueryBuilder => $method->selectRaw('1')->from('client_stripe_payment_methods')
+                        ->whereColumn('client_stripe_payment_methods.workspace_id', 'service_package_enrollments.workspace_id')
+                        ->whereColumn('client_stripe_payment_methods.client_company_id', 'service_package_enrollments.client_company_id')
+                        ->where('client_stripe_payment_methods.is_default', true)))
+                ->with([
+                    'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
+                    'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                ])
+                ->orderBy('activated_at')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            $names = $this->companyNames($workspace, array_merge($paidAfterLapse->pluck('client_company_id')->all(), $autopayOff->pluck('client_company_id')->all()));
+
+            foreach ($paidAfterLapse as $enrollment) {
+                $company = $this->company($names, $enrollment->client_company_id);
+                $invoice = $enrollment->signupInvoice;
+                if ($company === null || $invoice === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('enrollment-paid-after-lapse-'.$enrollment->public_id, 'enrollment_paid_after_lapse', "Payment received after {$company['name']}'s sign-up lapsed", $company['name'],
+                    route('clients.invoice', [$workspace, $company['public_id'], $invoice], absolute: false), 'Review',
+                    amount: (int) $invoice->total_amount, currency: $invoice->currency, date: $enrollment->lapsed_at?->toDateString());
+            }
+
+            foreach ($autopayOff as $enrollment) {
+                $company = $this->company($names, $enrollment->client_company_id);
+                $agreement = $enrollment->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->acceptedVersion->name ?? $agreement->title).': autopay required but off', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    date: $enrollment->activated_at?->toDateString());
             }
         }
 
