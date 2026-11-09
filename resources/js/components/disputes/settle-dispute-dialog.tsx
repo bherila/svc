@@ -124,8 +124,9 @@ export function SettleDisputeDialog({
                             puts it back on their list and on the next draft. If
                             its month's invoice was already issued, it becomes
                             deferred work instead, billed from spare retainer
-                            hours or a buy-down. To change the hours or amount
-                            first, edit it before you answer.
+                            hours, a buy-down or when the agreement ends. To
+                            change the hours or amount first, edit it before you
+                            answer.
                             {settle.outcomes.includes('written_off') &&
                                 ' Writing it off means it is never billed.'}
                         </p>

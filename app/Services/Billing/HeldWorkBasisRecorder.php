@@ -64,29 +64,60 @@ final class HeldWorkBasisRecorder
         return Carbon::instance(max($ends))->toDateString();
     }
 
-    /** @return list<array{int, bool, string|null, bool}> */
+    /**
+     * Each row's dispute state and whether an invoice line holds it. The
+     * allocation is what makes a disputed row charged rather than held: a
+     * void releases it, and the row leaves the ledger without its dispute
+     * columns moving. Joined rather than read through a subquery, so a locking
+     * read locks, and reads current, the allocation rows too; they rank after
+     * the time entries.
+     *
+     * @return list<array{int, bool, string|null, bool, bool}>
+     */
     private function rows(ClientInvoice $invoice, ?int $projectId, string $through, bool $locking): array
     {
+        $workspaceId = $invoice->workspace_id;
         $query = ClientTimeEntry::query()
             ->withTrashed()
-            ->where('workspace_id', $invoice->workspace_id)
-            ->where('client_company_id', $invoice->client_company_id)
-            ->when($projectId !== null, fn ($scoped) => $scoped->where('client_project_id', $projectId))
-            ->whereDate('worked_on', '<=', $through)
+            ->leftJoin('client_invoice_line_time_entries as allocation', function ($join) use ($workspaceId): void {
+                $join->on('allocation.client_time_entry_id', '=', 'client_time_entries.id')
+                    ->where('allocation.workspace_id', '=', $workspaceId);
+            })
+            ->where('client_time_entries.workspace_id', $workspaceId)
+            ->where('client_time_entries.client_company_id', $invoice->client_company_id)
+            ->when($projectId !== null, fn ($scoped) => $scoped->where('client_time_entries.client_project_id', $projectId))
+            ->whereDate('client_time_entries.worked_on', '<=', $through)
             ->where(fn ($touched) => $touched
-                ->whereNotNull('client_disputed_at')
-                ->orWhereNotNull('client_dispute_settlement'))
-            ->orderBy('id')
-            ->select(['id', 'client_disputed_at', 'client_dispute_settlement', 'deleted_at']);
+                ->whereNotNull('client_time_entries.client_disputed_at')
+                ->orWhereNotNull('client_time_entries.client_dispute_settlement'))
+            ->orderBy('client_time_entries.id')
+            ->select([
+                'client_time_entries.id', 'client_time_entries.client_disputed_at', 'client_time_entries.client_dispute_settlement',
+                'client_time_entries.deleted_at', 'allocation.client_time_entry_id as allocated_entry_id',
+            ]);
         if ($locking) {
             $query->tap(Locks::forUpdate());
         }
 
-        return array_values($query->get()->map(fn (ClientTimeEntry $entry): array => [
-            $entry->id,
-            $entry->getAttributes()['client_disputed_at'] !== null,
-            is_string($settlement = $entry->getAttributes()['client_dispute_settlement']) ? $settlement : null,
-            $entry->getAttributes()['deleted_at'] !== null,
-        ])->all());
+        $rows = [];
+        foreach ($query->get() as $entry) {
+            $attributes = $entry->getAttributes();
+            $id = $entry->id;
+            $allocated = ($attributes['allocated_entry_id'] ?? null) !== null;
+            if (isset($rows[$id])) {
+                $rows[$id][4] = $rows[$id][4] || $allocated;
+
+                continue;
+            }
+            $rows[$id] = [
+                $id,
+                $attributes['client_disputed_at'] !== null,
+                is_string($settlement = $attributes['client_dispute_settlement']) ? $settlement : null,
+                $attributes['deleted_at'] !== null,
+                $allocated,
+            ];
+        }
+
+        return array_values($rows);
     }
 }

@@ -114,7 +114,17 @@ final class DeferredBuyDownAction
             abort_unless($claims->isEmpty(), 409, 'Selected deferred work was allocated; preview it again.');
 
             if ($invoice !== null) {
+                // The settlement links the selected work, which a disputed or
+                // settled entry's held-work basis records (docs/ux-overhaul.md
+                // 7b″). A basis that was current is renewed with the link; one
+                // that had already moved stays as it is, so issue still refuses
+                // a draft priced from an older state.
+                $heldWork = app(HeldWorkBasisRecorder::class);
+                $basisCurrent = $invoice->held_work_basis !== null && $heldWork->isCurrent($invoice);
                 $this->writeSettlementLines($invoice, $selection, $locked, $this->settlementLineDate($invoice, $workspace));
+                if ($basisCurrent) {
+                    $heldWork->record($invoice, $locked);
+                }
                 $this->removeSettledWorkFromStatement($invoice, $selection);
                 $invoice->recalculateTotals();
                 $this->activities->record($workspace, $company, 'invoice.updated', $invoice, [

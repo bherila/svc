@@ -425,4 +425,67 @@ final class DisputeLedgerDependencyTest extends TestCase
         $this->assertNotNull($line);
         $this->assertSame($march->id, (int) DB::table('client_invoice_lines')->where('id', $line)->value('client_invoice_id'));
     }
+
+    /**
+     * The third review: a disputed row an issued invoice charges is not held,
+     * so it counts in the ledger. Voiding that invoice releases its line and
+     * the row becomes held without its dispute columns moving. A later draft
+     * priced with the row counted must not be issued until it is regenerated.
+     */
+    public function test_voiding_the_invoice_that_charged_disputed_time_refuses_a_draft_priced_before_it(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('void', 600);
+        $agreement->forceFill(['rollover_months' => 1])->save();
+        $january = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 600);
+        $invoice = $this->period($company, $agreement, '2026-02-01');
+        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $this->stampDispute($january);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 1800);
+        $march = $this->period($company, $agreement, '2026-03-01');
+        $stale = (int) $march->total_amount;
+
+        app(InvoiceLifecycleService::class)->void($invoice->fresh(), $workspace, 'Synthetic void');
+        $this->assertSame(0, $this->onAnyLine($january->fresh()), 'The void released the charge; the dispute now holds the row.');
+
+        try {
+            app(InvoiceLifecycleService::class)->issue($march->fresh(), $workspace);
+            $this->fail('A draft priced while the row was charged was issued after the void.');
+        } catch (DisputedWorkChanged $refused) {
+            $this->assertSame('disputed_work_changed', $refused->refusalCode());
+        }
+
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($march->fresh());
+        $this->assertLessThan($stale, (int) $rebuilt->fresh()->total_amount, "January's pool rolls into February once the held hours leave it.");
+        app(InvoiceLifecycleService::class)->issue($rebuilt->fresh(), $workspace);
+        $this->assertSame('issued', $rebuilt->fresh()->status);
+    }
+
+    /**
+     * The third review: flat-hourly time answered after its period was
+     * invoiced under an agreement that has since been renewed is carried by
+     * the renewal's next draft, once.
+     */
+    public function test_answered_flat_hourly_time_from_a_renewed_agreement_bills_on_the_renewals_draft(): void
+    {
+        CarbonImmutable::setTestNow('2026-04-10 12:00:00');
+        [$workspace, $company, $project, $first, $owner] = $this->world('renewal', 600);
+        $first->forceFill(['ends_on' => '2026-02-28'])->save();
+        $flat = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 120);
+        $flat->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+        $this->stampDispute($flat);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $first, '2026-02-01'), $workspace);
+
+        $renewal = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic renewal', 'status' => 'active',
+            'starts_on' => '2026-03-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
+            'retainer_minutes' => 600, 'retainer_amount' => 60000, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+        ]);
+        $this->answer($workspace, $flat, $owner);
+        $march = $this->period($company, $renewal, '2026-04-01');
+
+        $this->assertSame(10000, (int) $march->lines()->where('type', 'subcontractor')->sum('total_amount'));
+        $this->assertSame(1, $this->onAnyLine($flat->fresh()));
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($march->fresh());
+        $this->assertSame(1, $this->onAnyLine($flat->fresh()));
+    }
 }

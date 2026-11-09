@@ -335,7 +335,6 @@ class InvoiceLineComposer
         int &$sortOrder,
     ): void {
         $agreement = $this->agreementFor($invoice);
-        $agreementStart = $agreement instanceof ClientAgreement ? $agreement->starts_on->toDateString() : null;
 
         $entries = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
@@ -353,11 +352,12 @@ class InvoiceLineComposer
                 // A dispute answered after its own period was invoiced bills on
                 // the next draft (docs/ux-overhaul.md 7b″), at its own date and
                 // rate: each of these lines is priced alone, so carrying it
-                // forward moves no pool.
+                // forward moves no pool. With no lower bound, so work from an
+                // agreement this one renewed is carried too; the absence of any
+                // allocation keeps it to one charge.
                 ->orWhere(fn ($carried) => $carried
                     ->where('client_dispute_settlement', DisputeSettlement::Answered->value)
-                    ->whereDate('worked_on', '<', $periodStart->toDateString())
-                    ->when($agreementStart !== null, fn ($since) => $since->whereDate('worked_on', '>=', $agreementStart))))
+                    ->whereDate('worked_on', '<', $periodStart->toDateString())))
             ->with('user:id,name')
             ->orderBy('worked_on')
             ->orderBy('id')

@@ -11,9 +11,10 @@ namespace App\Support\Billing;
  * A dispute holds a row out of the ledger, and settling it puts it back or
  * keeps it out. Either can change the capacity a later draft's charges were
  * sized against without touching anything the draft links: the row is
- * historical, unlinked work. So the draft records the dispute and settlement
- * state of its scope's time through the last day its ledger read, and issuing
- * compares that with the state as it is now.
+ * historical, unlinked work - or by losing the invoice line that charged it,
+ * as a void does. So the draft records the dispute, settlement and allocation
+ * state of its scope's disputed and settled time through the last day its
+ * ledger read, and issuing compares that with the state as it is now.
  *
  * Pure and database-free: the caller reads the rows.
  */
@@ -30,19 +31,19 @@ final readonly class HeldWorkBasis
     /**
      * @param  int|null  $projectId  the agreement's project, or null for the whole company
      * @param  string  $through  `Y-m-d`, the last day the ledger read
-     * @param  iterable<array{int, bool, string|null, bool}>  $rows  id, disputed, settlement, deleted - in id order
+     * @param  iterable<array{int, bool, string|null, bool, bool}>  $rows  id, disputed, settlement, deleted, allocated - in id order
      */
     public static function of(?int $projectId, string $through, iterable $rows): self
     {
         return new self($projectId, $through, self::digest($rows));
     }
 
-    /** @param  iterable<array{int, bool, string|null, bool}>  $rows */
+    /** @param  iterable<array{int, bool, string|null, bool, bool}>  $rows */
     public static function digest(iterable $rows): string
     {
         $context = hash_init('sha256');
-        foreach ($rows as [$id, $disputed, $settlement, $deleted]) {
-            hash_update($context, $id.'|'.($disputed ? 'd' : '-').'|'.($settlement ?? '-').'|'.($deleted ? 'x' : '-')."\n");
+        foreach ($rows as [$id, $disputed, $settlement, $deleted, $allocated]) {
+            hash_update($context, $id.'|'.($disputed ? 'd' : '-').'|'.($settlement ?? '-').'|'.($deleted ? 'x' : '-').'|'.($allocated ? 'a' : '-')."\n");
         }
 
         return hash_final($context);

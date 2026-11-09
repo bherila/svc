@@ -95,7 +95,7 @@ final class DisputedDraftRebuilder
 
         // The drafts covering it take it back; an hour whose period was
         // already reconciled is deferred work by now, which a later draft's
-        // free capacity or a buy-down takes, and a flat-hourly one is carried
+        // free capacity, a buy-down or termination takes, and a flat-hourly one is carried
         // to the next draft that can bill it.
         $this->rebuildDependents($workspaceId, $entryIds, []);
 

@@ -440,8 +440,10 @@ period can no longer bill it (decided 2026-11-09, `LateAnswer`):
 
 - Work the retainer ledger reads becomes **deferred work**. It joins the
   deferred backlog and is listed under the draft's *Still deferred*. It is
-  drawn from a later draft's free capacity, or settled by a buy-down - on an
-  agreement with no retainer, only by a buy-down. Waiting, it takes no
+  drawn from a later draft's free capacity, settled by a buy-down, or - like
+  all deferred work - collected at the hourly rate when the agreement
+  terminates. With no retainer there is no free capacity, so a buy-down or
+  termination collects it. Waiting, it takes no
   capacity, so no later draft's charges depend on it until a line takes it,
   and a dispute on it after that finds the draft that carries it.
 - A flat-hourly subcontractor hour, priced alone at its own date and rate, is
