@@ -297,16 +297,13 @@ export function SignupCheckout({
                             />
                         )}
                         {checkout.pay_url !== null && (
-                            <Button
-                                variant={
-                                    checkout.payment_options === null
-                                        ? 'default'
-                                        : 'outline'
-                                }
-                                render={<a href={checkout.pay_url} />}
+                            // A plain link: a card row's trailing action is never a bordered one.
+                            <a
+                                href={checkout.pay_url}
+                                className="text-sm font-medium underline underline-offset-4"
                             >
                                 Open the invoice to pay
-                            </Button>
+                            </a>
                         )}
                     </div>
                 )}

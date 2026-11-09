@@ -25,6 +25,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
 use App\Models\PaletteRecent;
+use App\Models\ServicePackage;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -1419,8 +1420,10 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-checkout-contact',
     ]);
     app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $checkoutCompany, $checkoutContact, PortalAccessScope::Company, []);
-    $checkoutPackage = $packages->create($owner, $workspace, [
-        ...$oversized, 'name' => 'Checkout '.$word, 'link_name' => 'checkout-'.str_repeat('checkoutname', 4), 'is_listed' => false,
+    // Two packages: a company holds one open offer per package, so the estimate and the
+    // accepted sign-up need one each.
+    $checkoutPackageInput = static fn (string $name, string $link): array => [
+        ...$oversized, 'name' => $name, 'link_name' => $link, 'is_listed' => false,
         'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
         'charge_setup_fee_at_signup' => true, 'charge_first_period' => true, 'require_autopay' => true,
         'autopay_limit_amount' => 150_000, 'pay_before_activation' => true,
@@ -1429,12 +1432,18 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
             ['kind' => 'setup_fee', 'description' => 'Setup '.str_repeat('SetupFeeLineWithoutBreaks', 4), 'cadence' => 'one_time', 'amount' => 25_000, 'quantity' => 1, 'is_taxable' => false],
             ['kind' => 'setup_fee', 'description' => str_repeat('SecondSetupFeeWithoutBreaks', 6), 'cadence' => 'one_time', 'amount' => 12_500, 'quantity' => 1, 'is_taxable' => false],
         ],
-    ]);
-    $checkoutVersion = $checkoutPackage->refresh()->versions()->where('draft_marker', 1)->firstOrFail();
-    $checkoutVersion->forceFill(['draft_marker' => null, 'published_at' => now(), 'published_by_user_id' => $owner->id])->save();
-    $checkoutPackage->forceFill(['status' => 'published', 'published_version_id' => $checkoutVersion->id])->save();
-    $checkoutOffered = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage->refresh());
-    $checkoutAccepted = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage->refresh());
+    ];
+    $publishCheckoutPackage = static function (ServicePackage $package) use ($owner): ServicePackage {
+        $version = $package->refresh()->versions()->where('draft_marker', 1)->firstOrFail();
+        $version->forceFill(['draft_marker' => null, 'published_at' => now(), 'published_by_user_id' => $owner->id])->save();
+        $package->forceFill(['status' => 'published', 'published_version_id' => $version->id])->save();
+
+        return $package->refresh();
+    };
+    $estimatePackage = $publishCheckoutPackage($packages->create($owner, $workspace, $checkoutPackageInput('Checkout estimate '.$word, 'estimate-'.str_repeat('checkoutname', 4))));
+    $checkoutPackage = $publishCheckoutPackage($packages->create($owner, $workspace, $checkoutPackageInput('Checkout '.$word, 'checkout-'.str_repeat('checkoutname', 4))));
+    $checkoutOffered = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $estimatePackage);
+    $checkoutAccepted = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage);
     $checkoutAccepted = $enrollments->accept($checkoutContact, $checkoutCompany, $checkoutAccepted, $signer);
     $workspace->refresh();
     $waitingAgreement = $waiting->refresh()->agreement;
