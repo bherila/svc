@@ -8,6 +8,7 @@ import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import {
     clientTerms,
     portalService,
+    portalServiceMove,
     portalServiceProps,
 } from '@/test/package-fixtures';
 import { sharedPageProps } from '@/test/shared-page-props';
@@ -544,6 +545,82 @@ describe('portal service review and sign', () => {
                     service: portalService({
                         name: LONG,
                         terms: clientTerms({ agreement_text: LONG.repeat(20) }),
+                    }),
+                })}
+            />,
+        );
+
+        expect(horizontalOverflowRisks(container)).toEqual([]);
+    });
+    it('[MIG-2] tells the client the date, what changes from what to what, and the note', () => {
+        render(
+            <PortalService
+                {...portalServiceProps({
+                    service: portalService({
+                        status: 'active',
+                        move: portalServiceMove(),
+                    }),
+                })}
+            />,
+        );
+
+        const notice = screen.getByRole('note', {
+            name: 'New terms from Jan 1, 2027',
+        });
+        expect(within(notice).getByText('Price')).toBeInTheDocument();
+        expect(within(notice).getByText('$645.00 a month')).toBeInTheDocument();
+        expect(within(notice).getByText('$695.00 a month')).toBeInTheDocument();
+        expect(
+            within(notice).getByText(
+                'Our hosting provider raised its prices this year.',
+            ),
+        ).toBeInTheDocument();
+        expect(within(notice).queryByRole('status')).toBeNull();
+    });
+
+    it('[MIG-4] says an autopay limit below the new price will not be raised', () => {
+        render(
+            <PortalService
+                {...portalServiceProps({
+                    service: portalService({
+                        status: 'active',
+                        move: portalServiceMove({
+                            autopay_limit_amount: 60000,
+                            autopay_below_price: true,
+                        }),
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent(
+            'Your autopay limit is $600.00, below the new price of $695.00. It will not be raised for you',
+        );
+    });
+
+    it('[MIG-2] shows no notice when no move is scheduled', () => {
+        render(<PortalService {...portalServiceProps()} />);
+
+        expect(screen.queryByRole('note', { name: /New terms/ })).toBeNull();
+    });
+
+    it('[MIG-2] has no layout risk with an oversized note and changes', () => {
+        const { container } = render(
+            <PortalService
+                {...portalServiceProps({
+                    service: portalService({
+                        status: 'active',
+                        move: portalServiceMove({
+                            message: LONG.repeat(5),
+                            changes: [
+                                {
+                                    term: 'components',
+                                    label: 'Included',
+                                    from: LONG,
+                                    to: LONG.repeat(2),
+                                },
+                            ],
+                        }),
                     }),
                 })}
             />,

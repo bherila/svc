@@ -114,6 +114,8 @@ export type PackageEditUrls = {
 
 export type PackageEditProps = {
     package: ServicePackage | null;
+    /** Versions, subscribers and moves; absent or null while creating. */
+    moves?: PackageMovesPanel | null;
     /** Term defaults while creating; null when editing. */
     defaults: Partial<PackageTerms> | null;
     options: PackageOptions;
@@ -295,8 +297,142 @@ export type PortalService = {
     agreement_url: string | null;
     /** Where the sign-up's own payment stands (slice 3b). */
     payment: PortalServicePayment;
+    /** A scheduled move to new terms (MIG-2); null when none is scheduled. */
+    move?: PortalServiceMove | null;
     /** This service's own portal page: review and sign while offered. */
     url: string;
+};
+
+/** One term a move to a new version changes, in words the server finished. */
+export type PackageTermChange = {
+    term: string;
+    label: string;
+    from: string;
+    to: string;
+};
+
+/** A scheduled move to new terms, as the client is told of it (MIG-2, MIG-4). */
+export type PortalServiceMove = {
+    /** The workspace-local day the new terms start. */
+    effective_on: string;
+    version_number: number;
+    changes: PackageTermChange[];
+    terms: ClientTerms;
+    message: string | null;
+    /** Minor units, one billing period at the headline. */
+    new_price_amount: number;
+    autopay_limit_amount: number | null;
+    autopay_below_price: boolean;
+};
+
+/** One published version of a package in the editor, with who is on it. */
+export type PackageVersionSubscribers = {
+    id: string;
+    number: number;
+    published_at: string | null;
+    /** Active services carrying this version. */
+    subscribers: number;
+    /** Where moving them to the published version starts; null when they cannot be moved. */
+    move_url: string | null;
+};
+
+export type PackageMoveOutcome = {
+    code: string;
+    message: string;
+    detail: string | null;
+};
+
+export type PackageMoveSubscriber = {
+    id: string;
+    enrollment_id: string | null;
+    client: { id: string; name: string };
+    agreement: { id: string; title: string; url: string };
+    successor_agreement: { id: string; title: string; url: string } | null;
+    status: string;
+    outcome: PackageMoveOutcome | null;
+    autopay_limit_amount: number | null;
+    autopay_below_price: boolean;
+    settled_at: string | null;
+};
+
+/** A scheduled, completed or cancelled move (package_migrations.get). */
+export type PackageMove = {
+    id: string;
+    status: string;
+    package: { id: string; link_name: string; name: string };
+    from_version: { id: string; number: number };
+    to_version: { id: string; number: number };
+    effective_on: string;
+    message: string | null;
+    changes: PackageTermChange[];
+    new_price: { amount: number; currency: string; label: string } | null;
+    scheduled_at: string;
+    scheduled_by: string | null;
+    cancelled_at: string | null;
+    completed_at: string | null;
+    counts: Record<'scheduled' | 'applied' | 'skipped' | 'cancelled', number>;
+    subscribers: PackageMoveSubscriber[];
+    /** Opaque; sent back as expected_version. */
+    version: string;
+};
+
+/** A move in the editor, with its cancel endpoint while it may be cancelled. */
+export type PackageMoveRow = PackageMove & { cancel_url: string | null };
+
+/** What the editor shows of versions and moves; null while creating. */
+export type PackageMovesPanel = {
+    versions: PackageVersionSubscribers[];
+    moves: PackageMoveRow[];
+};
+
+export type PackageMoveRefusal = { code: string; message: string };
+
+/** One subscriber a move could take (package_migrations.preview). */
+export type PackageMoveCandidate = {
+    enrollment_id: string;
+    client: { id: string; name: string };
+    agreement: {
+        id: string;
+        title: string;
+        starts_on: string;
+        ends_on: string | null;
+    };
+    earliest_effective_on: string | null;
+    effective_dates: string[];
+    autopay_limit_amount: number | null;
+    autopay_below_price: boolean;
+    pending_cancellation_end_on: string | null;
+    scheduled_end_on: string | null;
+    /** Why it cannot move on the chosen date; null when it can. */
+    refusal: PackageMoveRefusal | null;
+};
+
+export type PackageMovePreview = {
+    package: { id: string; link_name: string; name: string };
+    from_version: { id: string; number: number };
+    to_version: { id: string; number: number } | null;
+    refusal: PackageMoveRefusal | null;
+    changes: PackageTermChange[];
+    new_price: { amount: number; currency: string; label: string } | null;
+    effective_dates: { date: string; subscribers: number }[];
+    effective_on: string | null;
+    subscribers: PackageMoveCandidate[];
+};
+
+export type PackageMoveProps = {
+    preview: PackageMovePreview;
+    /** Opaque; the package's version, sent back as expected_version. */
+    package_version: string;
+    urls: {
+        /** Where the scheduling posts. */
+        schedule: string;
+        /** Back to the package editor. */
+        editor: string;
+        /** This page; asked again with another effective_on. */
+        preview: string;
+    };
+    catalog_url: string | null;
+    stripe_connected: boolean;
 };
 
 /** Where a sign-up's own payment stands: the server decides every value. */

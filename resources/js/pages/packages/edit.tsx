@@ -8,6 +8,7 @@ import {
     initialState,
 } from '@/components/packages/package-editor';
 import type { EditorState } from '@/components/packages/package-editor';
+import { PackageMoves } from '@/components/packages/package-moves';
 import { ConfirmedAction } from '@/components/shared-projects/participation-panels';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -33,7 +34,13 @@ function firstMessages(
     );
 }
 
-function Editor({ package: pkg, defaults, options, urls }: PackageEditProps) {
+function Editor({
+    package: pkg,
+    moves,
+    defaults,
+    options,
+    urls,
+}: PackageEditProps) {
     const initial = useMemo(() => initialState(pkg, defaults), [pkg, defaults]);
     const [state, setState] = useState<EditorState>(initial);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -277,6 +284,8 @@ function Editor({ package: pkg, defaults, options, urls }: PackageEditProps) {
                     options={options}
                     errors={errors}
                 />
+
+                {moves != null && <PackageMoves panel={moves} />}
             </main>
 
             {pkg !== null && urls.publish !== null && (

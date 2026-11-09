@@ -9,12 +9,16 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Packages\PackageMigrationPlanner;
+use App\Services\Packages\PackageMigrationReadService;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
 use App\Services\Payments\PaymentConnectionResolver;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\ChargeCadence;
 use App\Support\Packages\CancellationMode;
 use App\Support\Packages\IntakeQuestionKind;
+use App\Support\Packages\Migration\MigrationStatus;
 use App\Support\Packages\PackageActivationMode;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageInvoiceIssuing;
@@ -27,7 +31,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The owner and admin package screens: the list and the editor.
+ * The owner and admin package screens: the list, the editor and moving a
+ * version's subscribers to the published one.
  *
  * Pages only. Every change posts to the agent REST endpoints the server names
  * here, which run ServicePackageWorkflow, so the website and agents share one
@@ -42,6 +47,8 @@ final class PackageAdminController extends Controller
         private readonly PaymentConnectionResolver $payments,
         private readonly ProjectAccess $roles,
         private readonly PackageRequestReadService $requestReads,
+        private readonly PackageMigrationReadService $migrationReads,
+        private readonly PackageMigrationPlanner $planner,
     ) {}
 
     /** Packages a page of the list shows; the rest are a page link away (Codex P2 on #665). */
@@ -95,6 +102,7 @@ final class PackageAdminController extends Controller
             ...$this->workspaceProps($workspace),
             ...$this->vocabularies(),
             'package' => $package,
+            'moves' => $this->movesPanel($user, $workspace, $servicePackage),
             'defaults' => null,
             'urls' => [
                 'index' => route('packages.index', $workspace, absolute: false),
@@ -104,6 +112,71 @@ final class PackageAdminController extends Controller
                 'retire' => $status === PackageStatus::Published ? route('agent-api.v1.packages.retire', $parameters, absolute: false) : null,
             ],
         ]);
+    }
+
+    /**
+     * Moving a version's subscribers to the published version (MIG-1, MIG-4):
+     * what would change, each subscriber's dates and autopay flag, the date
+     * chosen (or suggested), and the endpoint that schedules it. Changes
+     * nothing; another date asks this page again.
+     */
+    public function move(Request $request, Workspace $workspace, ServicePackage $servicePackage): Response
+    {
+        $user = $this->manager($request, $workspace);
+        $data = $request->validate([
+            'from' => ['required', 'string', 'uuid'],
+            'effective_on' => ['nullable', 'string', 'date_format:Y-m-d'],
+        ]);
+        $package = $this->reads->find($user, $workspace, $servicePackage->public_id);
+
+        return Inertia::render('packages/move', [
+            ...$this->workspaceProps($workspace),
+            'preview' => $this->planner->preview($user, $workspace, $package, $data['from'], $data['effective_on'] ?? null),
+            'package_version' => AgentApiVersion::for($package),
+            'urls' => [
+                'schedule' => route('agent-api.v1.package-migrations.store', ['workspace' => $workspace, 'package' => $package->public_id], absolute: false),
+                'editor' => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false),
+                'preview' => route('packages.move', ['workspace' => $workspace, 'servicePackage' => $package->public_id, 'from' => $data['from']], absolute: false),
+            ],
+        ]);
+    }
+
+    /**
+     * The editor's versions and moves: each published version with its active
+     * subscribers and, for an older one with subscribers while the package is
+     * published, where moving them starts; and the package's moves, newest
+     * first, each with its cancel endpoint while it may be cancelled.
+     *
+     * @return array{versions: list<array<string, mixed>>, moves: list<array<string, mixed>>}
+     */
+    private function movesPanel(User $user, Workspace $workspace, ServicePackage $package): array
+    {
+        $published = $package->packageStatus() === PackageStatus::Published ? $package->published_version_id : null;
+        $current = null;
+        $versions = $this->migrationReads->versions($workspace, $package);
+        foreach ($versions as ['version' => $version]) {
+            if ($version->id === $published) {
+                $current = $version->number;
+            }
+        }
+
+        return [
+            'versions' => array_map(fn (array $row): array => [
+                'id' => $row['version']->public_id,
+                'number' => $row['version']->number,
+                'published_at' => $row['version']->published_at?->toIso8601String(),
+                'subscribers' => $row['subscribers'],
+                'move_url' => $current !== null && $row['version']->number < $current && $row['subscribers'] > 0
+                    ? route('packages.move', ['workspace' => $workspace, 'servicePackage' => $package->public_id, 'from' => $row['version']->public_id], absolute: false)
+                    : null,
+            ], $versions),
+            'moves' => array_map(fn (array $move): array => [
+                ...$move,
+                'cancel_url' => $move['status'] === MigrationStatus::Scheduled->value
+                    ? route('agent-api.v1.package-migrations.cancel', ['workspace' => $workspace, 'migration' => $move['id']], absolute: false)
+                    : null,
+            ], $this->migrationReads->list($user, $workspace, limit: self::PAGE_SIZE, package: $package)['data']),
+        ];
     }
 
     /** The sign-up request queue (ADM-1), with every decision as a finished URL. */

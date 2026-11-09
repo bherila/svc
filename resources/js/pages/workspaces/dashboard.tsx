@@ -34,6 +34,8 @@ export type QueueKind =
     | 'enrollment_autopay_off'
     | 'enrollment_auto_invoice_refused'
     | 'cancellation_request'
+    | 'package_move_held'
+    | 'package_move_autopay'
     | 'my_draft_time'
     | 'my_task';
 
@@ -74,6 +76,8 @@ const ICONS = {
     enrollment_autopay_off: AlertCircleIcon,
     enrollment_auto_invoice_refused: AlertCircleIcon,
     cancellation_request: InboxIcon,
+    package_move_held: AlertCircleIcon,
+    package_move_autopay: AlertCircleIcon,
     my_draft_time: ClockIcon,
     my_task: CheckSquareIcon,
 } satisfies Record<QueueKind, typeof ClockIcon>;
@@ -140,6 +144,19 @@ function detail(row: QueueRow, style: DurationStyle): string {
         case 'cancellation_request':
             // The row's date is the end the client asked for.
             fact = day === null ? 'Asked to end' : `Asked to end ${day}`;
+            break;
+        case 'package_move_held':
+            // The row's date is the day the new terms were due to start.
+            fact = day === null ? 'Waiting' : `Due ${day}`;
+            break;
+        case 'package_move_autopay':
+            // The row's amount is the new price; its date the day it starts.
+            fact = [
+                money === null ? null : `New price ${money}`,
+                day === null ? null : `from ${day}`,
+            ]
+                .filter((part) => part !== null)
+                .join(' ');
             break;
         case 'my_task':
             fact = day === null ? 'No due date' : `Due ${day}`;

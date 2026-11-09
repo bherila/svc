@@ -1,16 +1,21 @@
 import type {
     ClientTerms,
-    PortalService,
-    PortalServiceProps,
-    PortalServicesProps,
     PackageComponentTerms,
-    PackageRequestRow,
-    PackageRequestsProps,
-    PublicRequestForm,
     PackageEditProps,
     PackageListItem,
+    PackageMoveCandidate,
+    PackageMovePreview,
+    PackageMoveProps,
+    PackageMoveRow,
+    PackageRequestRow,
+    PackageRequestsProps,
     PackageTerms,
     PackageVersion,
+    PortalService,
+    PortalServiceMove,
+    PortalServiceProps,
+    PortalServicesProps,
+    PublicRequestForm,
     ServicePackage,
 } from '@/types/packages';
 
@@ -330,6 +335,129 @@ export function portalServicesProps(
                 add_url: '/portal/company-1/services',
             },
         ],
+        ...overrides,
+    };
+}
+
+/** A scheduled move as the client is told of it (MIG-2), shaped like PackageMigrationPresenter::forClient(). */
+export function portalServiceMove(
+    overrides: Partial<PortalServiceMove> = {},
+): PortalServiceMove {
+    return {
+        effective_on: '2027-01-01',
+        version_number: 3,
+        changes: [
+            {
+                term: 'cycle_amount',
+                label: 'Price',
+                from: '$645.00 a month',
+                to: '$695.00 a month',
+            },
+            {
+                term: 'retainer_amount',
+                label: 'Retainer',
+                from: '$600.00 a month',
+                to: '$650.00 a month',
+            },
+        ],
+        terms: clientTerms({ cycle_amount: 69500, retainer_amount: 65000 }),
+        message: 'Our hosting provider raised its prices this year.',
+        new_price_amount: 69500,
+        autopay_limit_amount: null,
+        autopay_below_price: false,
+        ...overrides,
+    };
+}
+
+/** One subscriber of a move preview (package_migrations.preview). */
+export function moveCandidate(
+    overrides: Partial<PackageMoveCandidate> = {},
+): PackageMoveCandidate {
+    return {
+        enrollment_id: 'enrollment-1',
+        client: { id: 'company-1', name: 'Lakeside Synthetic Bakery' },
+        agreement: {
+            id: 'agreement-1',
+            title: 'Synthetic Care plan',
+            starts_on: '2026-04-01',
+            ends_on: null,
+        },
+        earliest_effective_on: '2027-01-01',
+        effective_dates: ['2027-01-01', '2027-02-01'],
+        autopay_limit_amount: null,
+        autopay_below_price: false,
+        pending_cancellation_end_on: null,
+        scheduled_end_on: null,
+        refusal: null,
+        ...overrides,
+    };
+}
+
+export function moveProps(
+    overrides: Partial<PackageMoveProps> = {},
+    preview: Partial<PackageMovePreview> = {},
+): PackageMoveProps {
+    return {
+        preview: {
+            package: {
+                id: 'package-1',
+                link_name: 'synthetic-care',
+                name: 'Synthetic Care plan',
+            },
+            from_version: { id: 'version-2', number: 2 },
+            to_version: { id: 'version-3', number: 3 },
+            refusal: null,
+            changes: portalServiceMove().changes,
+            new_price: { amount: 69500, currency: 'USD', label: '$695.00' },
+            effective_dates: [
+                { date: '2027-01-01', subscribers: 2 },
+                { date: '2027-02-01', subscribers: 3 },
+            ],
+            effective_on: '2027-01-01',
+            subscribers: [moveCandidate()],
+            ...preview,
+        },
+        package_version: 'a'.repeat(64),
+        urls: {
+            schedule:
+                '/api/v1/workspaces/workspace-1/packages/package-1/migrations',
+            editor: '/workspaces/workspace-1/packages/package-1',
+            preview:
+                '/workspaces/workspace-1/packages/package-1/move?from=version-2',
+        },
+        catalog_url: null,
+        stripe_connected: true,
+        ...overrides,
+    };
+}
+
+/** A move in the editor's panel, with its cancel endpoint while scheduled. */
+export function moveRow(
+    overrides: Partial<PackageMoveRow> = {},
+): PackageMoveRow {
+    return {
+        id: 'move-1',
+        status: 'scheduled',
+        package: {
+            id: 'package-1',
+            link_name: 'synthetic-care',
+            name: 'Synthetic Care plan',
+        },
+        from_version: { id: 'version-2', number: 2 },
+        to_version: { id: 'version-3', number: 3 },
+        effective_on: '2027-01-01',
+        message: null,
+        changes: portalServiceMove().changes,
+        new_price: { amount: 69500, currency: 'USD', label: '$695.00' },
+        scheduled_at: '2026-11-09T12:00:00+00:00',
+        scheduled_by: 'Synthetic Owner',
+        cancelled_at: null,
+        completed_at: null,
+        counts: { scheduled: 2, applied: 0, skipped: 0, cancelled: 0 },
+        subscribers: [],
+        version: 'b'.repeat(64),
+        cancel_url:
+            '/api/v1/workspaces/workspace-1/package-migrations/move-1/cancel',
         ...overrides,
     };
 }
