@@ -128,6 +128,14 @@ final class PackageEnrollmentWorkflow
      * the terms it was offered with (EDGE-8). The agreement starts on the day
      * of acceptance, in the workspace's timezone.
      *
+     * A version that charges at sign-up has its one sign-up invoice issued
+     * here, on the draft agreement (ACC-3), and the enrollment then waits
+     * `awaiting_payment` for what {@see SignupGate} says it must (ACC-4).
+     * Refused with `package_payment_unavailable` once the Stripe connection
+     * has gone, `package_collected_in_square` for an agreement Square bills
+     * (X-2), and `package_first_period_unbillable` when the engine refuses the
+     * first cycle; each leaves nothing behind.
+     *
      * @param  array<string, mixed>  $input  signer_name, signer_title, accepted_terms
      */
     public function accept(User $contact, ClientCompany $company, ServicePackageEnrollment $enrollment, array $input): ServicePackageEnrollment

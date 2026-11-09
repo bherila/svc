@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Packages;
 
+use App\Models\ClientInvoice;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\User;
@@ -142,6 +143,32 @@ final class EnrollmentRulesTest extends TestCase
     {
         $this->assertSame($waits, SignupGate::waitingFor($this->terms($terms), $paid, $autopay));
         $this->assertSame($next, SignupGate::next($this->terms($terms), $paid, $autopay));
+    }
+
+    /** @return iterable<string, array{string|null, int, bool}> */
+    public static function settlements(): iterable
+    {
+        yield 'no sign-up invoice' => [null, 0, true];
+        yield 'paid' => ['paid', 0, true];
+        yield 'issued and owed' => ['issued', 4500, false];
+        yield 'issued, credit covered it' => ['issued', 0, true];
+        yield 'partly paid' => ['partially_paid', 100, false];
+        yield 'disputed with nothing owed' => ['disputed', 0, true];
+        yield 'a draft' => ['draft', 0, false];
+        yield 'void' => ['void', 0, false];
+    }
+
+    #[DataProvider('settlements')]
+    #[Requirement('ACC-5')]
+    public function test_a_sign_up_invoice_asks_for_nothing_more_once_paid_or_owing_nothing(?string $status, int $balance, bool $settled): void
+    {
+        $invoice = null;
+        if ($status !== null) {
+            $invoice = new ClientInvoice;
+            $invoice->forceFill(['status' => $status, 'balance_amount' => $balance]);
+        }
+
+        $this->assertSame($settled, SignupGate::invoiceSettled($invoice));
     }
 
     /** X-3: every invoice status has a decided meaning for a sign-up, and a missing invoice is read from the terms. */

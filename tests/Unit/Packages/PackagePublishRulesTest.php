@@ -111,16 +111,36 @@ final class PackagePublishRulesTest extends TestCase
         $this->assertSame([], PackagePublishRules::refusals($this->terms(['minimum_term_months' => 6]), true));
     }
 
+    /** EDGE-5: the account's currencies are asked only of a package that takes money, and only when publishing. */
+    #[Requirement('EDGE-5')]
+    public function test_a_package_that_takes_money_needs_a_currency_the_stripe_account_can_charge(): void
+    {
+        $paid = $this->terms(['currency' => 'eur', 'charge_first_period' => true]);
+
+        $this->assertSame([PackageRefusal::CurrencyNotChargeable], PackagePublishRules::refusals($paid, true, ['GBP', 'USD']));
+        $this->assertSame([], PackagePublishRules::refusals($paid, true, ['EUR', 'USD']));
+        $this->assertSame([], PackagePublishRules::refusals($paid, true), 'not asked: a page showing readiness');
+        $this->assertSame([PackageRefusal::PaymentNeedsStripe], PackagePublishRules::refusals($paid, false, ['USD']), 'without Stripe, only that');
+        $this->assertSame([], PackagePublishRules::refusals($this->terms(['currency' => 'EUR']), true, ['USD']), 'a free package charges nothing');
+    }
+
+    public function test_charging_the_first_period_needs_a_recurring_cadence(): void
+    {
+        $this->assertSame([PackageRefusal::FirstPeriodNeedsRecurringCadence], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'one_time', 'charge_first_period' => true]), true));
+        $this->assertSame([], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'quarterly', 'charge_first_period' => true]), true));
+    }
+
     public function test_every_refusal_that_applies_is_reported_in_a_stable_order(): void
     {
         $refusals = PackagePublishRules::refusals($this->terms([
             'components' => [], 'invoice_issuing' => 'automatic', 'billing_cadence' => 'one_time',
             'require_autopay' => true, 'pay_before_activation' => true, 'charge_setup_fee_at_signup' => true, 'minimum_term_months' => 3,
+            'charge_first_period' => true,
         ]), false);
 
         $this->assertSame([
             PackageRefusal::NothingPriced, PackageRefusal::PaymentNeedsStripe, PackageRefusal::AutoIssueNeedsFixedPrice, PackageRefusal::AutopayNeedsLimit,
-            PackageRefusal::PayBeforeActivationNeedsCharge, PackageRefusal::SetupFeeAtSignupNeedsSetupFee, PackageRefusal::MinimumTermNeedsRecurringCadence,
+            PackageRefusal::SetupFeeAtSignupNeedsSetupFee, PackageRefusal::FirstPeriodNeedsRecurringCadence, PackageRefusal::MinimumTermNeedsRecurringCadence,
         ], $refusals);
     }
 }

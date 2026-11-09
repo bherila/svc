@@ -2188,19 +2188,27 @@ An enrollment (`PackageEnrollmentPresenter::forManager`) is one client's
 subscription to a package: its package, the version offered and the version
 accepted (`version_changed` when a newer version was published before the client
 signed), its client, project and agreement with the agreement's page, the request
-it answers, and the acceptance - who signed (`signer_name` and `signer_title` as
-the client typed them) and when. Clients accept, and add packages, in the portal
-only; neither is an agent operation. `enrollments.activate` starts an accepted
-enrollment that waits for review: its agreement starts that day, is activated and
-signed in the client's name, and the client is emailed. It refuses with
-`package_enrollment_not_awaiting_review` or `package_activation_conflict`, and the
-server instructions ask for the user's confirmation first.
+it answers, the acceptance - who signed (`signer_name` and `signer_title` as
+the client typed them) and when - and `payment`: the sign-up's own payment
+`state` (`not_charged`, `not_invoiced`, `due`, `paid` or `voided`), the sign-up
+invoice with its page, what an enrollment `awaiting_payment` is `waiting_for`
+(`payment`, `autopay`), the payment terms that decide it, and `lapses_on`, the
+day an open offer or an unpaid acceptance lapses (`lapsed_at` once it has). No
+card detail, processor id, secret or invitation link is ever returned. Clients
+accept, pay and add packages in the portal only; none of that is an agent
+operation. `enrollments.activate` starts an accepted enrollment that waits for
+review: its agreement starts that day (or, when the sign-up invoice billed the
+first period, keeps the day of acceptance), is activated and signed in the
+client's name, and the client is emailed. It refuses with
+`package_enrollment_not_awaiting_review` (before acceptance, or while a payment
+or autopay is still awaited) or `package_activation_conflict`, and the server
+instructions ask for the user's confirmation first.
 
 `client_services.list` and `client_services.get` are the client side, read-only:
 a portal contact's companies' services (only their projects' for a contact limited
 to projects), each with the terms the client agreed to (or, before acceptance, the
-terms on offer), never the operator's settings, its status, acceptance and portal
-links. `addable_packages` lists, for a company-wide contact, the packages they
+terms on offer), never the operator's settings, its status, acceptance, payment
+(with the sign-up invoice's portal page) and portal links. `addable_packages` lists, for a company-wide contact, the packages they
 could add in the portal, each with `add_refusal` when it cannot be added now.
 Workspace staff who are not a client's portal contacts see none.
 
