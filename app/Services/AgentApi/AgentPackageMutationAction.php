@@ -3,11 +3,14 @@
 namespace App\Services\AgentApi;
 
 use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Packages\PackageEnrollmentReadService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageReadService;
@@ -18,8 +21,8 @@ use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
 /**
- * The agent API's way into {@see ServicePackageWorkflow} and
- * {@see PackageRequestWorkflow}: an idempotency receipt, the closed body its
+ * The agent API's way into {@see ServicePackageWorkflow},
+ * {@see PackageRequestWorkflow} and {@see PackageEnrollmentWorkflow}: an idempotency receipt, the closed body its
  * contract publishes, `expected_version` wherever that body names one, and
  * `confirm: true` wherever it names that (API-2). Everything about the package
  * or the request itself - authorization, validation, locking, versions and
@@ -34,6 +37,8 @@ final class AgentPackageMutationAction
         private readonly PackageRequestWorkflow $requestWorkflow,
         private readonly PackageRequestReadService $requestReads,
         private readonly AgentAccess $access,
+        private readonly PackageEnrollmentWorkflow $enrollmentWorkflow,
+        private readonly PackageEnrollmentReadService $enrollmentReads,
     ) {}
 
     /** @param array<string, mixed> $payload */
@@ -78,6 +83,22 @@ final class AgentPackageMutationAction
             fn (string $id): ServicePackageRequest => $this->requestReads->find($actor, $workspace, $id));
 
         return $this->requestReads->find($actor, $workspace, $id);
+    }
+
+    /**
+     * Activate an enrollment that waits for review (`enrollments.activate`).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function activate(User $actor, Workspace $workspace, string $clientId, string $key, string $enrollmentId, array $payload): ServicePackageEnrollment
+    {
+        $id = $this->execute($actor, $workspace, $clientId, $key, 'enrollments.activate', ['enrollment_id' => $enrollmentId, 'body' => $payload],
+            function (array $fields, ?string $version) use ($actor, $workspace, $enrollmentId): string {
+                return $this->enrollmentWorkflow->activate($actor, $workspace, $this->enrollmentReads->find($actor, $workspace, $enrollmentId), $version)->public_id;
+            },
+            fn (string $id): ServicePackageEnrollment => $this->enrollmentReads->find($actor, $workspace, $id));
+
+        return $this->enrollmentReads->find($actor, $workspace, $id);
     }
 
     /**

@@ -9,11 +9,13 @@ use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\WorkspaceClock;
 
@@ -168,6 +170,31 @@ final class WorkspaceActionQueue
                 $rows[] = $this->row('package-requests', 'package_requests', $count === 1 ? 'Sign-up request to review' : 'Sign-up requests to review', '',
                     route('packages.requests.index', $workspace, absolute: false), 'Review',
                     date: is_string($oldest) ? substr($oldest, 0, 10) : null, count: $count);
+            }
+
+            // Accepted services waiting for an owner or admin to start them
+            // (ACC-7): one row each, linking to the client's agreement, where
+            // it is activated.
+            $awaiting = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', EnrollmentStatus::AwaitingReview->value)
+                ->with([
+                    'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
+                    'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                ])
+                ->orderBy('accepted_at')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            $enrollmentNames = $this->companyNames($workspace, $awaiting->pluck('client_company_id')->all());
+            foreach ($awaiting as $enrollment) {
+                $company = $this->company($enrollmentNames, $enrollment->client_company_id);
+                $agreement = $enrollment->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->acceptedVersion?->name ?? $agreement->title).' to activate', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    date: $enrollment->accepted_at?->toDateString());
             }
         }
 

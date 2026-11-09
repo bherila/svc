@@ -29,6 +29,7 @@ export type QueueKind =
     | 'unapproved_time'
     | 'proposal_awaiting'
     | 'package_requests'
+    | 'enrollment_review'
     | 'my_draft_time'
     | 'my_task';
 
@@ -64,6 +65,7 @@ const ICONS = {
     unapproved_time: ClockIcon,
     proposal_awaiting: FileSignatureIcon,
     package_requests: InboxIcon,
+    enrollment_review: FileSignatureIcon,
     my_draft_time: ClockIcon,
     my_task: CheckSquareIcon,
 } satisfies Record<QueueKind, typeof ClockIcon>;
@@ -110,6 +112,10 @@ function detail(row: QueueRow, style: DurationStyle): string {
             ]
                 .filter((part) => part !== null)
                 .join(', ');
+            break;
+        case 'enrollment_review':
+            // The row's date is the day the client accepted.
+            fact = day === null ? 'Accepted' : `Accepted ${day}`;
             break;
         case 'my_task':
             fact = day === null ? 'No due date' : `Due ${day}`;

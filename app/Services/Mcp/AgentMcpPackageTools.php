@@ -8,7 +8,7 @@ use Mcp\Capability\Attribute\Schema;
 use Mcp\Server\RequestContext;
 
 /**
- * The service package and sign-up request tools. Each calls its REST operation, so the manager
+ * The service package, sign-up request, enrollment and client service tools. Each calls its REST operation, so the manager
  * rule, workspace scoping, validation, versions, receipts and cutovers are the
  * route's and cannot differ between the two transports (API-1). A write's
  * arguments are passed on exactly as sent: the fields its request schema
@@ -104,6 +104,46 @@ final class AgentMcpPackageTools
         RequestContext $request): array
     {
         return $this->decide('package_requests.erase', $workspace_id, $request_id, $idempotency_key, $request);
+    }
+
+    /** @return array<string, mixed> */
+    public function listEnrollments(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['offered', 'awaiting_payment', 'awaiting_review', 'active', 'lapsed', 'withdrawn'])] ?string $status = null,
+        #[Schema(minimum: 1, maximum: ServicePackageOperations::MAX_LIMIT)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->rest->call('enrollments.list', ['workspace' => $workspace_id],
+            query: array_filter(compact('status', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function getEnrollment(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $enrollment_id): array
+    {
+        return $this->rest->call('enrollments.get', ['workspace' => $workspace_id, 'enrollment' => $enrollment_id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function activateEnrollment(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $enrollment_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('enrollments.activate', ['workspace' => $workspace_id, 'enrollment' => $enrollment_id], $this->body($request, 'enrollments.activate'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function listClientServices(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] ?string $company_id = null,
+        #[Schema(minimum: 1, maximum: ServicePackageOperations::MAX_LIMIT)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->rest->call('client_services.list', ['workspace' => $workspace_id],
+            query: array_filter(compact('company_id', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function getClientService(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $service_id): array
+    {
+        return $this->rest->call('client_services.get', ['workspace' => $workspace_id, 'service' => $service_id]);
     }
 
     /** @return array<string, mixed> */

@@ -2168,6 +2168,215 @@
                 "x-mcp-tool": "capacity_ledger.get"
             }
         },
+        "/workspaces/{workspace}/client-services/{service}": {
+            "get": {
+                "operationId": "client_services.get",
+                "description": "For a client's portal contact: read one of your company's services with its terms, status, acceptance and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Your service",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientServiceResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or service is not visible to the caller: it is another company's, outside the caller's projects, or the caller is not a portal contact of its company.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "company_id or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "client_services.get",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "client_services.get"
+            }
+        },
+        "/workspaces/{workspace}/client-services": {
+            "get": {
+                "operationId": "client_services.list",
+                "description": "For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "company_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Your services and the packages you could add",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClientServiceListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or service is not visible to the caller: it is another company's, outside the caller's projects, or the caller is not a portal contact of its company.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "company_id or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "client_services.list",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "client_services.list"
+            }
+        },
         "/workspaces/{workspace}/clients/{client}/archive": {
             "post": {
                 "operationId": "clients.archive",
@@ -7083,6 +7292,355 @@
                 "x-agent-mcp-tool": "deferred_backlog.preview",
                 "x-svc-flags": [],
                 "x-mcp-tool": "deferred_backlog.preview"
+            }
+        },
+        "/workspaces/{workspace}/enrollments/{enrollment}/activate": {
+            "post": {
+                "operationId": "enrollments.activate",
+                "description": "Only after explicit user confirmation, start a service the client has accepted that waits for review (status awaiting_review): its agreement starts today, is activated through the same rule as agreements.activate and signed as the contact who accepted, the enrollment becomes active, and the client is emailed. Activating one already active changes nothing. Refused with package_enrollment_not_awaiting_review before acceptance (or while a payment is due), and package_activation_conflict when the agreement would overlap another active agreement on its project. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:write",
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageConfirmRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "enrollment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Package enrollment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageEnrollmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or enrollment is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_enrollment_not_awaiting_review or package_activation_conflict.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the enrollment again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "enrollments.activate",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PACKAGE_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "enrollments.activate"
+            }
+        },
+        "/workspaces/{workspace}/enrollments/{enrollment}": {
+            "get": {
+                "operationId": "enrollments.get",
+                "description": "Read one package enrollment with its package, versions, client, project, agreement, acceptance and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "enrollment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Package enrollment",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageEnrollmentResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or enrollment is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "enrollments.get",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "enrollments.get"
+            }
+        },
+        "/workspaces/{workspace}/enrollments": {
+            "get": {
+                "operationId": "enrollments.list",
+                "description": "List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, and the acceptance: who signed (signer_name and signer_title as the client typed them) and when. An enrollment awaiting_review waits for enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "offered",
+                                "awaiting_payment",
+                                "awaiting_review",
+                                "active",
+                                "lapsed",
+                                "withdrawn"
+                            ]
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Package enrollments",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageEnrollmentListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or enrollment is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "enrollments.list",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "enrollments.list"
             }
         },
         "/workspaces/{workspace}/expense-schedules": {
@@ -21561,7 +22119,7 @@
                             "proposals:read": "Read authorized proposals and their commercial terms",
                             "proposals:write": "Create and send proposals as a workspace manager",
                             "proposals:accept": "Accept authorized proposals and sign their resulting agreement",
-                            "packages:read": "Read the workspace's service packages, their versions, terms and public links as a workspace owner or admin",
+                            "packages:read": "Read the workspace's service packages, their versions, terms, public links and enrollments as a workspace owner or admin, or your own company's services as a client contact",
                             "packages:write": "Create, edit, publish and retire service packages as a workspace owner or admin; publishing opens a public sign-up page",
                             "workspaces:create": "Create new workspaces you own",
                             "files:read": "Read authorized attachments; legacy generic routes require a workspace manager and collaboration routes require exact parent access",
@@ -23323,6 +23881,120 @@
                     }
                 }
             },
+            "ClientAddablePackage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "name",
+                    "summary",
+                    "currency",
+                    "billing_cadence",
+                    "cycle_amount",
+                    "setup_fee_amount",
+                    "minimum_term_months",
+                    "url",
+                    "add_refusal"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "billing_cadence": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual",
+                            "one_time"
+                        ]
+                    },
+                    "cycle_amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "setup_fee_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "add_refusal": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "code",
+                                    "message"
+                                ],
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "enum": [
+                                            "package_link_name_taken",
+                                            "package_not_published",
+                                            "package_request_refused",
+                                            "package_request_not_open",
+                                            "package_request_not_closed",
+                                            "package_not_offered",
+                                            "package_invitations_off",
+                                            "package_address_held_elsewhere",
+                                            "package_not_addable",
+                                            "package_offer_not_open",
+                                            "package_already_accepted",
+                                            "package_payment_not_available_yet",
+                                            "package_enrollment_not_awaiting_review",
+                                            "package_activation_conflict",
+                                            "package_nothing_to_publish",
+                                            "package_nothing_priced",
+                                            "package_payment_needs_stripe",
+                                            "package_auto_issue_needs_fixed_price",
+                                            "package_autopay_needs_limit",
+                                            "package_pay_before_activation_needs_charge",
+                                            "package_setup_fee_at_signup_needs_setup_fee",
+                                            "package_minimum_term_needs_recurring_cadence"
+                                        ]
+                                    },
+                                    "message": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                }
+            },
             "ClientBusinessContact": {
                 "type": "object",
                 "additionalProperties": false,
@@ -23670,6 +24342,329 @@
                             "null"
                         ],
                         "format": "date-time"
+                    }
+                }
+            },
+            "ClientService": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "company",
+                    "project_id",
+                    "name",
+                    "version_number",
+                    "version_changed",
+                    "terms",
+                    "acceptance",
+                    "activated_at",
+                    "agreement_url",
+                    "url"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "offered",
+                            "awaiting_payment",
+                            "awaiting_review",
+                            "active",
+                            "lapsed",
+                            "withdrawn"
+                        ]
+                    },
+                    "company": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "name"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "project_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "version_number": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "version_changed": {
+                        "type": "boolean"
+                    },
+                    "terms": {
+                        "$ref": "#/components/schemas/ClientServiceTerms"
+                    },
+                    "acceptance": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "accepted_at",
+                                    "signer_name",
+                                    "signer_title"
+                                ],
+                                "properties": {
+                                    "accepted_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "signer_name": {
+                                        "type": "string"
+                                    },
+                                    "signer_title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "activated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "agreement_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri"
+                    }
+                }
+            },
+            "ClientServiceListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "addable_packages",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/ClientService"
+                        }
+                    },
+                    "addable_packages": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ClientAddablePackage"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "ClientServiceResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/ClientService"
+                    }
+                }
+            },
+            "ClientServiceTerms": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "summary",
+                    "body_markdown",
+                    "agreement_text",
+                    "currency",
+                    "billing_cadence",
+                    "cycle_amount",
+                    "setup_fee_amount",
+                    "components",
+                    "hourly_rate_amount",
+                    "retainer_amount",
+                    "retainer_minutes",
+                    "rollover_months",
+                    "activation_mode",
+                    "notice_days",
+                    "minimum_term_months",
+                    "cancellation_mode"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "body_markdown": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "agreement_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "billing_cadence": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual",
+                            "one_time"
+                        ]
+                    },
+                    "cycle_amount": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "setup_fee_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "components": {
+                        "type": "array",
+                        "maxItems": 30,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "description",
+                                "kind",
+                                "cadence",
+                                "amount"
+                            ],
+                            "properties": {
+                                "description": {
+                                    "type": "string"
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                        "recurring",
+                                        "setup_fee"
+                                    ]
+                                },
+                                "cadence": {
+                                    "type": "string",
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semi_annual",
+                                        "annual",
+                                        "one_time"
+                                    ]
+                                },
+                                "amount": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "hourly_rate_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "retainer_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "retainer_minutes": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "rollover_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "activation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "automatic",
+                            "review"
+                        ]
+                    },
+                    "notice_days": {
+                        "type": "integer"
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "cancellation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ]
                     }
                 }
             },
@@ -32717,7 +33712,7 @@
                     },
                     "publish_refusals": {
                         "type": "array",
-                        "maxItems": 16,
+                        "maxItems": 22,
                         "items": {
                             "type": "object",
                             "additionalProperties": false,
@@ -32737,6 +33732,12 @@
                                         "package_not_offered",
                                         "package_invitations_off",
                                         "package_address_held_elsewhere",
+                                        "package_not_addable",
+                                        "package_offer_not_open",
+                                        "package_already_accepted",
+                                        "package_payment_not_available_yet",
+                                        "package_enrollment_not_awaiting_review",
+                                        "package_activation_conflict",
                                         "package_nothing_to_publish",
                                         "package_nothing_priced",
                                         "package_payment_needs_stripe",
@@ -33051,6 +34052,229 @@
                             }
                         },
                         "maxItems": 12
+                    }
+                }
+            },
+            "ServicePackageEnrollment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "status",
+                    "package",
+                    "offered_version",
+                    "accepted_version",
+                    "version_changed",
+                    "client",
+                    "project_id",
+                    "agreement_id",
+                    "agreement_url",
+                    "request_id",
+                    "offered_at",
+                    "acceptance",
+                    "activated_at",
+                    "version"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "offered",
+                            "awaiting_payment",
+                            "awaiting_review",
+                            "active",
+                            "lapsed",
+                            "withdrawn"
+                        ]
+                    },
+                    "package": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "link_name",
+                            "name"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "link_name": {
+                                "type": "string"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "offered_version": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "number"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "number": {
+                                "type": "integer",
+                                "minimum": 1
+                            }
+                        }
+                    },
+                    "accepted_version": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "number"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/components/schemas/Uuid"
+                                    },
+                                    "number": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "version_changed": {
+                        "type": "boolean"
+                    },
+                    "client": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "name"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "project_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "agreement_id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "agreement_url": {
+                        "type": "string",
+                        "format": "uri"
+                    },
+                    "request_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uuid"
+                    },
+                    "offered_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "acceptance": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "accepted_at",
+                                    "signer_name",
+                                    "signer_title"
+                                ],
+                                "properties": {
+                                    "accepted_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "signer_name": {
+                                        "type": "string"
+                                    },
+                                    "signer_title": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "activated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    }
+                }
+            },
+            "ServicePackageEnrollmentListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/ServicePackageEnrollment"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "ServicePackageEnrollmentResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/ServicePackageEnrollment"
                     }
                 }
             },
