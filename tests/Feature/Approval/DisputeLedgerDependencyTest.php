@@ -13,9 +13,11 @@ use App\Models\Workspace;
 use App\Services\Approval\DisputedDraftRebuilder;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\DeferredBuyDownRequest;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -252,4 +254,125 @@ final class DisputeLedgerDependencyTest extends TestCase
         $this->assertFalse((bool) $a->fresh()->is_deferred);
         $this->assertSame(1, $this->onAnyLine($a->fresh()));
     }
+
+    private function buyDown(Workspace $workspace, ClientAgreement $agreement, ClientInvoice $host, float $hours): ClientInvoice
+    {
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => $hours]);
+
+        return $billing->create($workspace, $agreement->fresh() ?? $agreement, $request, $billing->preview($workspace, $agreement->fresh() ?? $agreement, $request)->version, $host);
+    }
+
+    /**
+     * Case A of the second re-review: ordinary hourly, no retainer. The answered
+     * August-style hour waits as deferred work and is collected exactly once by
+     * a buy-down on the next draft; the invoice that reconciled its month is
+     * never touched.
+     */
+    public function test_case_a_a_late_answer_on_an_hourly_agreement_is_collected_once_by_a_buy_down(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('case-a', 0);
+        $a = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 120);
+        $this->hours($workspace, $company, $project, $owner, '2026-01-21', 60);
+        $this->stampDispute($a);
+        $january = $this->period($company, $agreement, '2026-02-01');
+        app(InvoiceLifecycleService::class)->issue($january, $workspace);
+        $this->assertSame(10000, (int) $january->fresh()->total_amount);
+
+        $this->answer($workspace, $a, $owner);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 60);
+        $february = $this->period($company, $agreement, '2026-03-01');
+        $this->assertSame(10000, (int) $february->total_amount, 'Deferred, it is not billed by the cadence itself.');
+
+        $hosted = $this->buyDown($workspace, $agreement, $february->fresh(), 2);
+        $settlement = $hosted->lines()->where('type', 'deferred_buydown')->sole();
+        $this->assertSame(20000, (int) $settlement->total_amount);
+        $this->assertSame([$a->id], $settlement->timeEntries()->pluck('client_time_entries.id')->all());
+        app(InvoiceLifecycleService::class)->issue($hosted->fresh(), $workspace);
+        $this->assertSame(30000, (int) $hosted->fresh()->total_amount);
+        $this->assertSame(1, $this->onAnyLine($a->fresh()));
+        $this->assertSame(0, ClientTimeEntry::query()->whereKey($a->id)->awaitingDeferredBilling()->count());
+        $this->assertSame(10000, (int) $january->fresh()->total_amount, 'The issued invoice is unchanged.');
+    }
+
+    /**
+     * Case B: a quarterly period retainer with interim billing off. The March
+     * hours are answered after the invoice reconciling Q1 was issued; Q2 uses
+     * its whole pool, so they wait and a buy-down on the July draft collects
+     * them once.
+     */
+    public function test_case_b_a_late_answer_on_a_closed_quarter_is_collected_once_by_a_buy_down(): void
+    {
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('case-b', 200);
+        $agreement->forceFill([
+            'billing_cadence' => 'quarterly', 'bill_overage_interim' => false,
+            'period_retainer_minutes' => 600, 'period_retainer_amount' => 100000,
+        ])->save();
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 600);
+        $march = $this->hours($workspace, $company, $project, $owner, '2026-03-20', 120);
+        $this->stampDispute($march);
+        $q1 = $this->period($company, $agreement, '2026-04-01');
+        app(InvoiceLifecycleService::class)->issue($q1, $workspace);
+        $q1Total = (int) $q1->fresh()->total_amount;
+
+        $this->answer($workspace, $march, $owner);
+        $this->assertTrue((bool) $march->fresh()->is_deferred);
+        $this->hours($workspace, $company, $project, $owner, '2026-05-10', 600);
+        $q2 = $this->period($company, $agreement, '2026-07-01');
+        $this->assertSame(0, $this->onAnyLine($march->fresh()), 'Q2 used its whole pool, so the hours wait.');
+
+        $hosted = $this->buyDown($workspace, $agreement, $q2->fresh(), 2);
+        $settlement = $hosted->lines()->where('type', 'deferred_buydown')->sole();
+        $this->assertSame(20000, (int) $settlement->total_amount);
+        app(InvoiceLifecycleService::class)->issue($hosted->fresh(), $workspace);
+        $this->assertSame(1, $this->onAnyLine($march->fresh()));
+        $this->assertSame($q1Total, (int) $q1->fresh()->total_amount, 'The issued invoice is unchanged.');
+    }
+
+    /**
+     * Flat-hourly subcontractor time is priced alone, so it is carried: the
+     * answered hours bill on the next draft at their own cost, exactly once,
+     * through a regeneration and the issue.
+     */
+    public function test_answered_flat_hourly_time_from_an_issued_period_bills_once_on_the_next_draft(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('flat', 600);
+        $flat = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 120);
+        $flat->forceFill(['subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 5000, 'subcontractor_cost_currency' => 'USD'])->save();
+        $this->stampDispute($flat);
+        $january = $this->period($company, $agreement, '2026-02-01');
+        app(InvoiceLifecycleService::class)->issue($january, $workspace);
+        $januaryTotal = (int) $january->fresh()->total_amount;
+        $this->assertSame(0, $this->onAnyLine($flat->fresh()), 'Held while disputed.');
+
+        $this->answer($workspace, $flat, $owner);
+        $this->assertFalse((bool) $flat->fresh()->is_deferred, 'Priced alone, it is carried rather than deferred.');
+        $february = $this->period($company, $agreement, '2026-03-01');
+        $subcontractor = fn (): int => (int) $february->fresh()->lines()->where('type', 'subcontractor')->sum('total_amount');
+        $this->assertSame(10000, $subcontractor());
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($february->fresh());
+        $this->assertSame(10000, $subcontractor());
+        $this->assertSame(1, $this->onAnyLine($flat->fresh()));
+        app(InvoiceLifecycleService::class)->issue($february->fresh(), $workspace);
+
+        $march = $this->period($company, $agreement, '2026-04-01');
+        $this->assertSame(0, (int) $march->lines()->where('type', 'subcontractor')->sum('total_amount'), 'Charged once, it is not billed again.');
+        $this->assertSame($januaryTotal, (int) $january->fresh()->total_amount, 'The issued invoice is unchanged.');
+    }
+
+    /** An unanswered dispute stays held through every later period. */
+    public function test_an_unanswered_dispute_from_an_issued_period_stays_held(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('held', 0);
+        $a = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 60);
+        $this->stampDispute($a);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 60);
+        $this->period($company, $agreement, '2026-03-01');
+
+        $this->assertFalse((bool) $a->fresh()->is_deferred);
+        $this->assertSame(0, $this->onAnyLine($a->fresh()));
+    }
 }
+
