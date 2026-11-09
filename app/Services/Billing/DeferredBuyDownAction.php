@@ -94,6 +94,16 @@ final class DeferredBuyDownAction
             $invoice = $target === null ? null : $this->lockTarget($workspace, $company, $locked, $target);
             if ($invoice !== null) {
                 $this->assertStatementMembershipKnown($invoice);
+                // A target priced from disputed work that has since moved is
+                // regenerated first (docs/ux-overhaul.md 7b″): attaching to
+                // it would add a charge to stale ones, and could make its
+                // recorded basis match again. Read before the selected time,
+                // since the basis reads the lines first.
+                abort_if(
+                    $invoice->held_work_basis !== null && ! app(HeldWorkBasisRecorder::class)->isCurrent($invoice),
+                    409,
+                    'A client dispute changed the work this draft was priced from. Regenerate the draft, then attach the buy-down.',
+                );
             }
             $number = $invoice === null ? $this->numbers->next($workspace) : null;
             $ids = array_map(static fn (ClientTimeEntry $entry): int => $entry->id, $selection->entries);
@@ -114,16 +124,12 @@ final class DeferredBuyDownAction
             abort_unless($claims->isEmpty(), 409, 'Selected deferred work was allocated; preview it again.');
 
             if ($invoice !== null) {
-                // The settlement links the selected work, which a disputed or
-                // settled entry's held-work basis records (docs/ux-overhaul.md
-                // 7b″). A basis that was current is renewed with the link; one
-                // that had already moved stays as it is, so issue still refuses
-                // a draft priced from an older state.
-                $heldWork = app(HeldWorkBasisRecorder::class);
-                $basisCurrent = $invoice->held_work_basis !== null && $heldWork->isCurrent($invoice);
                 $this->writeSettlementLines($invoice, $selection, $locked, $this->settlementLineDate($invoice, $workspace));
-                if ($basisCurrent) {
-                    $heldWork->record($invoice, $locked);
+                // The settlement links the selected work, which a disputed or
+                // settled entry's held-work basis records; the basis was
+                // current above, so it is renewed with the link.
+                if ($invoice->held_work_basis !== null) {
+                    app(HeldWorkBasisRecorder::class)->record($invoice, $locked);
                 }
                 $this->removeSettledWorkFromStatement($invoice, $selection);
                 $invoice->recalculateTotals();

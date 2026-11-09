@@ -24,6 +24,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 /**
@@ -584,5 +585,141 @@ final class DisputeLedgerDependencyTest extends TestCase
         $line = $expense->fresh()->client_invoice_line_id;
         $this->assertNotNull($line);
         $this->assertSame($march->id, (int) DB::table('client_invoice_lines')->where('id', $line)->value('client_invoice_id'));
+    }
+
+    /**
+     * The fourth review: after a void releases deferred work that an issued
+     * invoice had placed on February's pool, a buy-down holds it again but
+     * draws no capacity. April's draft was priced with February's pool used,
+     * so a buy-down may not attach to it - nor may it issue - until it is
+     * regenerated, which frees February's pool for March's work.
+     */
+    public function test_a_buy_down_after_a_void_does_not_bless_a_draft_priced_while_the_work_drew_capacity(): void
+    {
+        CarbonImmutable::setTestNow('2026-04-10 12:00:00');
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('void-buydown', 600);
+        $agreement->forceFill(['rollover_months' => 1])->save();
+        $this->hours($workspace, $company, $project, $owner, '2026-01-10', 600);
+        $a = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 600);
+        $this->stampDispute($a);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
+        $this->answer($workspace, $a, $owner);
+        $march = $this->period($company, $agreement, '2026-03-01');
+        app(InvoiceLifecycleService::class)->issue($march, $workspace);
+        $this->assertSame(1, $this->onAnyLine($a->fresh()), "February's spare pool took the deferred hours.");
+        $this->hours($workspace, $company, $project, $owner, '2026-03-10', 1800);
+        $april = $this->period($company, $agreement, '2026-04-01');
+        $stale = (int) $april->total_amount;
+
+        app(InvoiceLifecycleService::class)->void($march->fresh(), $workspace, 'Synthetic void');
+        $this->assertSame(0, $this->onAnyLine($a->fresh()));
+        try {
+            $this->buyDown($workspace, $agreement, $april->fresh(), 10);
+            $this->fail('A buy-down attached to a draft priced from an older state.');
+        } catch (HttpException $refused) {
+            $this->assertSame(409, $refused->getStatusCode());
+        }
+        $this->assertSame(0, $this->onAnyLine($a->fresh()), 'The refused attach changed nothing.');
+
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($april->fresh());
+        $repriced = (int) $rebuilt->fresh()->total_amount;
+        $this->assertLessThan($stale, $repriced, "February's pool is free again for March's work.");
+        $hosted = $this->buyDown($workspace, $agreement, $rebuilt->fresh(), 10);
+        $this->assertSame($repriced + 100000, (int) $hosted->fresh()->total_amount);
+        app(InvoiceLifecycleService::class)->issue($hosted->fresh(), $workspace);
+        $this->assertSame('issued', $hosted->fresh()->status);
+    }
+
+    /** @return array{Workspace, ClientCompany, ClientAgreement} */
+    private function rolloverQuarter(string $name): array
+    {
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $agreement, $owner] = $this->world($name, 600);
+        $agreement->forceFill(['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'rollover_months' => 6, 'period_retainer_minutes' => null])->save();
+        $deferred = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 1800);
+        $deferred->forceFill(['is_deferred' => true])->save();
+        $this->hours($workspace, $company, $project, $owner, '2026-06-10', 3600);
+
+        return [$workspace, $company, $agreement->fresh() ?? $agreement];
+    }
+
+    /**
+     * The fourth review: bulk generation must not spend the same rollover twice.
+     * April's draft draws the deferred hours on Q1's unused pool; July's must
+     * then be priced from a ledger that knows it.
+     */
+    public function test_bulk_generation_prices_each_period_from_a_ledger_that_counts_the_last_ones_draw(): void
+    {
+        [, $sequentialCompany, $sequentialAgreement] = $this->rolloverQuarter('sequential');
+        $this->period($sequentialCompany, $sequentialAgreement, '2026-04-01');
+        $expected = (int) $this->period($sequentialCompany, $sequentialAgreement, '2026-07-01')->total_amount;
+
+        [$workspace, $company] = $this->rolloverQuarter('bulk');
+        app(ClientInvoicingService::class)->generateAllInvoices($company);
+        $july = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereDate('service_period_start', '2026-04-01')->sole();
+
+        $this->assertSame($expected, (int) $july->total_amount);
+        app(InvoiceLifecycleService::class)->issue(ClientInvoice::query()->where('workspace_id', $workspace->id)->whereDate('service_period_start', '2026-01-01')->sole(), $workspace);
+        app(InvoiceLifecycleService::class)->issue($july->fresh(), $workspace);
+        $this->assertSame('issued', $july->fresh()->status);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function finalQuarterPools(): iterable
+    {
+        yield 'an unused final pool' => [0];
+        yield 'a full final pool' => [600];
+    }
+
+    /**
+     * The fourth review: the final reconciliation of a quarterly agreement sells
+     * no cycle, so waiting deferred work is collected at the hourly rate, as
+     * termination does on the monthly path, whatever the final pool has left.
+     */
+    #[DataProvider('finalQuarterPools')]
+    public function test_the_final_quarter_collects_waiting_deferred_work_at_the_hourly_rate(int $q2Minutes): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->quarterly('final-'.$q2Minutes);
+        $agreement->forceFill(['ends_on' => '2026-06-30'])->save();
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 600);
+        $march = $this->hours($workspace, $company, $project, $owner, '2026-03-20', 120);
+        $this->stampDispute($march);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-04-01'), $workspace);
+        $this->answer($workspace, $march, $owner);
+        if ($q2Minutes > 0) {
+            $this->hours($workspace, $company, $project, $owner, '2026-05-10', $q2Minutes);
+        }
+
+        $final = $this->period($company, $agreement, '2026-07-01');
+        $collected = fn (): int => (int) DB::table('client_invoice_lines')
+            ->join('client_invoice_line_time_entries as allocation', 'allocation.client_invoice_line_id', '=', 'client_invoice_lines.id')
+            ->where('allocation.client_time_entry_id', $march->id)
+            ->sum('client_invoice_lines.total_amount');
+        $this->assertSame(20000, $collected(), 'Two hours at the hourly rate.');
+        $this->assertSame(1, $this->onAnyLine($march->fresh()));
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($final->fresh());
+        $this->assertSame(1, $this->onAnyLine($march->fresh()));
+        $this->assertSame(20000, $collected());
+        app(InvoiceLifecycleService::class)->issue($final->fresh(), $workspace);
+        $this->assertSame('issued', $final->fresh()->status);
+    }
+
+    /** The fourth review: a dispute takes an expense off a legacy draft with no recorded kind. */
+    public function test_a_dispute_takes_an_expense_off_a_legacy_draft(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('legacy-withdraw', 600);
+        $expense = ClientExpense::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'created_by_user_id' => $owner->id, 'spent_on' => '2026-02-15', 'amount' => 4200, 'currency' => 'USD',
+            'description' => 'Synthetic expense', 'status' => 'approved',
+        ])->refresh();
+        $march = $this->period($company, $agreement, '2026-03-01');
+        $this->assertNotNull($expense->fresh()->client_invoice_line_id);
+        ClientInvoice::query()->whereKey($march->id)->update(['invoice_kind' => null]);
+
+        ClientExpense::query()->whereKey($expense->id)->update(['client_disputed_at' => now(), 'lock_version' => DB::raw('lock_version + 1')]);
+        app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [], [$expense->id]);
+
+        $this->assertNull($expense->fresh()->client_invoice_line_id);
     }
 }

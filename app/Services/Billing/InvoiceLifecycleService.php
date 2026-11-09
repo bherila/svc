@@ -887,8 +887,13 @@ final class InvoiceLifecycleService
     /** @param  list<int>  $lineIds  from {@see self::lockLineIds()} */
     private function assertChargesNoDisputedRows(ClientInvoice $draft, array $lineIds): void
     {
+        // Disputed work the draft does not link: it left the ledger, or came
+        // back, and the capacity these charges were sized against moved with
+        // it. First, because its allocations are read from the lines, which
+        // rank before the time the hours below lock.
+        $basisCurrent = app(HeldWorkBasisRecorder::class)->isCurrent($draft);
         if ($lineIds === []) {
-            if (! app(HeldWorkBasisRecorder::class)->isCurrent($draft)) {
+            if (! $basisCurrent) {
                 throw new DisputedWorkChanged;
             }
 
@@ -911,10 +916,6 @@ final class InvoiceLifecycleService
                 || $entry->getAttributes()['client_dispute_settlement'] === DisputeSettlement::WrittenOff->value)
             ->unique('id')
             ->count();
-        // Disputed work the draft does not link: it left the ledger, or came
-        // back, and the capacity these charges were sized against moved with
-        // it. Also time entries, so between the hours and the expenses.
-        $basisCurrent = app(HeldWorkBasisRecorder::class)->isCurrent($draft);
         $expenses = ClientExpense::query()
             ->where('workspace_id', $draft->workspace_id)
             ->whereIn('client_invoice_line_id', $lineIds)

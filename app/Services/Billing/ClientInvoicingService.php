@@ -611,6 +611,11 @@ final class ClientInvoicingService
 
             try {
                 $invoice = $this->generateInvoiceForPeriod($company, $agreement, $retainerPeriod, false, $ledger, $immediateLedger);
+                // The draft just written may have drawn deferred work on a
+                // pool, or spent rollover; the next period measures again
+                // rather than spend what this one took (docs/ux-overhaul.md 7b″).
+                $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $through, $billExcessImmediately);
+                $immediateLedger = $billExcessImmediately ? $ledger : null;
                 $result = [
                     'period' => $periodLabel,
                     'invoice_id' => $invoice->id,
@@ -1415,12 +1420,17 @@ final class ClientInvoicingService
             $this->invoiceLineComposer->addRecurringItemLines($invoice, $agreement, $retainerStart, $retainerEnd, $sortOrder);
             $this->invoiceLineComposer->addSubcontractorFlatHourlyLines($company, $invoice, $periodStart, $periodEnd, $sortOrder);
 
+            // Past the agreement's end there is no cycle left to sell, so this
+            // final reconciliation collects waiting deferred work at the
+            // hourly rate, as the monthly path does, rather than placing it on
+            // a pool nothing will charge for.
+            $terminationDate = $this->agreementEnd($agreement);
             $this->applyDeferredWork(
                 $company,
                 $invoice,
                 $agreement,
                 $periodEnd,
-                false,
+                $terminationDate instanceof Carbon && $retainerStart->gt($terminationDate),
                 // What the cycle's pool has left once its own work drew on it:
                 // the ledger's closing unused hours, which already count that
                 // work. Covered hours less the draw is the work's own share of

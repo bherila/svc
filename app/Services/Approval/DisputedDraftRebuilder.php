@@ -233,7 +233,7 @@ final class DisputedDraftRebuilder
         return array_values(ClientInvoice::query()
             ->where('workspace_id', $workspaceId)
             ->where('status', InvoiceStatus::Draft->value)
-            ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+            ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
             ->whereHas('lines', fn ($lines) => $lines
                 ->where('client_invoice_lines.workspace_id', $workspaceId)
                 ->whereIn('client_invoice_lines.id', ClientExpense::query()

@@ -390,10 +390,15 @@ things keep those charges current:
   its held-work basis when it is generated (`HeldWorkBasisRecorder`): its
   project scope, the last day its ledger read, and a digest of the dispute,
   settlement and allocation state of that scope's disputed and settled time
-  through that day. The allocation is what makes a disputed row charged
-  rather than held, and a void releases it without the dispute columns
-  moving, so a void refuses the later draft too. A buy-down attached to the
-  draft renews a basis that was current before it. Issuing re-reads
+  through that day, with the type and placement of every invoice line that
+  holds each row. The allocation is what makes a disputed row charged rather
+  than held, and its type and placement are what it does to capacity: a void
+  releases it without the dispute columns moving, and a later allocation of
+  another kind - a buy-down after the void, say - draws differently, so
+  either refuses the later draft. Only work the retainer ledger reads is
+  recorded; flat-hourly time is priced alone. A buy-down is refused on a
+  target whose basis has moved, until the target is regenerated, and renews
+  the basis of one that is current. Issuing re-reads
   that state with row locks - after the lines, before the company - and
   refuses a draft whose basis has moved (422, code `disputed_work_changed`);
   regenerating it prices it from the current state. A draft generated before
@@ -447,11 +452,13 @@ period can no longer bill it (decided 2026-11-09, `LateAnswer`):
 - Work the retainer ledger reads becomes **deferred work**. It joins the
   deferred backlog and is listed under the draft's *Still deferred*. It is
   drawn from a later draft's free capacity - on a quarterly or other cycle,
-  what the cycle's pool has left after its own work - settled by a buy-down,
+  what the cycle's pool has left after its own work, measured afresh for
+  each period a bulk run generates - settled by a buy-down,
   or - like
   all deferred work - collected at the hourly rate when the agreement
-  terminates. With no retainer there is no free capacity, so a buy-down or
-  termination collects it. Waiting, it takes no
+  terminates: the reconciliation of the last cycle, monthly or not, sells
+  nothing, so it collects what still waits. With no retainer there is no
+  free capacity, so a buy-down or termination collects it. Waiting, it takes no
   capacity, so no later draft's charges depend on it until a line takes it,
   and a dispute on it after that finds the draft that carries it.
 - A flat-hourly subcontractor hour, priced alone at its own date and rate, is
