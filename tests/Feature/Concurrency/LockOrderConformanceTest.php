@@ -133,6 +133,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\Billing\\InvoiceLifecycleService::releaseAllocations',
         'App\\Services\\Billing\\InvoiceLineComposer::addBillableMilestoneTasks',
         'App\\Services\\Files\\AttachmentAction::lockedRecord',
+        'App\\Services\\Packages\\PackageRecurringInvoices::attempt',
         'App\\Services\\Tasks\\WorkspaceTaskRepository::find',
     ];
 
@@ -184,7 +185,6 @@ final class LockOrderConformanceTest extends TestCase
         $this->assertSnapshotReadsArePinned();
 
         $sequences = LockOrderRecorder::sequences();
-        foreach (LockOrderRecorder::acquisitions() as $i => $locks) { if (in_array(LockResource::ServicePackageEnrollment, $sequences[$i], true)) { fwrite(STDERR, "SEQ $i: ".implode(' ', array_map(fn ($l) => $l->resource->name.'@'.basename($l->file).':'.$l->line, $locks))."\n\n"); } }
 
         $inventory = BillingWriterLockSites::all();
         $methods = array_values(array_unique(array_values($inventory)));
@@ -398,7 +398,7 @@ final class LockOrderConformanceTest extends TestCase
         ];
         $issued = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-issued', ...$terms]))), $signature);
         $square = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-square', ...$terms]))), $signature);
-        ClientAgreement::query()->whereKey($square->client_agreement_id)->update(['square_series_key' => 'synthetic-locks-square']);
+        ClientAgreement::query()->whereKey($square->client_agreement_id)->update(['square_series_key' => '000902']);
 
         $recurring = app(PackageRecurringInvoices::class);
         $outcomes = [];

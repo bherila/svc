@@ -269,7 +269,7 @@ final class PackageRecurringInvoicesTest extends TestCase
     {
         [$workspace, , $package, $company, $contact] = $this->world();
         $enrollment = $this->accept($contact, $company, $package);
-        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => 'synthetic-square-series']);
+        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => '000901']);
         $this->issueRun(expectFailure: true);
         $this->assertSame('refused', $enrollment->refresh()->auto_invoice_outcome);
 
@@ -337,7 +337,7 @@ final class PackageRecurringInvoicesTest extends TestCase
     {
         [$workspace, , $package, $company, $contact] = $this->world();
         $enrollment = $this->accept($contact, $company, $package);
-        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => 'synthetic-square-series']);
+        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => '000901']);
 
         $run = $this->issueRun(expectFailure: true);
         $this->assertSame([['period_start' => '2026-11-01', 'outcome' => 'refused']], $this->brief($run));
@@ -383,7 +383,7 @@ final class PackageRecurringInvoicesTest extends TestCase
         $otherPackage = $this->publishedPackage($other, $otherOwner, $this->terms());
         $otherCompany = $this->company($other, 'Harbor Synthetic Florist');
         $theirs = $this->accept($this->contact($otherCompany), $otherCompany, $otherPackage);
-        DB::table('client_agreements')->where('id', $theirs->client_agreement_id)->update(['square_series_key' => 'synthetic-square-series']);
+        DB::table('client_agreements')->where('id', $theirs->client_agreement_id)->update(['square_series_key' => '000901']);
 
         $recurring = app(PackageRecurringInvoices::class);
         $this->assertSame([$mine->client_agreement_id], array_keys($recurring->automaticEnrollments($workspace)));
@@ -431,7 +431,7 @@ final class PackageRecurringInvoicesTest extends TestCase
         $this->assertSame([$invoice->public_id, $invoice->invoice_number, 'issued'], [$after['invoice']['id'], $after['invoice']['number'], $after['invoice']['status']]);
         $this->assertStringEndsWith("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}", $after['invoice']['url']);
 
-        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => 'synthetic-square-series']);
+        DB::table('client_agreements')->where('id', $enrollment->client_agreement_id)->update(['square_series_key' => '000901']);
         $this->travelTo(CarbonImmutable::parse('2026-12-01 10:00:00', 'UTC'));
         $this->issueRun(expectFailure: true);
         $refused = $reads->get($owner, $workspace, $enrollment->public_id)['invoicing'];

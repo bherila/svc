@@ -604,7 +604,7 @@ final class PackageSignupPaymentTest extends TestCase
     {
         [, , $package, $company, $contact] = $this->world(['charge_first_period' => true]);
         $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
-        DB::table('client_agreements')->where('id', $offer->client_agreement_id)->update(['square_series_key' => 'synthetic-square-series']);
+        DB::table('client_agreements')->where('id', $offer->client_agreement_id)->update(['square_series_key' => '000901']);
 
         try {
             app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
