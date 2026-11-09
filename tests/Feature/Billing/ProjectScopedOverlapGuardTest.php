@@ -64,8 +64,8 @@ final class ProjectScopedOverlapGuardTest extends TestCase
         [$hosting, $care] = [$this->project('Hosting'), $this->project('Care')];
         $first = $this->agreement($cadence, $hosting);
         $second = $this->agreement($cadence, $care);
-        $mine = $this->hours($hosting, '2026-01-20', 900);
-        $theirs = $this->hours($care, '2026-01-21', 300);
+        $this->hours($hosting, '2026-01-20', 900);
+        $this->hours($care, '2026-01-21', 300);
 
         $a = $this->generate($first, $period);
         $b = $this->generate($second, $period);
@@ -76,8 +76,6 @@ final class ProjectScopedOverlapGuardTest extends TestCase
         // Regenerating either keeps to its own work.
         $this->assertSame([[$hosting->id], 900], $this->allocated(app(ClientInvoicingService::class)->regenerateDraftInvoice($a) ?? $a));
         $this->assertSame([[$care->id], 300], $this->allocated(app(ClientInvoicingService::class)->regenerateDraftInvoice($b) ?? $b));
-        $this->assertNotNull($mine);
-        $this->assertNotNull($theirs);
         $this->assertSame(2, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('invoice_kind', 'cadence_period')->count());
     }
 

@@ -422,7 +422,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description For a client's portal contact: read one of your company's services with its terms, status, acceptance and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description For a client's portal contact: read one of your company's services with its terms, status, acceptance, next_period_start and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['client_services.get'];
         put?: never;
         post?: never;
@@ -439,7 +439,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date), next_period_start (the day the next billing period, and its invoice, begins) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['client_services.list'];
         put?: never;
         post?: never;
@@ -1014,7 +1014,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date) and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date), invoicing (automatic or draft, the next billing period and the last automatic result) and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['enrollments.get'];
         put?: never;
         post?: never;
@@ -1031,7 +1031,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up's own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up's own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses; and invoicing: whether its recurring invoices are issued automatically or drafted for review (issuing), the day its next billing period begins (next_period_start), and what automatic invoicing last did (last_automatic: issued with the invoice and its page, nothing_to_bill, covered when a refused period was invoiced another way, or refused with a code - collected_in_square, period_unbillable, issue_refused or failed - and the billing engine's own words in detail). A refused period is retried every hour and listed in Needs you until it is invoiced. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['enrollments.list'];
         put?: never;
         post?: never;
@@ -3799,6 +3799,8 @@ export interface components {
             /** Format: uri */
             agreement_url: string | null;
             payment: components['schemas']['ServicePackageSignupPayment'];
+            /** Format: date */
+            next_period_start: string | null;
             /** Format: uri */
             url: string;
         };
@@ -6415,6 +6417,7 @@ export interface components {
             /** Format: date-time */
             lapsed_at: string | null;
             payment: components['schemas']['ServicePackageSignupPayment'];
+            invoicing: components['schemas']['ServicePackageInvoicing'];
             version: components['schemas']['Version'];
         };
         ServicePackageEnrollmentListResponse: {
@@ -6442,6 +6445,44 @@ export interface components {
             };
             project_id: components['schemas']['Uuid'];
             agreement_id: components['schemas']['Uuid'];
+        };
+        ServicePackageInvoicing: {
+            /** @enum {string} */
+            issuing: 'automatic' | 'draft';
+            /** Format: date */
+            next_period_start: string | null;
+            last_automatic: {
+                /** @enum {string} */
+                outcome: 'issued' | 'nothing_to_bill' | 'refused' | 'covered';
+                /** Format: date */
+                period_start: string;
+                /** Format: date-time */
+                recorded_at: string;
+                refusal: {
+                    /** @enum {string} */
+                    code:
+                        | 'collected_in_square'
+                        | 'period_unbillable'
+                        | 'issue_refused'
+                        | 'failed';
+                    message: string;
+                    detail: string | null;
+                } | null;
+                invoice: {
+                    id: components['schemas']['Uuid'];
+                    number: string;
+                    /** @enum {string} */
+                    status:
+                        | 'draft'
+                        | 'issued'
+                        | 'partially_paid'
+                        | 'paid'
+                        | 'disputed'
+                        | 'void';
+                    /** Format: uri */
+                    url: string;
+                } | null;
+            } | null;
         };
         ServicePackageListResponse: {
             data: components['schemas']['ServicePackage'][];

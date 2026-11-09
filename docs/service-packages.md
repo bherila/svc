@@ -523,9 +523,93 @@ Slice 3b (payment at sign-up) settled these:
   (X-2), and `package_first_period_unbillable` when the engine refuses the
   first cycle. That last one happens when another invoice of the same company
   already covers the work period the first cycle reconciles: the engine's
-  overlap guard is per company, not per project, so a company already billed
-  on a cadence through another agreement cannot get a package's first period
-  invoiced. This needs a decision before slice 4 (INV-1 meets the same guard).
+  overlap guard was per company, not per project, so a company already billed
+  on a cadence through another agreement could not get a package's first
+  period invoiced. Slice 4 narrowed the guard (below); the refusal now remains
+  only where the other agreement's work genuinely overlaps.
+
+Slice 4 (automatic recurring invoices) settled these:
+
+- **The overlap guard compares invoices whose work can overlap.** The
+  engine's `assertNoOverlappingInvoice()` refused a period when any live
+  cadence invoice *of the company* covered overlapping dates. What it protects
+  is one piece of work being reconciled twice - and every selector a period
+  reconciles (time, deferred work, milestones, expenses, subcontractor time,
+  the retainer ledger and the billed-overage ledger) already reads through the
+  agreement's project scope; the agreement selector already treats "two
+  project retainers under one company" as running concurrently, and the
+  handover guard keys successors by project. Across agreements the company
+  guard was never serialised either (each generator holds only its own
+  agreement's lock). So it now ignores an invoice only when that invoice names
+  an agreement of the same company on a *different* project and this
+  agreement is project-scoped too (`ClientInvoice::scopeSharingWorkWith()`).
+  Everything else still refuses: a company-wide agreement (its selectors read
+  every project's work) against any agreement of the company in either
+  direction, another agreement on the same project, an invoice naming no
+  agreement, and one naming an agreement the company cannot account for. Tested
+  on monthly and quarterly cadences (`ProjectScopedOverlapGuardTest`), with a
+  new history in `BillingHistoryInvariantTest` (two project agreements billing
+  the same periods each price exactly as they would alone, no hour charged
+  twice or by the other agreement); the whole billing suite passes unchanged.
+  Before the change that history lost the second agreement's revenue: the bulk
+  walk skipped its periods with the overlap error. Consequence: a client's
+  second package (its own project, its own agreement) is invoiced on the same
+  days as the first. A client with a *company-wide* agreement on a cadence
+  still cannot have a package period invoiced over the same dates; that
+  refusal is surfaced (below), not hidden.
+- **`svc:packages:issue-invoices`** (hourly, behind the feature flag, in
+  process) issues INV-1. For each workspace with an active enrollment whose
+  *signed* version issues automatically, it reads the current period of each
+  such agreement that has begun with nothing billed (`UncoveredCadencePeriods`,
+  the reader the cadence drafts and the stale-and-missing audit share), then
+  per agreement, in its own transaction: the billing maintenance share lock,
+  the enrollment's row lock, `CadencePeriodGuard::lock()` (the agreement lock
+  and a locking read of every invoice claiming the period), the Square check
+  (INV-3), the cadence engine, `EmptyCadenceDraft` (a period that asks for
+  nothing is rolled back, recorded `nothing_to_bill`), then
+  `InvoiceLifecycleService::issue()`, so automatic delivery and autopay follow
+  the company's own settings. Generating and issuing commit together: nothing
+  is left claimed and unissued. A re-run, or a concurrent run waiting on the
+  agreement lock, finds the claim and issues nothing (tested by two runs that
+  both read the period as due). Only the period containing today is
+  considered, as for the cadence drafts: a period missed entirely (the
+  scheduler down for a whole period) is an owner's to bill.
+- **Due date.** The invoice keeps the engine's date (the first day of the
+  period it sells); issued later than that day, it is due the day it is issued,
+  not overdue on arrival.
+- **Lock order.** Generating and issuing in one transaction would lock the
+  invoice's lines and the agreement's time after the engine numbers the
+  invoice and locks milestones; the run takes the agreement's lines, the
+  workspace numbering and the agreement's time first, in registry order, as
+  acceptance does. The conformance test drives an issued and a refused period;
+  its MariaDB snapshot-read ratchet now pins the engine's reads under this
+  opener (and the slice 3b acceptance entries it was missing).
+- **Refusals reach an owner.** A refused period rolls back and is recorded on
+  the enrollment (`auto_invoice_outcome` `refused`, a code -
+  `collected_in_square`, `period_unbillable`, `issue_refused` or `failed` -
+  and the engine's own words), which Needs you lists ("… invoice not issued
+  automatically") and `enrollments.*` returns under `invoicing.last_automatic`.
+  It is retried every run, does not stop any other agreement, and is written
+  only when it changes (no hourly version churn). Once the period is invoiced
+  by the run the record says `issued`; invoiced by hand, `covered`; either way
+  the row goes. There was no existing record of failed scheduled generation to
+  reuse (the cadence drafts only log), so this is new.
+- **INV-2 reuses the cadence drafts.** A draft-mode package agreement is an
+  ordinary recurring agreement: `svc:billing:generate-cadence-drafts` (while
+  `svc.billing.scheduled_cadence_drafts` is on) or `invoices.generate_period`
+  drafts its period and only an owner issues it. That command now leaves an
+  automatic package agreement to the issuer while the feature is on, as it
+  leaves an agreement with a billing schedule to that schedule; with the
+  feature off, an automatic package agreement is only ever drafted.
+- **INV-3.** An agreement carrying the Square marker gets nothing - not even a
+  draft - and the refusal `collected_in_square` is recorded for the owner.
+- **Where "automatic" is read.** From the enrollment's signed version
+  (`accepted_version_id`), which is immutable; the agreement carries no
+  issuing column. Slice 6 (version migration) must keep this right when it
+  moves an agreement to another version.
+- **Agent read state.** `enrollments.*` gains `invoicing` (`issuing`,
+  `next_period_start`, `last_automatic`); `client_services.*` gains only
+  `next_period_start` - how the invoice is made is the operator's setting.
 
 ## Validation plan
 

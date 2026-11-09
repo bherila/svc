@@ -80,11 +80,9 @@ final class GenerateCadenceDraftsCommand extends MutationCommand
         $due = [];
         foreach ($workspaces->lazyById(100) as $workspace) {
             $scheduled = ClientBillingSchedule::query()->where('workspace_id', $workspace->id)->where('is_active', true)->pluck('client_agreement_id')->flip();
-            if (EnsureServicePackagesEnabled::enabled()) {
-                $scheduled = $scheduled->union(array_fill_keys(array_keys($packages->automaticEnrollments($workspace)), true));
-            }
-            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, &$due): void {
-                if (! $scheduled->has($agreement->id)) {
+            $automatic = EnsureServicePackagesEnabled::enabled() ? $packages->automaticEnrollments($workspace) : [];
+            $uncovered->each($workspace, $clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($workspace, $scheduled, $automatic, &$due): void {
+                if (! $scheduled->has($agreement->id) && ! isset($automatic[$agreement->id])) {
                     $due[] = [$workspace, $agreement, $cycle];
                 }
             });

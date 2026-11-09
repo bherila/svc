@@ -221,7 +221,7 @@ final class PackageRecurringInvoicesTest extends TestCase
     #[Requirement('INV-1')]
     public function test_a_refused_period_reaches_an_owner_does_not_stop_others_and_is_retried(): void
     {
-        [$workspace, $owner, $package, $company, $contact] = $this->world();
+        [$workspace, , $package, $company, $contact] = $this->world();
         $retainer = ClientAgreement::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic company-wide retainer',
             'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD',
@@ -260,7 +260,6 @@ final class PackageRecurringInvoicesTest extends TestCase
         $this->assertSame('issued', $this->invoiceFor($refusedEnrollment, '2026-11-01')->status);
         $this->assertSame(['issued', null, null], [$refusedEnrollment->refresh()->auto_invoice_outcome, $refusedEnrollment->auto_invoice_refusal, $refusedEnrollment->auto_invoice_detail]);
         $this->assertNull(collect(app(WorkspaceActionQueue::class)->forManager($workspace))->firstWhere('kind', 'enrollment_auto_invoice_refused'));
-        $this->assertNotNull($owner);
     }
 
     /** A refused period an owner then invoices by hand is marked covered, and leaves Needs you. */
