@@ -194,6 +194,57 @@ describe('moving package subscribers', () => {
         ).toBeInTheDocument();
     });
 
+    it('lists refused subscribers separately with their refusal labels', () => {
+        render(
+            <PackageMove
+                {...moveProps(
+                    {},
+                    {
+                        subscribers: [
+                            moveCandidate(),
+                            moveCandidate({
+                                enrollment_id: 'enrollment-2',
+                                client: {
+                                    id: 'company-2',
+                                    name: 'Pine Street Dental',
+                                },
+                                refusal: {
+                                    code: 'package_migration_bills_by_usage',
+                                    message:
+                                        'This agreement bills by usage (an hourly rate or a retainer).',
+                                },
+                            }),
+                        ],
+                    },
+                )}
+            />,
+        );
+
+        expect(screen.getByText('Subscribers · 1')).toBeInTheDocument();
+        const refusedCard = screen.getByLabelText('Refused subscribers');
+        expect(
+            within(refusedCard).getByText('Refused subscribers · 1'),
+        ).toBeInTheDocument();
+        expect(
+            within(refusedCard).getByText('Pine Street Dental'),
+        ).toBeInTheDocument();
+        expect(
+            within(refusedCard).getByText('Bills by usage'),
+        ).toBeInTheDocument();
+        expect(
+            within(refusedCard).getByText(
+                /This agreement bills by usage/,
+            ),
+        ).toBeInTheDocument();
+        const subscribersCard = screen.getByLabelText('Subscribers');
+        expect(
+            within(subscribersCard).getByText('Lakeside Synthetic Bakery'),
+        ).toBeInTheDocument();
+        expect(
+            within(subscribersCard).queryByText('Pine Street Dental'),
+        ).toBeNull();
+    });
+
     it('[MIG-1] says why nothing can move, and offers no schedule', () => {
         render(
             <PackageMove

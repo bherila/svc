@@ -876,6 +876,26 @@ Slice 6 (moving subscribers to a new version) settled these:
   every cadence, for services started on the 1st, 9th and 31st, moved on each
   of the first two dates a move may take (a full cycle apart), with one or two
   components or a setup fee billed with the first cycle.
+- **Decisions on refused subscriber classes (follow-ups from #674):**
+  - **Cadence changes:** Keep refusing. Cross-cadence proration and period grid
+    realignment risk claiming work periods the prior term already invoiced,
+    creating period overlap errors and missed billing. Until multi-period
+    handoffs with twin history invariants are designed and demand is
+    demonstrated, offer the new cadence as a separate service package instead.
+  - **Square-collected agreements:** Keep refusing. Under INV-3 and X-2, SVC
+    never reshapes or mutates subscriptions collected by Square. Carrying series
+    markers risks uniqueness violations, and clearing them orphans Square linkage.
+    Transitions should be managed in Square or re-enrolled as a new SVC agreement.
+  - **Off-cycle components:** Keep refusing. An item on a different cadence
+    (e.g. annual licence in a monthly agreement) anchors charges at its item start,
+    risking duplicate charges upon version move. Carrying paid-through dates
+    requires unambiguous 1:1 component identity mapping across edits. Keep
+    refusing until component mapping and demand justify handoff complexity.
+  - **Ambiguous charge schedules:** Keep refusing. Agreements where open
+    recurring items follow divergent anchor days or cycle offsets cannot be
+    continued deterministically without risking double-billing or skipped
+    periods. Keep refusing; operators should align item schedules manually if
+    migration is required.
 - **Asked again on the date.** The version is fixed at scheduling, but an
   operator can change an active agreement's cadence or recurring items, and a
   Square series can be linked to it, after scheduling, so the applier reads

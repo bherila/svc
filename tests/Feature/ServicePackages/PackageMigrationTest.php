@@ -128,6 +128,31 @@ final class PackageMigrationTest extends TestCase
     }
 
     #[Requirement('MIG-1')]
+    public function test_the_suggested_date_and_counts_ignore_a_refused_late_notice_subscriber(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world(['notice_days' => 0]);
+        $subscriber1 = $this->subscriber($workspace, $package, 'Lakeside');
+
+        $subscriber2 = $this->subscriber($workspace, $package, 'Harbor');
+        $subscriber2->agreement->forceFill([
+            'notice_days' => 60,
+            'hourly_rate_amount' => 12000,
+        ])->save();
+
+        $preview = $this->preview($owner, $workspace, $package, $from);
+
+        $this->assertSame('2026-12-01', $preview['effective_on']);
+        $this->assertSame(1, $preview['effective_dates'][0]['subscribers']);
+        $this->assertSame('2026-12-01', $preview['effective_dates'][0]['date']);
+
+        $subscribers = array_column($preview['subscribers'], null, 'enrollment_id');
+        $this->assertNull($subscribers[$subscriber1->public_id]['refusal']);
+        $this->assertSame(MigrationRefusal::BillsByUsage->value, $subscribers[$subscriber2->public_id]['refusal']['code']);
+        $this->assertSame([], $subscribers[$subscriber2->public_id]['effective_dates']);
+        $this->assertNull($subscribers[$subscriber2->public_id]['earliest_effective_on']);
+    }
+
+    #[Requirement('MIG-1')]
     public function test_scheduling_refuses_what_the_rules_refuse_and_writes_nothing(): void
     {
         [$workspace, $owner, $package, $from, $to] = $this->world();

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Support\Billing\Autopay\AutopayWording;
+use App\Support\Billing\ChargeCadence;
 use App\Support\Packages\Migration\MigrationRefusal;
 use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationSubscriber;
@@ -57,7 +58,7 @@ final class PackageMigrationPlanner
         $subscribers = $refusal === null ? $this->records->subscribers($workspace, $from) : [];
         $price = $toTerms === null ? null : PublicPackagePresenter::cycleAmount($toTerms);
 
-        $dates = self::dates($subscribers);
+        $dates = self::dates($subscribers, $toTerms?->billingCadence);
         $suggested = $chosen?->toDateString() ?? self::suggested($dates);
         $date = $suggested === null ? null : CarbonImmutable::parse($suggested, 'UTC');
 
@@ -160,6 +161,7 @@ final class PackageMigrationPlanner
         $currency = $toTerms->currency;
         $company = $subscriber->company;
         $agreement = $subscriber->agreement;
+        $refusedAlways = $subscriber->refusal(null, $toTerms->billingCadence) !== null;
 
         return [
             'enrollment_id' => $subscriber->enrollment->public_id,
@@ -170,8 +172,8 @@ final class PackageMigrationPlanner
                 'starts_on' => $agreement->starts_on->toDateString(),
                 'ends_on' => $agreement->ends_on?->toDateString(),
             ],
-            'earliest_effective_on' => $subscriber->dates?->offered === [] ? null : $subscriber->dates?->earliest->toDateString(),
-            'effective_dates' => $subscriber->dates?->offeredDateStrings() ?? [],
+            'earliest_effective_on' => $refusedAlways || $subscriber->dates?->offered === [] ? null : $subscriber->dates?->earliest->toDateString(),
+            'effective_dates' => $refusedAlways ? [] : ($subscriber->dates?->offeredDateStrings() ?? []),
             'autopay_limit_amount' => $subscriber->autopayLimit,
             'autopay_below_price' => self::autopayBelowPrice($subscriber, $price, $currency),
             'pending_cancellation_end_on' => $subscriber->pendingEndOn?->toDateString(),
@@ -182,19 +184,31 @@ final class PackageMigrationPlanner
 
     /**
      * Every effective date some subscriber may move on, ascending, with how
-     * many subscribers it suits.
+     * many subscribers it suits. Only dates and subscribers the planner would
+     * accept are considered.
      *
      * @param  list<MigrationSubscriber>  $subscribers
      * @return array<string, int>
      */
-    private static function dates(array $subscribers): array
+    private static function dates(array $subscribers, ?ChargeCadence $toCadence): array
     {
+        if ($toCadence === null) {
+            return [];
+        }
+
         $counts = [];
         foreach ($subscribers as $subscriber) {
             if (! $subscriber->activeOnFromVersion || $subscriber->alreadyScheduled) {
                 continue;
             }
+            if ($subscriber->refusal(null, $toCadence) !== null) {
+                continue;
+            }
             foreach ($subscriber->dates?->offeredDateStrings() ?? [] as $day) {
+                $parsed = CarbonImmutable::parse($day, 'UTC');
+                if ($subscriber->refusal($parsed, $toCadence) !== null) {
+                    continue;
+                }
                 $counts[$day] = ($counts[$day] ?? 0) + 1;
             }
         }

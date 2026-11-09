@@ -28,6 +28,7 @@ import { apiRequest } from '@/lib/api';
 import { formatDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { migrationRefusalLabel } from '@/lib/packages';
 import { cn } from '@/lib/utils';
 import type { PackageMoveCandidate, PackageMoveProps } from '@/types/packages';
 
@@ -35,6 +36,14 @@ const MESSAGE_MAX = 2000;
 
 const STALE =
     'The package changed since you opened this page. Reload it, check the subscribers and the date again, then schedule.';
+
+/** Whether a subscriber is refused by the planner (cannot move to this version on any date). */
+function isRefused(subscriber: PackageMoveCandidate): boolean {
+    return (
+        subscriber.refusal !== null &&
+        subscriber.refusal.code !== 'package_migration_date_not_offered'
+    );
+}
 
 /** What happens to one subscriber on the chosen date, in words. */
 function effect(subscriber: PackageMoveCandidate, date: string | null): string {
@@ -57,12 +66,20 @@ export default function PackageMove({
     package_version: packageVersion,
     urls,
 }: PackageMoveProps) {
+    const candidates = useMemo(
+        () => preview.subscribers.filter((s) => !isRefused(s)),
+        [preview.subscribers],
+    );
+    const refused = useMemo(
+        () => preview.subscribers.filter(isRefused),
+        [preview.subscribers],
+    );
     const eligible = useMemo(
         () =>
-            preview.subscribers
+            candidates
                 .filter((subscriber) => subscriber.refusal === null)
                 .map((subscriber) => subscriber.enrollment_id),
-        [preview.subscribers],
+        [candidates],
     );
     const [chosen, setChosen] = useState<string[]>(eligible);
     const [message, setMessage] = useState('');
@@ -70,7 +87,7 @@ export default function PackageMove({
     const selected = chosen.filter((id) => eligible.includes(id));
     const from = preview.from_version.number;
     const to = preview.to_version?.number ?? null;
-    const total = preview.subscribers.length;
+    const total = candidates.length;
     const items = preview.effective_dates.map((option) => ({
         value: option.date,
         label: `${formatDay(option.date)} · suits ${option.subscribers} of ${total}`,
@@ -253,9 +270,14 @@ export default function PackageMove({
                                 <CardTitle>Subscribers · {total}</CardTitle>
                             </CardHeader>
                             <CardContent className="grid grid-cols-1 gap-3">
-                                {total === 0 ? (
+                                {preview.subscribers.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">
                                         No active service is on v{from}.
+                                    </p>
+                                ) : total === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        No active service on v{from} can be moved
+                                        to this version.
                                     </p>
                                 ) : (
                                     <div className="min-w-0 overflow-x-auto">
@@ -280,7 +302,7 @@ export default function PackageMove({
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {preview.subscribers.map(
+                                                {candidates.map(
                                                     (subscriber) => {
                                                         const id = `move-${subscriber.enrollment_id}`;
                                                         const can =
@@ -404,6 +426,76 @@ export default function PackageMove({
                                 )}
                             </CardContent>
                         </Card>
+
+                        {refused.length > 0 && (
+                            <Card aria-label="Refused subscribers">
+                                <CardHeader>
+                                    <CardTitle>
+                                        Refused subscribers · {refused.length}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="grid grid-cols-1 gap-3">
+                                    <p className="text-sm text-muted-foreground">
+                                        These subscribers cannot be moved to this
+                                        version.
+                                    </p>
+                                    <div className="min-w-0 overflow-x-auto">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead className="min-w-48">
+                                                        Client
+                                                    </TableHead>
+                                                    <TableHead>Since</TableHead>
+                                                    <TableHead>Reason</TableHead>
+                                                    <TableHead className="min-w-56">
+                                                        Detail
+                                                    </TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {refused.map((subscriber) => (
+                                                    <TableRow
+                                                        key={
+                                                            subscriber.enrollment_id
+                                                        }
+                                                    >
+                                                        <TableCell className="wrap-anywhere whitespace-normal font-medium">
+                                                            {
+                                                                subscriber.client
+                                                                    .name
+                                                            }
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {formatDay(
+                                                                subscriber
+                                                                    .agreement
+                                                                    .starts_on,
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant="outline">
+                                                                {migrationRefusalLabel(
+                                                                    subscriber
+                                                                        .refusal
+                                                                        ?.code,
+                                                                )}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal text-muted-foreground">
+                                                            {
+                                                                subscriber.refusal
+                                                                    ?.message
+                                                            }
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         <div className="flex flex-wrap items-center justify-end gap-2">
                             <Link

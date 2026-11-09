@@ -128,3 +128,34 @@ export function paymentStateLabel(state: string): string | null {
             return statusLabel(state);
     }
 }
+
+const MIGRATION_REFUSAL_LABELS: Record<string, string> = {
+    package_migration_bills_by_usage: 'Bills by usage',
+    package_migration_changes_cadence: 'Different cadence',
+    package_migration_square_collected: 'Square-collected',
+    package_migration_off_cycle_component: 'Off-cycle component',
+    package_migration_ambiguous_recurrence: 'Ambiguous schedule',
+    package_migration_ends_first: 'Ends before move',
+    package_migration_already_scheduled: 'Already scheduled',
+    package_migration_not_newer: 'Not newer version',
+    package_migration_not_recurring: 'Not recurring',
+    package_migration_not_a_subscriber: 'Not a subscriber',
+    package_migration_date_not_offered: 'Date not offered',
+    package_migration_currency_changed: 'Different currency',
+    package_migration_not_scheduled: 'Not scheduled',
+    package_migration_no_subscribers: 'No subscribers',
+};
+
+/** A refusal code as a human-readable badge label. */
+export function migrationRefusalLabel(
+    code: string | null | undefined,
+): string {
+    if (!code) {
+        return '—';
+    }
+
+    return (
+        MIGRATION_REFUSAL_LABELS[code] ??
+        statusLabel(code.replace(/^package_migration_/, ''))
+    );
+}
