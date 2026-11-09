@@ -184,6 +184,7 @@ final class LockOrderConformanceTest extends TestCase
         $this->assertSnapshotReadsArePinned();
 
         $sequences = LockOrderRecorder::sequences();
+        foreach (LockOrderRecorder::acquisitions() as $i => $locks) { if (in_array(LockResource::ServicePackageEnrollment, $sequences[$i], true)) { fwrite(STDERR, "SEQ $i: ".implode(' ', array_map(fn ($l) => $l->resource->name.'@'.basename($l->file).':'.$l->line, $locks))."\n\n"); } }
 
         $inventory = BillingWriterLockSites::all();
         $methods = array_values(array_unique(array_values($inventory)));
