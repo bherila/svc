@@ -1,7 +1,7 @@
 ---
 title: Your client portal
 audience: [client]
-routes: [portal.show, portal.billing, portal.approvals.approve, portal.approvals.dispute, portal.agreement, portal.invoices, portal.invoice, portal.proposal, portal.tasks, portal.time, portal.collaboration.index, portal.collaboration.show, portal.files.parent.show, portal.files.collaboration.show, portal.mcp.setup]
+routes: [portal.show, portal.billing, portal.approvals.approve, portal.approvals.dispute, portal.agreement, portal.invoices, portal.invoice, portal.proposal, portal.tasks, portal.time, portal.collaboration.index, portal.collaboration.show, portal.files.parent.show, portal.files.collaboration.show, portal.mcp.setup, portal.services, portal.services.show]
 terms: []
 ---
 The portal opens on two cards: what you owe, and how this period is going. Below them are your open tasks, recent approved time and your invoice history.
@@ -56,3 +56,12 @@ Autopay lets your provider charge that default method on each invoice's due date
 - **One try.** SVC charges the remaining balance once, on the due date. If the charge fails it does not retry; the invoice says why, and the usual payment reminders resume.
 - **Turning it off.** You can turn autopay off here at any time, or change the limit. Your provider can also turn it off. Removing your default payment method turns it off automatically.
 - **If your provider turned it on for you.** An owner or admin can turn autopay on after you agreed outside SVC. They record how, and your billing contacts get an email with a link to this page to turn it off.
+
+## Services
+
+When your provider offers service packages, the **Services** tab lists the services you have with them, and what each one costs.
+
+- **Adding a service.** If you can manage the whole company's account, the tab also lists the packages you can add. **Review and add** opens the service's agreement; nothing starts until you sign it.
+- **Signing.** Read the terms and the agreement, type your name (and your title, if you like), tick that you accept, and choose **Accept**. Your name, the time and the exact version you signed are recorded and can't be changed. If your provider has changed the package since it was offered to you, the page shows what changed before you sign.
+- **Starting.** Some services start as soon as you sign. Others wait until your provider reviews them; you get an email when the service starts, and its agreement then appears in the portal.
+- **Contacts with access to some projects only** see the services for those projects, and can't add or sign one.

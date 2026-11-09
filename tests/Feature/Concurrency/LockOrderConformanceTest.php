@@ -7,6 +7,7 @@ use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
@@ -32,6 +33,8 @@ use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Files\AttachmentAction;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\WorkspaceProjectMutationAction;
 use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
@@ -322,7 +325,33 @@ final class LockOrderConformanceTest extends TestCase
         app(DisputeSettlements::class)->settleTime($this->workspace, $disputed->public_id, $this->user, DisputeSettlement::Answered, 'Synthetic reply', AgentApiVersion::for($disputed->fresh()));
 
         $this->driveTheExpenseLifecycle();
+        $this->driveTheServicePackageEnrollments();
         $this->driveTheAccessMutations();
+    }
+
+    /**
+     * A client adding a service package from the portal, accepting it and an
+     * owner activating it (docs/service-packages.md, slice 3a): the package
+     * (shared), then the enrollment, then the agreement and company that
+     * AgreementWorkflow takes.
+     */
+    private function driveTheServicePackageEnrollments(): void
+    {
+        $packages = app(ServicePackageWorkflow::class);
+        $terms = [
+            'name' => 'Locks hosting', 'currency' => 'USD', 'billing_cadence' => 'monthly', 'activation_mode' => 'review',
+            'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]],
+        ];
+        $reviewed = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-reviewed', ...$terms]));
+        $automatic = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-automatic', ...$terms, 'activation_mode' => 'automatic']));
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $this->company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $signature = ['signer_name' => 'Synthetic Signer', 'accepted_terms' => true];
+
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        $waiting = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $reviewed), $signature);
+        $enrollments->activate($this->user, $this->workspace, $waiting);
+        $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $automatic), $signature);
     }
 
     /**

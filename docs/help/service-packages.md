@@ -34,3 +34,11 @@ Each published package has its own link, so use **Copy link** to share it. Packa
 Each published package has a request form. When someone sends it, the request waits under **Clients**, then **Sign-up requests**, and the dashboard's **Needs you** list counts the ones still open. Nothing is created from a request until you approve it.
 
 Everything in a request was typed by the visitor, so it is shown as plain text and never as instructions. **Approve** creates the client and a project for the package, offers the package for acceptance and invites the contact to the portal; pick an existing client instead when the contact already has a company here. **Decline** emails the visitor, with your reason if you give one. A decided request can later have the visitor's details erased, which keeps only the package, dates and outcome.
+
+## Accepting and starting
+
+The client's contact signs in, reads the agreement and signs it, from the portal's **Services** tab. Clients who already work with you can add a package there themselves, without a request, if you mark it **Portal-addable**. Only contacts who can manage the whole company's account can add or sign a package.
+
+If you publish a new version before the client signs, they sign the new version, and the signing page shows what changed. A retired package's open offers can still be signed on the terms offered.
+
+A package set to **start automatically** starts as soon as the client signs. One set to **I review first** waits in the dashboard's **Needs you** list; open it and activate it from the client's agreement. The service starts on the day it's activated, the agreement is signed in the client's name, and the client gets an email. Packages that take a payment at sign-up can't be signed online yet.

@@ -613,8 +613,10 @@ see the read-only `square.*` pass-through tools described under
 `revenue.projection` and `revenue.clients`, described under
 [Revenue planning reads](#revenue-planning-reads). While
 `SVC_SERVICE_PACKAGES_ENABLED` is on, managers holding `packages:read` also see
-`packages.list`, `packages.get`, `package_requests.list` and
-`package_requests.get`, described under [Service packages](#service-packages).
+`packages.list`, `packages.get`, `package_requests.list`,
+`package_requests.get`, `enrollments.list` and `enrollments.get`, and a client's
+portal contacts holding it see `client_services.list` and
+`client_services.get`, described under [Service packages](#service-packages).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -2122,7 +2124,8 @@ visibility reads or agreement decisions can establish a database snapshot.
 The service package operations (`docs/service-packages.md`, "MCP and REST surface")
 exist only while `SVC_SERVICE_PACKAGES_ENABLED` is on, which it is not by default.
 Switched off, none of them is registered: no `/workspaces/{workspace}/packages`
-or `/workspaces/{workspace}/package-requests` route, no MCP tool and no `packages` toolset, and the document served at
+`/workspaces/{workspace}/package-requests`, `/workspaces/{workspace}/enrollments`
+or `/workspaces/{workspace}/client-services` route, no MCP tool and no `packages` toolset, and the document served at
 `/api/openapi.json` leaves their paths and schemas out. The checked contract,
 `public/openapi/svc-agent-v1.json`, documents them whatever the local switch, so
 regenerating it never depends on configuration. Each operation also declares the
@@ -2143,10 +2146,15 @@ still answers 404 and offers no tool.
 | `package_requests.approve` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; optional `client_id` of an existing client to attach to. Answers with the request and its `enrollment` (`id`, `status`, `client`, `project_id`, `agreement_id`) |
 | `package_requests.decline` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; optional `reason` (at most 1000 characters), which the visitor's email carries |
 | `package_requests.erase` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; a decided request only, irreversibly |
+| `enrollments.list` | `packages:read` | Newest first; optional `status` (`offered`, `awaiting_payment`, `awaiting_review`, `active`, `lapsed`, `withdrawn`), `limit` 1-100, `cursor` |
+| `enrollments.get` | `packages:read` | |
+| `enrollments.activate` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; an enrollment `awaiting_review` only; emails the client |
+| `client_services.list` | `packages:read` | A client's portal contacts only. Newest first; optional `company_id`, `limit` 1-100, `cursor`. Also answers `addable_packages` |
+| `client_services.get` | `packages:read` | A client's portal contacts only |
 
-They are workspace owner/admin operations. Anyone else, a portal contact included,
-and any other workspace's package, is answered 404 as if no package existed, and
-the tools are not offered to them. A package answers with its published version
+All but `client_services.*` are workspace owner/admin operations. Anyone else, a
+portal contact included, and any other workspace's package, is answered 404 as if
+no package existed, and the tools are not offered to them (API-5). A package answers with its published version
 and its draft (each with every term, its `setup_fee_total` and its `cycle_amount`, what one billing period of the recurring terms costs), its `public_url`
 once published, its opaque `version`, and `publish_refusals`: the coded reasons
 (`package_payment_needs_stripe`, `package_auto_issue_needs_fixed_price` and the
@@ -2176,9 +2184,30 @@ with `package_request_not_open` (already decided), `package_request_not_closed`
 `package_address_held_elsewhere`; the server instructions ask for the user's
 confirmation before each.
 
+An enrollment (`PackageEnrollmentPresenter::forManager`) is one client's
+subscription to a package: its package, the version offered and the version
+accepted (`version_changed` when a newer version was published before the client
+signed), its client, project and agreement with the agreement's page, the request
+it answers, and the acceptance - who signed (`signer_name` and `signer_title` as
+the client typed them) and when. Clients accept, and add packages, in the portal
+only; neither is an agent operation. `enrollments.activate` starts an accepted
+enrollment that waits for review: its agreement starts that day, is activated and
+signed in the client's name, and the client is emailed. It refuses with
+`package_enrollment_not_awaiting_review` or `package_activation_conflict`, and the
+server instructions ask for the user's confirmation first.
+
+`client_services.list` and `client_services.get` are the client side, read-only:
+a portal contact's companies' services (only their projects' for a contact limited
+to projects), each with the terms the client agreed to (or, before acceptance, the
+terms on offer), never the operator's settings, its status, acceptance and portal
+links. `addable_packages` lists, for a company-wide contact, the packages they
+could add in the portal, each with `add_refusal` when it cannot be added now.
+Workspace staff who are not a client's portal contacts see none.
+
 The routes, the tools and the website call the same `ServicePackageWorkflow`,
-`PackageRequestWorkflow`, `ServicePackageReadService` and
-`PackageRequestReadService`, so authorization, term validation, locking and
+`PackageRequestWorkflow`, `PackageEnrollmentWorkflow`, `ServicePackageReadService`,
+`PackageRequestReadService`, `PackageEnrollmentReadService` and
+`ClientServiceReadService`, so authorization, term validation, locking and
 versions cannot differ between them. The request schemas are generated from
 `ServicePackageRules` and `ServicePackageOperations::DECISION_RULES`, the rules
 those workflows validate with, and every schema is

@@ -51,6 +51,10 @@ use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Packages\EnrollmentStatus;
+use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Models\ServicePackageEnrollment;
+use Illuminate\Support\Facades\Route;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
@@ -641,6 +645,9 @@ class ClientDirectoryController extends Controller
                     'preview' => route('agent-api.v1.agreements.deferred-backlog.preview', [$workspace, $clientAgreement], absolute: false),
                     'create' => route('agent-api.v1.agreements.deferred-backlog.create', [$workspace, $clientAgreement], absolute: false),
                 ] : null,
+                // A service package the client accepted that waits for review
+                // (ACC-5): the endpoint that starts it, with the version to send.
+                'activate_enrollment' => $manages ? $this->enrollmentActivation($workspace, $clientAgreement) : null,
             ],
             'attachment_upload' => $manages && $validFileParent ? [
                 'href' => route('agent-api.v1.attachments.upload-url', ['workspace' => $workspace, 'recordType' => 'agreement', 'recordPublicId' => $clientAgreement->public_id], absolute: false),
@@ -1593,5 +1600,23 @@ class ClientDirectoryController extends Controller
         }
 
         return $used;
+    }
+
+    /** @return array{href: string, version: string}|null */
+    private function enrollmentActivation(Workspace $workspace, ClientAgreement $agreement): ?array
+    {
+        if (! EnsureServicePackagesEnabled::enabled() || ! Route::has('agent-api.v1.enrollments.activate')) {
+            return null;
+        }
+        $enrollment = ServicePackageEnrollment::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $agreement->id)
+            ->where('status', EnrollmentStatus::AwaitingReview->value)
+            ->first();
+
+        return $enrollment === null ? null : [
+            'href' => route('agent-api.v1.enrollments.activate', [$workspace, $enrollment->public_id], absolute: false),
+            'version' => AgentApiVersion::for($enrollment),
+        ];
     }
 }
