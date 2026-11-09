@@ -11,6 +11,7 @@ use App\Models\ServicePackageMigrationTarget;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
+use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
@@ -26,6 +27,7 @@ use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\AutoInvoiceRefusal;
 use App\Support\Packages\AutoInvoiceResult;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\MigrationHold;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\WorkspaceClock;
@@ -80,6 +82,7 @@ final class PackageRecurringInvoices
         private readonly ClientInvoicingService $cadence,
         private readonly InvoiceLifecycleService $invoices,
         private readonly InvoiceNumberAllocator $numbers = new InvoiceNumberAllocator,
+        private readonly BillingCycleResolver $cycles = new BillingCycleResolver,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -129,6 +132,13 @@ final class PackageRecurringInvoices
      * agreements. Only the period containing today, as for the scheduled
      * drafts: an older gap is an owner's to reopen.
      *
+     * One older period is this reader's own: the first period of a move that
+     * never applied while it was current (held for an owner throughout). It
+     * waited for the move ({@see attempt()}), so nothing else would bill it;
+     * the move can no longer apply to it ({@see MigrationHold::EffectiveDatePassed}),
+     * so it is billed late on the agreement in force for it, ahead of the
+     * current period.
+     *
      * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
      * @return list<array{ServicePackageEnrollment, ClientAgreement, BillingCycle}>
      */
@@ -137,7 +147,7 @@ final class PackageRecurringInvoices
         if ($enrollments === []) {
             return [];
         }
-        $due = [];
+        $due = $this->waitedForMove($workspace, $enrollments);
         $this->uncovered->each($workspace, $this->clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($enrollments, &$due): void {
             $enrollment = $enrollments[$agreement->id] ?? null;
             if ($enrollment !== null) {
@@ -146,6 +156,58 @@ final class PackageRecurringInvoices
         });
 
         return $due;
+    }
+
+    /**
+     * The first period of each scheduled move that has ended without the move
+     * applying, while nothing bills it, on the agreement still in force.
+     *
+     * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
+     * @return list<array{ServicePackageEnrollment, ClientAgreement, BillingCycle}>
+     */
+    private function waitedForMove(Workspace $workspace, array $enrollments): array
+    {
+        $today = $this->clock->today($workspace)->toDateString();
+        $targets = ServicePackageMigrationTarget::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_agreement_id', array_keys($enrollments))
+            ->where('status', MigrationTargetStatus::Scheduled->value)
+            ->whereDate('effective_on', '<', $today)
+            ->orderBy('id')
+            ->get(['id', 'client_agreement_id', 'service_package_enrollment_id', 'effective_on']);
+        if ($targets->isEmpty()) {
+            return [];
+        }
+        $agreements = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereIn('id', $targets->pluck('client_agreement_id')->all())->where('status', 'active')->orderBy('id')->get()->keyBy('id');
+        $waited = [];
+        foreach ($targets as $target) {
+            $agreement = $agreements->get($target->client_agreement_id);
+            $enrollment = $enrollments[$target->client_agreement_id] ?? null;
+            if (! $agreement instanceof ClientAgreement || $enrollment === null || $enrollment->id !== $target->service_package_enrollment_id || ! $agreement->billsOnARecurringCadence()) {
+                continue;
+            }
+            $cycle = $this->cycles->cycleContaining($agreement, Carbon::parse($target->effective_on->toDateString()));
+            if ($cycle->start->toDateString() === $target->effective_on->toDateString() && $cycle->end->toDateString() < $today) {
+                $waited[$agreement->id.':'.$cycle->start->toDateString()] = [$enrollment, $agreement, $cycle];
+            }
+        }
+        if ($waited === []) {
+            return [];
+        }
+        $claimed = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+            ->where(function ($periods) use ($waited): void {
+                foreach ($waited as [, $agreement, $cycle]) {
+                    $periods->orWhere(fn ($period) => $period->where('client_agreement_id', $agreement->id)->whereDate('cycle_start', $cycle->start->toDateString()));
+                }
+            })
+            ->get(['client_agreement_id', 'cycle_start', 'status'])
+            ->filter(static fn (ClientInvoice $claim): bool => InvoiceStatus::claimsPeriod($claim->status))
+            ->map(static fn (ClientInvoice $claim): string => $claim->client_agreement_id.':'.$claim->cycle_start?->toDateString())
+            ->all();
+
+        return array_values(array_diff_key($waited, array_flip($claimed)));
     }
 
     /**
@@ -161,7 +223,7 @@ final class PackageRecurringInvoices
         DB::beginTransaction();
         $committed = false;
         try {
-            $result = $this->attempt($workspace, $enrollment, $agreement, $periodStart);
+            $result = $this->attempt($workspace, $enrollment, $agreement, $periodStart, $cycle->end->toDateString());
             if ($result->outcome === AutoInvoiceOutcome::Issued) {
                 DB::commit();
                 $committed = true;
@@ -250,7 +312,7 @@ final class PackageRecurringInvoices
      *
      * @throws AutoInvoiceRefused when the period cannot be invoiced
      */
-    private function attempt(Workspace $workspace, ServicePackageEnrollment $enrollment, ClientAgreement $agreement, string $periodStart): AutoInvoiceResult
+    private function attempt(Workspace $workspace, ServicePackageEnrollment $enrollment, ClientAgreement $agreement, string $periodStart, string $periodEnd): AutoInvoiceResult
     {
         // Generation locks time and tasks, which only a transaction that began
         // with the maintenance share lock may; then the enrollment, which ranks
@@ -266,16 +328,19 @@ final class PackageRecurringInvoices
         if (! $locked instanceof ServicePackageEnrollment || $locked->enrollmentStatus() !== EnrollmentStatus::Active || $locked->client_agreement_id !== $agreement->id) {
             return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
         }
-        // MIG-3: a move to a new version taking effect by this period's start
-        // has not applied yet. The period is the new terms' to bill, once the
-        // move has started the agreement that carries them; invoiced now, the
-        // old agreement would sell it on the old terms. Asked with a locking
-        // read after the enrollment's lock, as the move itself is decided.
-        $moveDue = ServicePackageMigrationTarget::query()
+        // MIG-3: a move to a new version taking effect at this period's start
+        // has not applied yet. While the period is current it is the new
+        // terms' to bill, once the move has started the agreement that carries
+        // them; invoiced now, the old agreement would sell it on the old
+        // terms. Once it has ended the move can no longer apply to it
+        // (`effective_date_passed`), so neither it nor any later period waits:
+        // the agreement in force bills them. Asked with a locking read after
+        // the enrollment's lock, as the move itself is decided.
+        $moveDue = $periodEnd >= $this->clock->today($workspace)->toDateString() && ServicePackageMigrationTarget::query()
             ->where('workspace_id', $workspace->id)
             ->where('service_package_enrollment_id', $locked->id)
             ->where('status', MigrationTargetStatus::Scheduled->value)
-            ->whereDate('effective_on', '<=', $periodStart)
+            ->whereDate('effective_on', $periodStart)
             ->tap(Locks::forShare())
             ->exists();
         if ($moveDue) {

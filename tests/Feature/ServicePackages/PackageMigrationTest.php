@@ -588,6 +588,81 @@ final class PackageMigrationTest extends TestCase
         $this->assertEquals($recorded, $target->refresh()->outcome_recorded_at);
     }
 
+    #[Requirement('MIG-3', 'INV-1')]
+    public function test_a_move_still_held_when_its_first_period_ends_waits_for_an_owner_and_every_period_is_billed(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world(['cancellation_mode' => 'request']);
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        $company = ClientCompany::query()->findOrFail($enrollment->client_company_id);
+        $old = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
+        $this->issueRun();
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        $request = app(AgreementCancellations::class)->cancelByContact($this->contactOf($company), $company, $old, '2026-12-31', null);
+        $this->travelTo(CarbonImmutable::parse('2026-12-01 00:30:00', 'UTC'));
+        $this->issueRun();
+
+        // All January the move waits for the request, and so does January's invoice.
+        foreach (['2027-01-01 00:30:00', '2027-01-31 23:30:00'] as $at) {
+            $this->travelTo(CarbonImmutable::parse($at, 'UTC'));
+            $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+            $this->assertSame([['2027-01-01', 'waits_for_move']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun()['outcomes']));
+        }
+
+        // Declined on Feb 1: January has ended, so the move is not backdated
+        // into it; the current terms bill January, late, and February.
+        $this->travelTo(CarbonImmutable::parse('2027-02-01 00:30:00', 'UTC'));
+        app(AgreementCancellations::class)->decline($owner, $workspace, $request->refresh(), null);
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $target = ServicePackageMigrationTarget::query()->sole();
+        $this->assertSame(['scheduled', 'effective_date_passed', null], [$target->status, $target->outcome_code, $target->successor_agreement_id]);
+        $this->assertSame([['2027-01-01', 'issued'], ['2027-02-01', 'issued']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun()['outcomes']));
+        $this->assertSame([], $this->issueRun()['outcomes']);
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame([$old->id, 'active', 1], [$enrollment->refresh()->client_agreement_id, $old->refresh()->status, ClientAgreement::query()->where('workspace_id', $workspace->id)->count()]);
+        $this->assertSame([['2026-11-01', 4500], ['2026-12-01', 4500], ['2027-01-01', 4500], ['2027-02-01', 4500]], ClientInvoice::query()->where('workspace_id', $workspace->id)->orderBy('cycle_start')->get()
+            ->map(fn (ClientInvoice $invoice): array => [$invoice->cycle_start?->toDateString(), (int) $invoice->total_amount])->all());
+        $this->assertCount(1, collect(app(WorkspaceActionQueue::class)->forManager($workspace))->where('kind', 'package_move_held'));
+
+        // The owner's way out: cancel it and schedule another.
+        app(PackageMigrationWorkflow::class)->cancel($owner, $workspace, ServicePackageMigration::query()->sole());
+        $this->assertSame('2027-04-01', $this->preview($owner, $workspace, $package, $from)['effective_on']);
+    }
+
+    #[Requirement('MIG-1', 'MIG-3')]
+    public function test_a_move_where_a_recurring_charge_bills_off_the_service_cycle_is_refused(): void
+    {
+        $hosting = ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500];
+        $licence = ['kind' => 'recurring', 'description' => 'Annual licence', 'cadence' => 'annual', 'amount' => 12000];
+        $once = ['kind' => 'recurring', 'description' => 'Site audit', 'cadence' => 'one_time', 'amount' => 9000];
+        // An annual licence on a monthly service: November was $165, December $45,
+        // and a successor would have charged the licence again in January.
+        foreach ([
+            'on both versions' => [[$hosting, $licence], [[...$hosting, 'amount' => 5000], $licence]],
+            'only on the current version' => [[$hosting, $licence], [[...$hosting, 'amount' => 5000]]],
+            'only on the new version' => [[$hosting], [[...$hosting, 'amount' => 5000], $licence]],
+            'a one-time charge' => [[$hosting, $once], [[...$hosting, 'amount' => 5000], $once]],
+        ] as $case => [$v1, $v2]) {
+            [$workspace, $owner, $package, $from] = $this->world(['components' => $v1], ['components' => $v2]);
+            $this->subscriber($workspace, $package, 'Lakeside '.$case);
+            $this->assertSame(MigrationRefusal::OffCycleComponent->value, $this->preview($owner, $workspace, $package, $from)['refusal']['code'] ?? null, $case);
+            $this->expectRefusal(MigrationRefusal::OffCycleComponent, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
+            $this->assertSame(0, ServicePackageMigration::query()->where('workspace_id', $workspace->id)->count());
+        }
+
+        // An annual charge added to the agreement after scheduling holds the move on its date.
+        [$workspace, $owner, $package, $from] = $this->world();
+        $enrollment = $this->subscriber($workspace, $package, 'Edited');
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        ClientAgreement::query()->findOrFail($enrollment->client_agreement_id)->recurringItems()->create([
+            'workspace_id' => $workspace->id, 'description' => 'Annual licence', 'cadence' => 'annual', 'amount' => 12000, 'quantity' => '1',
+            'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 5,
+        ]);
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame(['scheduled', 'off_cycle_component'], [ServicePackageMigrationTarget::query()->sole()->status, ServicePackageMigrationTarget::query()->sole()->outcome_code]);
+        $this->assertSame('active', ClientAgreement::query()->findOrFail($enrollment->client_agreement_id)->status);
+    }
+
     // ── Isolation and concurrency ───────────────────────────────────────────
 
     #[Requirement('MIG-1', 'MIG-5')]

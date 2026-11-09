@@ -29,6 +29,16 @@ enum MigrationHold: string
      * cadence, so every period is billed once).
      */
     case CadenceChanged = 'cadence_changed';
+    /**
+     * The first period on the new terms ended before the move could apply.
+     * Started now, the new agreement would begin in the past with that
+     * period never invoiced, so the subscriber stays on the current terms,
+     * which bill every period, until an owner cancels this move and
+     * schedules another.
+     */
+    case EffectiveDatePassed = 'effective_date_passed';
+    /** The agreement now has a recurring item on another cadence than its billing (an annual licence on a monthly service), whose billing anchor a new agreement would restart. */
+    case OffCycleComponent = 'off_cycle_component';
     /** The agreement was linked to a Square series after the move was scheduled; SVC never reshapes what Square collects. */
     case SquareCollected = 'square_collected';
     /** Something unexpected; the error was reported. */
@@ -43,6 +53,8 @@ enum MigrationHold: string
             self::LastPeriodToSettle => 'The last period on the current terms still has work or expenses to invoice, on the invoice that would also open the new terms\' first period. Invoice them separately (an ad hoc invoice), or cancel the move for this subscriber; then the move applies on the next run.',
             self::SettlementRefused => 'The last period on the current terms could not be invoiced, so the move waits rather than leave that work to the new terms. Resolve what the billing engine reports, then the move applies on the next run.',
             self::CadenceChanged => 'The agreement now bills on another cadence than the new version, so moving it would leave a period unbilled. Change its cadence back, or cancel the move for this subscriber.',
+            self::EffectiveDatePassed => 'The first billing period on the new terms ended before the move could apply, so the client stays on the current terms, which keep invoicing every period, including that one. Cancel this move for the client and schedule a new one.',
+            self::OffCycleComponent => 'The agreement now has a recurring charge on another cadence than its billing (an annual licence on a monthly service, or a one-time charge), which a new agreement would charge again from its own start. Remove it, or cancel the move for this subscriber.',
             self::SquareCollected => 'Square now collects this agreement\'s invoices, and SVC never reshapes what Square collects. Cancel the move for this subscriber.',
             self::Failed => 'The move could not be applied. It is tried again every hour.',
         };

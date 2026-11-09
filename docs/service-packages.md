@@ -838,12 +838,43 @@ Slice 6 (moving subscribers to a new version) settled these:
   series marker over to the successor would also break its uniqueness per
   workspace and location (`ca_ws_square_location_series_unique`), and clearing
   it on the old agreement would orphan its Square linkage (Codex P2 on #674).
-- **Both are asked again on the date.** The version is fixed at scheduling,
-  but an operator can change an active agreement's cadence and a Square series
-  can be linked to it after scheduling, so the applier reads both under the
-  agreement's lock and holds the move (`cadence_changed`, `square_collected`)
-  rather than apply it, retried every run and shown in Needs you until the
-  cadence is restored or the move cancelled for that subscriber.
+- **Recurring charges off the billing cycle are refused**
+  (`package_migration_off_cycle_component`). The engine anchors a recurring
+  item on another cadence than its agreement's billing - an annual licence in a
+  monthly service - at the item's own start, and bills a one-time item once on
+  its agreement. The successor's items start on the effective date, so an
+  annual licence paid in November was charged again in January (November $165,
+  December $45, January $165 again; Codex P1 on #674), and a one-time charge a
+  second time. Carrying each item's anchor and paid-through date over would need
+  an unambiguous mapping from every old component to its new one (renamed,
+  repriced, added or dropped components make it a guess), so a move whose
+  current or new version has any recurring component off the service's cadence,
+  a one-time one included, is refused whole. A setup fee is not one (the
+  successor never carries it, above).
+- **Asked again on the date.** The version is fixed at scheduling, but an
+  operator can change an active agreement's cadence or recurring items, and a
+  Square series can be linked to it, after scheduling, so the applier reads
+  them under the agreement's lock and holds the move (`cadence_changed`,
+  `off_cycle_component`, `square_collected`) rather than apply it, retried
+  every run and shown in Needs you until the agreement is restored or the move
+  cancelled for that subscriber.
+- **Never started in the past** (`effective_date_passed`). A move held on its
+  date (a pending request to leave, an invoice to void, any hold) applies once
+  released while the first period on the new terms is still current: the
+  successor starts on the effective date and automatic invoicing, which sells
+  only the period containing today, sells that period on the new terms.
+  Released after that period ended, the move used to apply backdated: the
+  successor's first period was no longer current, so nothing ever invoiced it,
+  and the old agreement had waited for the move all through it (Codex P1 on
+  #674: declined on Feb 1, a Jan 1 move applied and January was never billed).
+  Now it holds instead, for an owner to cancel and schedule again, and nothing
+  is left unbilled: automatic invoicing waits for a move only for the period
+  starting on its date and only while that period is current; once it has
+  ended, it is invoiced late on the agreement still in force
+  (`PackageRecurringInvoices::due()`, ahead of the current period), and every
+  later period bills normally. A draft-mode agreement's drafts never waited, and
+  a held move discards none of them. `BillingHistoryInvariantTest` walks both
+  releases, monthly and quarterly.
 - **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
   after the earliest end a cancellation made today could choose (the close of
   the period in which today plus the agreement's own notice falls), so a client
@@ -879,9 +910,11 @@ Slice 6 (moving subscribers to a new version) settled these:
   issued invoice already selling a period from the date on, **holds** it
   (recorded once, retried every run, a Needs you row). Drafts the walk already
   made for those periods were priced on the old terms and are discarded through
-  the ordinary discard. Automatic invoicing skips a period a due move has not
-  applied to yet (`waits_for_move`), so the new period is never issued on the
-  old terms. A second run, or one beside it, finds the target settled.
+  the ordinary discard. Automatic invoicing skips the period starting on a due
+  move's date while it is current and the move has not applied yet
+  (`waits_for_move`), so the new period is never issued on the old terms (and,
+  once it ends unapplied, bills it late - "Never started in the past" below).
+  A second run, or one beside it, finds the target settled.
 - **Cancelling (MIG-5)** is allowed while the move is scheduled: before the date
   the whole move, from it on the subscribers still waiting (held); one already
   moved stays moved and the move completes. Each client whose move is cancelled

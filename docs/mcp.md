@@ -2278,7 +2278,10 @@ the same project would claim too), `package_migration_changes_cadence` (the new
 version, or this agreement, bills on another cadence: a first period of another
 length would claim work periods already invoiced) or
 `package_migration_square_collected` (Square collects the agreement; SVC never
-reshapes it). A setup fee on the new version is never charged to a subscriber
+reshapes it) or `package_migration_off_cycle_component` (the current or new
+version has a recurring charge off the service's cadence, such as an annual
+licence in a monthly service or a one-time charge, which a new agreement would
+charge again). A setup fee on the new version is never charged to a subscriber
 who moves. Each client is emailed the date, the changes
 and the message, and sees the notice in the portal; a client whose autopay limit
 is below the new price is told SVC will not raise it, and Needs you lists it.
@@ -2293,9 +2296,13 @@ never changes, and automatic invoicing reads the carried version. A subscriber
 whose agreement has ended, or ends first, is `skipped` with its reason in
 `outcome`; one whose next period an issued invoice already sells, whose client
 asked to leave before the date, whose last old period still has something to
-invoice, or whose agreement changed cadence or came to be collected by Square
-since scheduling (`cadence_changed`, `square_collected`) waits `scheduled` with
-the reason in `outcome` and is retried every hour.
+invoice, or whose agreement changed cadence, came to carry an off-cycle
+recurring charge or came to be collected by Square since scheduling
+(`cadence_changed`, `off_cycle_component`, `square_collected`) waits
+`scheduled` with the reason in `outcome` and is retried every hour. A move still
+waiting when its first period on the new terms has ended is never started in the
+past: it waits with `effective_date_passed` until it is cancelled (schedule a new
+one), and the current agreement invoices every period, that one included.
 A move (`package_migrations.get`) answers its versions, date, message, changes,
 new price, `counts` and each subscriber's `status`, `outcome`, agreement and,
 once moved, `successor_agreement`. `enrollments.*` carries `move` for a service

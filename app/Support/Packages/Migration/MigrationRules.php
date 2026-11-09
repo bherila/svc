@@ -16,9 +16,13 @@ final class MigrationRules
     /**
      * One subscriber on or after the effective date (MIG-3). In order: a
      * service or agreement that has stopped is skipped for good, as is one
-     * ending before the new terms would start; an agreement Square came to
-     * collect, or whose cadence was changed away from the new version's,
-     * since it was scheduled waits for an owner (scheduling refuses both);
+     * ending before the new terms would start; a move whose first period on
+     * the new terms has already ended waits for an owner to reschedule it
+     * (applied, it would start the new agreement in the past with that period
+     * never invoiced); an agreement Square came to collect, whose cadence was
+     * changed away from the new version's, or that came to carry a recurring
+     * item on another cadence than its billing, since it was scheduled waits
+     * for an owner (scheduling refuses all three);
      * a client's request to leave before the date waits for its answer; and
      * an issued invoice already selling a period from the date on waits for
      * an owner, since applying would bill that period twice.
@@ -36,6 +40,8 @@ final class MigrationRules
         bool $periodInvoiced,
         bool $squareCollected,
         bool $cadenceChanged,
+        bool $firstPeriodEnded,
+        bool $offCycleComponent,
     ): MigrationDecision {
         $effective = $effectiveOn->toDateString();
 
@@ -44,8 +50,10 @@ final class MigrationRules
             ! $carriesFromVersion => MigrationDecision::skip(MigrationSkip::VersionMoved),
             $agreementStatus !== 'active' => MigrationDecision::skip(MigrationSkip::AgreementEnded),
             $endsOn !== null && $endsOn->toDateString() < $effective => MigrationDecision::skip(MigrationSkip::EndsBeforeEffective),
+            $firstPeriodEnded => MigrationDecision::hold(MigrationHold::EffectiveDatePassed),
             $squareCollected => MigrationDecision::hold(MigrationHold::SquareCollected),
             $cadenceChanged => MigrationDecision::hold(MigrationHold::CadenceChanged),
+            $offCycleComponent => MigrationDecision::hold(MigrationHold::OffCycleComponent),
             $pendingEndOn !== null && $pendingEndOn->toDateString() < $effective => MigrationDecision::hold(MigrationHold::CancellationPending),
             $periodInvoiced => MigrationDecision::hold(MigrationHold::PeriodInvoiced),
             default => MigrationDecision::apply(),
@@ -79,6 +87,27 @@ final class MigrationRules
             $chosen !== null && ! $dates->offers($chosen) => MigrationRefusal::DateNotOffered,
             default => null,
         };
+    }
+
+    /**
+     * Whether a package version or an agreement carries a recurring charge
+     * off the billing cycle: on another cadence than `$billing`, a one-time
+     * charge included. The billing engine anchors such a charge at its item's
+     * start, so a new agreement carrying it from the effective date would
+     * bill an annual licence again in the middle of the year the client paid
+     * for, or a one-time charge a second time (Codex P1 on #674).
+     *
+     * @param  list<string>  $cadences  the cadence of each recurring charge
+     */
+    public static function hasOffCycleCharge(string $billing, array $cadences): bool
+    {
+        foreach ($cadences as $cadence) {
+            if ($cadence !== $billing) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Whether a subscriber's move is due on the workspace's today: from its effective date on, while scheduled. */

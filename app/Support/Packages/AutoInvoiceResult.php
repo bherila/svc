@@ -18,9 +18,10 @@ final readonly class AutoInvoiceResult
     public const string NOT_DUE = 'not_due';
 
     /**
-     * A move to a new version is due on or before the period's start and has
-     * not applied yet (MIG-3): the period is the new terms' to bill, after
-     * the move.
+     * A move to a new version takes effect at the period's start and has not
+     * applied yet, while the period is current (MIG-3): the period is the new
+     * terms' to bill, after the move. Once the period ends without the move,
+     * it no longer waits and is billed on the agreement in force.
      */
     public const string WAITS_FOR_MOVE = 'waits_for_move';
 

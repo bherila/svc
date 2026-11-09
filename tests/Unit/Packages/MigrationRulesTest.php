@@ -126,10 +126,10 @@ final class MigrationRulesTest extends TestCase
         $this->assertSame(MigrationRefusal::EndsFirst, MigrationRules::eligibility(true, false, $none, self::day('2027-01-01')));
     }
 
-    /** @return array<string, array{array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool}, MigrationSkip|MigrationHold|null}> */
+    /** @return array<string, array{array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool}, MigrationSkip|MigrationHold|null}> */
     public static function decisions(): array
     {
-        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced[, Square collects it, cadence changed]
+        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced[, Square collects it, cadence changed, first new period ended, off-cycle charge]
         return [
             'an active subscriber moves' => [[true, true, 'active', null, null, false], null],
             'one ending after the date moves' => [[true, true, 'active', '2027-03-31', null, false], null],
@@ -144,17 +144,20 @@ final class MigrationRulesTest extends TestCase
             'the new period already invoiced' => [[true, true, 'active', null, null, true], MigrationHold::PeriodInvoiced],
             'Square came to collect it' => [[true, true, 'active', null, '2026-12-31', true, true, true], MigrationHold::SquareCollected],
             'its cadence was changed' => [[true, true, 'active', null, '2026-12-31', true, false, true], MigrationHold::CadenceChanged],
-            'a Square agreement that ended is still skipped' => [[true, true, 'terminated', null, null, false, true, true], MigrationSkip::AgreementEnded],
+            'a Square agreement that ended is still skipped' => [[true, true, 'terminated', null, null, false, true, true, true, true], MigrationSkip::AgreementEnded],
+            'the first new period ended while it waited' => [[true, true, 'active', null, '2026-12-31', true, true, true, true, true], MigrationHold::EffectiveDatePassed],
+            'one ending before the date is skipped though its first new period ended' => [[true, true, 'active', '2026-12-31', null, false, false, false, true], MigrationSkip::EndsBeforeEffective],
+            'it came to carry an off-cycle charge' => [[true, true, 'active', null, '2026-12-31', true, false, false, false, true], MigrationHold::OffCycleComponent],
         ];
     }
 
-    /** @param array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool} $facts */
+    /** @param array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool} $facts */
     #[DataProvider('decisions')]
     #[Requirement('MIG-3')]
     public function test_on_the_date_each_subscriber_is_moved_skipped_or_held(array $facts, MigrationSkip|MigrationHold|null $expected): void
     {
-        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced, $square, $cadence] = $facts + [6 => false, 7 => false];
-        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced, $square, $cadence);
+        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced, $square, $cadence, $ended, $offCycle] = $facts + [6 => false, 7 => false, 8 => false, 9 => false];
+        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced, $square, $cadence, $ended, $offCycle);
 
         $this->assertSame($expected === null, $decision->applies());
         $this->assertSame($expected instanceof MigrationSkip ? $expected : null, $decision->skip);
@@ -194,6 +197,17 @@ final class MigrationRulesTest extends TestCase
         $dates = new MigrationEffectiveDates(self::day('2027-01-01'), [self::day('2027-01-01')]);
         $this->assertSame(MigrationRefusal::BillsByUsage, MigrationRules::eligibility(true, false, $dates, null, true));
         $this->assertSame(MigrationRefusal::AlreadyScheduled, MigrationRules::eligibility(true, true, $dates, null, true));
+    }
+
+    #[Requirement('MIG-1')]
+    public function test_a_recurring_charge_off_the_billing_cycle_is_found(): void
+    {
+        $this->assertFalse(MigrationRules::hasOffCycleCharge('monthly', []));
+        $this->assertFalse(MigrationRules::hasOffCycleCharge('monthly', ['monthly', 'monthly']));
+        $this->assertTrue(MigrationRules::hasOffCycleCharge('monthly', ['monthly', 'annual']));
+        $this->assertTrue(MigrationRules::hasOffCycleCharge('monthly', ['one_time']));
+        $this->assertTrue(MigrationRules::hasOffCycleCharge('quarterly', ['quarterly', 'monthly']));
+        $this->assertFalse(MigrationRules::hasOffCycleCharge('quarterly', ['quarterly']));
     }
 
     #[Requirement('MIG-1', 'INV-3')]

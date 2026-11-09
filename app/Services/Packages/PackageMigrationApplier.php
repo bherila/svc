@@ -14,11 +14,13 @@ use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\AgreementSelector;
+use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\CancellationRecords;
+use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\EmptyCadenceDraft;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
@@ -75,8 +77,25 @@ use Throwable;
  * reshapes it, and its series marker is unique to one agreement) and one
  * billing on another cadence than the new version (a successor's first
  * period of another length would claim work periods the old agreement's
- * invoices already did). Either can change after scheduling - a Square link,
- * an operator's edit - so both are asked again here and hold the move.
+ * invoices already did). It also refuses a version with a recurring charge
+ * off the billing cycle (an annual licence in a monthly service, a one-time
+ * charge): the engine anchors such a charge at its item's start, so the
+ * successor would charge again what the client already paid for. Each can
+ * change after scheduling - a Square link, an operator's edit of the cadence
+ * or the recurring items - so all three are asked again here and hold the
+ * move.
+ *
+ * ## Never backdated past a period
+ *
+ * A move held on its date (a pending request to leave, an invoice to void)
+ * applies once released while the first period on the new terms is still
+ * current: the successor starts on the effective date and automatic
+ * invoicing sells that period, the one containing today. Released after it
+ * ended, it would start the successor in the past with that period sold by
+ * neither agreement, so it holds instead (`effective_date_passed`) for an
+ * owner to cancel and reschedule, and the agreement in force bills every
+ * period meanwhile, the one that waited for the move included
+ * ({@see PackageRecurringInvoices::due()}).
  *
  * ## Nothing billed twice, nothing skipped
  *
@@ -105,6 +124,7 @@ final class PackageMigrationApplier
         private readonly InvoiceLifecycleService $invoices,
         private readonly ClientInvoicingService $invoicing,
         private readonly ClientActivityRecorder $activities,
+        private readonly BillingCycleResolver $cycles = new BillingCycleResolver,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -166,6 +186,23 @@ final class PackageMigrationApplier
 
         $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($migration->to_version_id)
             ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])->firstOrFail();
+        $toTerms = PackageTerms::fromVersion($version);
+        // The successor's first period is the old agreement's period from the
+        // effective date (a move keeps the cadence, and the date is one of its
+        // period starts). Once it has ended, a successor started now would
+        // begin in the past with that period never invoiced: automatic
+        // invoicing sells only the period containing today.
+        $firstPeriod = $this->cycles->cycleContaining($old, Carbon::parse($effective->toDateString()));
+        $offCycleItems = ClientAgreementRecurringItem::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $old->id)
+            ->where('is_active', true)
+            ->where('cadence', '!=', ChargeCadence::OneTime->value)
+            ->where(fn ($open) => $open->whereNull('expires_on')->orWhereDate('expires_on', '>=', $effective->toDateString()))
+            ->orderBy('id')
+            ->pluck('cadence')
+            ->map(static fn (mixed $cadence): string => (string) $cadence)
+            ->all();
         $decision = MigrationRules::decide(
             enrollmentActive: $enrollment->enrollmentStatus() === EnrollmentStatus::Active,
             carriesFromVersion: $enrollment->carriedVersionId() === $migration->from_version_id && $enrollment->client_agreement_id === $old->id,
@@ -175,7 +212,9 @@ final class PackageMigrationApplier
             pendingEndOn: $pending?->requested_end_on,
             periodInvoiced: $claims->contains(static fn (ClientInvoice $claim): bool => $claim->status !== InvoiceStatus::Draft->value),
             squareCollected: $old->square_series_key !== null,
-            cadenceChanged: $old->effectiveBillingCadence()->value !== PackageTerms::fromVersion($version)->billingCadence->value,
+            cadenceChanged: $old->effectiveBillingCadence()->value !== $toTerms->billingCadence->value,
+            firstPeriodEnded: $firstPeriod->end->toDateString() < $today->toDateString(),
+            offCycleComponent: PackageMigrationPlanner::chargesOffCycle($toTerms) || MigrationRules::hasOffCycleCharge($old->effectiveBillingCadence()->value, array_values($offCycleItems)),
         );
         if ($decision->hold !== null) {
             throw new MigrationHeld($decision->hold);

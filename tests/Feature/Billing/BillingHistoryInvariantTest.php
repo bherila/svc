@@ -541,6 +541,89 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertNotSame([], $issuedBefore);
     }
 
+    /** @return iterable<string, array{string, int, string, string, string, int}> */
+    public static function heldMoveWorlds(): iterable
+    {
+        // Cadence, one cycle's price on version 1 (version 2 adds $5.00 a
+        // month's worth), when the client's request to leave is declined,
+        // whether the move then applies or waits for an owner, and how many
+        // periods are sold through mid-November.
+        yield 'monthly, declined inside the first new period' => ['monthly', 4500, '2026-07-15', 'applied', 'new from the date', 11];
+        yield 'monthly, declined after it ended' => ['monthly', 4500, '2026-08-15', 'effective_date_passed', 'old throughout', 11];
+        yield 'quarterly, declined inside the first new period' => ['quarterly', 13500, '2026-08-15', 'applied', 'new from the date', 4];
+        yield 'quarterly, declined after it ended' => ['quarterly', 13500, '2026-10-15', 'effective_date_passed', 'old throughout', 4];
+    }
+
+    /**
+     * A move held on its date - the client asked to leave before it, and the
+     * owner answers late - invoiced automatically twice a month as the year
+     * goes (docs/service-packages.md, MIG-3, INV-1). Answered while the first
+     * period on the new terms is still current, the move applies and that
+     * period bills once, on the new terms. Answered after it ended, the move
+     * never starts an agreement in the past: it waits for an owner
+     * (`effective_date_passed`) and the current terms bill every period,
+     * the one that waited for the move included, once. Monthly and quarterly
+     * follow one rule (Codex P1 on #674: the move used to apply backdated,
+     * and the first new period was never invoiced by either agreement).
+     */
+    #[DataProvider('heldMoveWorlds')]
+    #[Requirement('MIG-3', 'INV-1')]
+    public function test_a_move_held_on_its_date_never_leaves_a_period_unbilled(string $cadence, int $price, string $declined, string $outcome, string $terms, int $periods): void
+    {
+        config(['svc.service_packages.enabled' => true]);
+        Mail::fake();
+        $effective = '2026-07-01';
+        $this->travelTo(CarbonImmutable::parse('2026-01-01 10:00:00', 'UTC'));
+        [$workspace, $owner] = $this->packageWorkspace('Synthetic invariants held move');
+        $workspace->forceFill(['timezone' => 'UTC'])->save();
+        $hosting = static fn (int $amount): array => ['billing_cadence' => $cadence, 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => $cadence, 'amount' => $amount]]];
+        $packages = app(ServicePackageWorkflow::class);
+        $package = $packages->publish($owner, $workspace, $packages->create($owner, $workspace, $this->hostingPackageInput([
+            'link_name' => 'synthetic-care', 'invoice_issuing' => 'automatic', 'activation_mode' => 'automatic', 'notice_days' => 0, 'cancellation_mode' => 'request', ...$hosting($price),
+        ])));
+        $from = ServicePackageVersion::query()->findOrFail($package->published_version_id);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic held client', 'slug' => 'synthetic-held-'.Str::slug($cadence.$declined)]);
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        $enrollment = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
+        $old = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
+        $newPrice = $price + ($cadence === 'monthly' ? 500 : 1500);
+        $packages->update($owner, $workspace, $package->refresh(), $hosting($newPrice));
+        $package = $packages->publish($owner, $workspace, $package->refresh());
+
+        $request = null;
+        for ($month = CarbonImmutable::parse('2026-01-01'); $month->lte(CarbonImmutable::parse('2026-11-01')); $month = $month->addMonth()) {
+            foreach ([$month, $month->addDays(14)] as $day) {
+                $this->travelTo($day->setTime(0, 30));
+                if ($day->toDateString() === '2026-06-15') {
+                    app(PackageMigrationWorkflow::class)->schedule($owner, $workspace, $package->refresh(), $from->public_id, $effective, [$enrollment->public_id], null);
+                    $request = app(AgreementCancellations::class)->cancelByContact($contact, $company, $old->refresh(), '2026-06-30', null);
+                }
+                if ($day->toDateString() === $declined) {
+                    app(AgreementCancellations::class)->decline($owner, $workspace, $request?->refresh() ?? throw new \LogicException('No request.'), null);
+                }
+                $this->assertSame(0, Artisan::call('svc:packages:apply-migrations', ['--apply' => true]), Artisan::output());
+                $this->assertSame(0, Artisan::call('svc:packages:issue-invoices', ['--apply' => true]), Artisan::output());
+                $this->assertInvariants($company, $cadence.', '.$day->toDateString());
+            }
+        }
+
+        $target = ServicePackageMigrationTarget::query()->where('workspace_id', $workspace->id)->sole();
+        $this->assertSame($outcome, $target->outcome_code ?? $target->status);
+        $sold = ClientInvoiceLine::query()->join('client_invoices as invoice', 'invoice.id', '=', 'client_invoice_lines.client_invoice_id')
+            ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
+            ->where('client_invoice_lines.type', 'recurring_item')
+            ->orderBy('client_invoice_lines.line_date')->get(['client_invoice_lines.line_date', 'client_invoice_lines.total_amount'])
+            ->map(fn (ClientInvoiceLine $line): array => [$line->line_date?->toDateString(), (int) $line->total_amount])->all();
+        $this->assertCount($periods, $sold, 'Every period sold, none skipped.');
+        $this->assertSame($periods, count(array_unique(array_column($sold, 0))), 'No period sold twice.');
+        foreach ($sold as [$day, $amount]) {
+            $this->assertSame($terms === 'new from the date' && $day >= $effective ? $newPrice : $price, $amount, "The period from {$day}.");
+        }
+        $this->assertSame(ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), ClientInvoice::query()->where('workspace_id', $workspace->id)->where('status', InvoiceStatus::Issued->value)->count(), 'Each was issued.');
+    }
+
     /**
      * What the move does, done by hand: the agreement ended the day before
      * with its recurring items, the draft for the first new period discarded,

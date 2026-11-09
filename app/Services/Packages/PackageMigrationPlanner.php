@@ -14,6 +14,8 @@ use App\Support\Packages\Migration\MigrationRefusal;
 use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationSubscriber;
 use App\Support\Packages\Migration\MigrationTermChanges;
+use App\Support\Packages\PackageComponentKind;
+use App\Support\Packages\PackageComponentTerms;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use App\Support\Packages\PublicPackagePresenter;
@@ -85,9 +87,23 @@ final class PackageMigrationPlanner
             $package->packageStatus() !== PackageStatus::Published, $to === null, $toTerms === null, $to->number <= $from->number => MigrationRefusal::NotNewer,
             ! $fromTerms->isRecurring() || ! $toTerms->isRecurring() => MigrationRefusal::NotRecurring,
             $fromTerms->billingCadence !== $toTerms->billingCadence => MigrationRefusal::ChangesCadence,
+            self::chargesOffCycle($fromTerms) || self::chargesOffCycle($toTerms) => MigrationRefusal::OffCycleComponent,
             strtoupper($fromTerms->currency) !== strtoupper($toTerms->currency) => MigrationRefusal::CurrencyChanged,
             default => null,
         };
+    }
+
+    /**
+     * Whether a version has a recurring component off its billing cycle (an
+     * annual licence in a monthly service, a one-time charge). Its setup fee
+     * is not one: a move never carries it ({@see PackageAgreementTerms}).
+     */
+    public static function chargesOffCycle(PackageTerms $terms): bool
+    {
+        return MigrationRules::hasOffCycleCharge($terms->billingCadence->value, array_values(array_map(
+            static fn (PackageComponentTerms $component): string => $component->cadence->value,
+            array_filter($terms->components, static fn (PackageComponentTerms $component): bool => $component->kind === PackageComponentKind::Recurring),
+        )));
     }
 
     /** A published version of this package, by its public id; not found otherwise. */
