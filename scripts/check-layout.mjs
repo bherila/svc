@@ -1381,8 +1381,10 @@ try {
                 await page.evaluate(() => {
                     const copy = document.body.cloneNode(true);
 
-                    for (const element of copy.querySelectorAll('[data-page]')) {
-                        element.removeAttribute('data-page');
+                    for (const element of copy.querySelectorAll(
+                        'script[data-page], [data-page]',
+                    )) {
+                        element.remove();
                     }
 
                     return copy.innerHTML;

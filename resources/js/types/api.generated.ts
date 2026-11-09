@@ -6108,6 +6108,7 @@ export interface components {
             published_at: string | null;
             terms: components['schemas']['ServicePackageTerms'];
             setup_fee_total: number;
+            cycle_amount: number;
         };
         SharedProjectAssignRequest: {
             assignees: {
