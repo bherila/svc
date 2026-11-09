@@ -157,7 +157,7 @@ final class ServicePackageOperationContractTest extends TestCase
             'ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestResponse',
             'ServicePackageRequestListResponse', 'ServicePackageRequestApprovalResponse',
             'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
-            'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse', 'ServicePackageSignupPayment',
+            'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse', 'ServicePackageSignupPayment', 'ServicePackageInvoicing',
             'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
         ], ServicePackageOperations::components());
         $this->expectException(InvalidArgumentException::class);
