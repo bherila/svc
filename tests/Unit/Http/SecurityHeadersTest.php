@@ -29,7 +29,7 @@ final class SecurityHeadersTest extends TestCase
     protected function tearDown(): void
     {
         restore_error_handler();
-        @unlink(public_path('hot'));
+        @unlink(self::viteHotFile());
         parent::tearDown();
     }
 
@@ -77,7 +77,7 @@ final class SecurityHeadersTest extends TestCase
 
     public function test_surrounding_whitespace_in_the_hot_file_is_ignored(): void
     {
-        file_put_contents(public_path('hot'), "\n  http://[::1]:5173 \n\n");
+        file_put_contents(self::viteHotFile(), "\n  http://[::1]:5173 \n\n");
 
         $this->assertStringContainsString('ws://[::1]:5173;', (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
     }
@@ -178,7 +178,7 @@ final class SecurityHeadersTest extends TestCase
 
     public function test_the_dev_server_joins_the_policy_only_while_its_hot_file_names_a_web_address(): void
     {
-        file_put_contents(public_path('hot'), "http://[::1]:5173\n");
+        file_put_contents(self::viteHotFile(), "http://[::1]:5173\n");
         $policy = (new SecurityHeaders)->contentSecurityPolicy('N0nce');
         $this->assertStringContainsString("script-src 'self' 'nonce-N0nce' https://js.stripe.com https://*.js.stripe.com http://[::1]:5173;", $policy);
         $this->assertStringContainsString("style-src 'self' 'unsafe-inline' http://[::1]:5173;", $policy);
@@ -186,16 +186,16 @@ final class SecurityHeadersTest extends TestCase
         $this->assertStringContainsString("font-src 'self' data: http://[::1]:5173;", $policy);
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com http://[::1]:5173 ws://[::1]:5173;", $policy);
 
-        file_put_contents(public_path('hot'), 'https://dev.example.test');
+        file_put_contents(self::viteHotFile(), 'https://dev.example.test');
         $this->assertStringContainsString('https://api.stripe.com https://dev.example.test wss://dev.example.test;', (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
 
         foreach (['javascript:alert(1)', 'ftp://dev.example.test', 'nonsense', 'http://'] as $bad) {
-            file_put_contents(public_path('hot'), $bad);
+            file_put_contents(self::viteHotFile(), $bad);
             $this->assertStringNotContainsString('dev.example', (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $bad);
             $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy('N0nce'), $bad);
         }
 
-        unlink(public_path('hot'));
+        unlink(self::viteHotFile());
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com;", (new SecurityHeaders)->contentSecurityPolicy('N0nce'));
     }
 

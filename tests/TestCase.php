@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\Mcp\Toolsets\McpToolsetSelection;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Foundation\Vite;
 use Illuminate\Support\Str;
 use Laravel\Passport\AccessToken;
 use Laravel\Passport\Token;
@@ -24,7 +25,15 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // ParaTest runs several processes against one checkout, so a test that
+        // writes Vite's hot file must not share `public/hot` with the others (or
+        // with a developer's running `pnpm dev`). Point both the real Vite, which
+        // withVite() restores, and the stand-in at this process's own file. The
+        // stand-in ignores useHotFile(), so its property is set directly.
+        app(Vite::class)->useHotFile(self::viteHotFile());
         $this->withoutVite();
+        $hotFile = self::viteHotFile();
+        (fn () => $this->hotFile = $hotFile)->call(app(Vite::class));
         // Progressive discovery is the default for every real client, so a test
         // that connects to MCP would see only the core tools. Most tests are about
         // what the authorized surface contains, not how it is revealed, so they
@@ -52,6 +61,12 @@ abstract class TestCase extends BaseTestCase
             self::$oauthSigningKeys = ['private' => $privateKey, 'public' => $details['key']];
         }
         config(['passport.private_key' => self::$oauthSigningKeys['private'], 'passport.public_key' => self::$oauthSigningKeys['public']]);
+    }
+
+    /** This process's Vite hot file; see setUp(). */
+    protected static function viteHotFile(): string
+    {
+        return sys_get_temp_dir().'/svc-vite-hot-'.getmypid();
     }
 
     /** Every feature HTTP request is checked against the published API contract. */
