@@ -412,6 +412,7 @@ final class ServicePackageOperations
     {
         $expected = ['expected_version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64]];
         $confirm = ['confirm' => ['type' => 'boolean', 'const' => true]];
+
         return match ($component) {
             'ServicePackageCreateRequest' => self::fromRules(self::createRules()),
             'ServicePackageUpdateRequest' => [...$expected, ...self::fromRules([
