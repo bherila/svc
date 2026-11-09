@@ -34,6 +34,19 @@ class RecurringItemBiller
     {
         $cycleStart = Carbon::instance($start)->startOfDay();
         $cycleEnd = Carbon::instance($end)->startOfDay();
+        // An item ends with its agreement, whether or not it carries an expiry
+        // of its own: past the termination date there is nothing left to sell,
+        // as there is no retainer. Asked here, not by each caller, so the
+        // closing invoice on either cadence path, the cycle a correction
+        // reaches, and every projection all stop on the same day - including a
+        // cycle that only opens after the end, which then sells nothing.
+        $agreementEnd = $agreement->ends_on === null ? null : Carbon::instance($agreement->ends_on)->startOfDay();
+        if ($agreementEnd !== null && $agreementEnd->lt($cycleEnd)) {
+            $cycleEnd = $agreementEnd;
+        }
+        if ($cycleEnd->lt($cycleStart)) {
+            return [];
+        }
         $lines = [];
 
         /** @var ClientAgreementRecurringItem $item */

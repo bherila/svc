@@ -29,6 +29,7 @@ use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -62,7 +63,8 @@ use Tests\TestCase;
  *   something that has since moved, and the issue has to notice.
  * - **Charged once.** No hour is allocated by two live invoices.
  * - **Own segment.** No invoice of an agreement allocates work dated after its
- *   segment ends - its termination, or the day before a successor starts.
+ *   segment ends - its termination, or the day before a successor starts -
+ *   or sells a retainer cycle or recurring-item incidence dated after it.
  * - **Nothing left behind.** Once an ended agreement's invoices are issued,
  *   none of its own deferred work still waits.
  * - **Bulk is sequential.** Generating every period at once prices each exactly
@@ -544,6 +546,61 @@ final class BillingHistoryInvariantTest extends TestCase
         $agreements->activate($renewal);
     }
 
+    /** @return iterable<string, array{array<string, mixed>, string, list<string>}> */
+    public static function terminatedWithItemsWorlds(): iterable
+    {
+        $monthly = ['retainer_minutes' => 600, 'rollover_months' => 1];
+        $quarterly = ['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 600, 'rollover_months' => 3];
+        $hosting = static fn (int $through): array => array_map(static fn (int $month): string => sprintf('2026-%02d-20', $month), range(1, $through));
+        yield 'monthly, ended at a period close' => [$monthly, '2026-06-30', $hosting(6)];
+        yield 'monthly, ended mid-period' => [$monthly, '2026-06-15', $hosting(5)];
+        yield 'quarterly, ended at a period close' => [$quarterly, '2026-06-30', $hosting(6)];
+        yield 'quarterly, ended mid-period' => [$quarterly, '2026-05-15', $hosting(4)];
+    }
+
+    /**
+     * A recurring item with no expiry of its own ends with its agreement
+     * (docs/client-management/cadence-billing.md): the closing invoice of a
+     * terminated agreement, and every period the walk reaches after it, sells
+     * no incidence dated after the end, exactly as it sells no retainer there.
+     * Each incidence up to the end is still billed, once.
+     *
+     * @param  array<string, mixed>  $terms
+     * @param  list<string>  $hostingBilled  the monthly item's incidences on or before the end
+     */
+    #[DataProvider('terminatedWithItemsWorlds')]
+    public function test_a_terminated_agreement_bills_no_recurring_item_after_its_end(array $terms, string $end, array $hostingBilled): void
+    {
+        Carbon::setTestNow('2026-10-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-10-10 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('terminated-items');
+        $agreement = $this->agreement($workspace, $company, $terms);
+        $hosting = $this->recurringItem($workspace, $agreement, 'Synthetic hosting', ['cadence' => 'monthly', 'anchor_day' => 20]);
+        $support = $this->recurringItem($workspace, $agreement, 'Synthetic support plan', ['cadence' => 'quarterly', 'anchor_month' => 1, 'anchor_day' => 1]);
+        foreach ([['2026-02-09', 1500], ['2026-04-14', 300], ['2026-05-04', 240], ['2026-06-08', 900]] as [$day, $minutes]) {
+            if ($day <= $end) {
+                $this->hours($workspace, $company, $project, $owner, $day, $minutes);
+            }
+        }
+        app(AgreementWorkflow::class)->terminate($agreement, $end);
+
+        Carbon::setTestNow('2027-01-20 12:00:00');
+        CarbonImmutable::setTestNow('2027-01-20 12:00:00');
+        app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+        $this->assertInvariants($company, 'generated after the termination');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+
+        $billed = fn (int $itemId): array => DB::table('client_invoice_lines as line')
+            ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+            ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
+            ->where('line.client_agreement_recurring_item_id', $itemId)
+            ->orderBy('line.line_date')->pluck('line.line_date')
+            ->map(fn ($date): string => Carbon::parse((string) $date)->toDateString())->all();
+        $this->assertSame($hostingBilled, $billed($hosting), 'The monthly item bills each incidence up to the end, once, and none after it.');
+        $this->assertSame(['2026-01-01', '2026-04-01'], $billed($support), 'The quarterly item bills each incidence up to the end, once, and none after it.');
+    }
+
     // ---- the invariants ----
 
     /**
@@ -627,6 +684,20 @@ final class BillingHistoryInvariantTest extends TestCase
                 ->whereDate('entry.worked_on', '>', $end)
                 ->pluck('entry.id')->all();
             $this->assertSame([], $late, "After {$step}, agreement {$agreement->id} bills work dated after its segment ends on {$end}.");
+
+            // Nor does it sell anything dated after that end: a retainer line
+            // is dated the day its cycle opens, an item's line the day of its
+            // incidence.
+            $sold = DB::table('client_invoice_lines as line')
+                ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+                ->where('invoice.workspace_id', $company->workspace_id)
+                ->where('invoice.client_agreement_id', $agreement->id)
+                ->where('invoice.status', '!=', InvoiceStatus::Void->value)
+                ->whereIn('line.type', [InvoiceLineType::Retainer->value, InvoiceLineType::RecurringItem->value])
+                ->whereDate('line.line_date', '>', $end)
+                ->get(['line.type', 'line.line_date'])
+                ->map(fn (object $line): string => $line->type.' '.Carbon::parse((string) $line->line_date)->toDateString())->all();
+            $this->assertSame([], $sold, "After {$step}, agreement {$agreement->id} sells a cycle or incidence dated after its segment ends on {$end}.");
         }
     }
 
@@ -742,6 +813,19 @@ final class BillingHistoryInvariantTest extends TestCase
             'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
             'retainer_amount' => $minutes * 100, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
         ]);
+    }
+
+    /**
+     * An item with no expiry of its own, starting with the agreement.
+     *
+     * @param  array<string, mixed>  $terms
+     */
+    private function recurringItem(Workspace $workspace, ClientAgreement $agreement, string $description, array $terms): int
+    {
+        return (int) ClientAgreementRecurringItem::query()->create($terms + [
+            'workspace_id' => $workspace->id, 'client_agreement_id' => $agreement->id, 'description' => $description,
+            'amount' => 5000, 'currency' => 'USD', 'quantity' => '1', 'is_active' => true,
+        ])->id;
     }
 
     private function hours(Workspace $workspace, ClientCompany $company, ClientProject $project, User $author, string $day, int $minutes): ClientTimeEntry

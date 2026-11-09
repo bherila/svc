@@ -713,6 +713,18 @@ Slice 5 (cancellation) settled these:
   cancelled agreement invoices exactly as one ended on the same date by hand -
   including the engine's existing settlement invoice for the period after an
   ended agreement - and an undone one exactly as one never cancelled.
+- **Recurring items end with the agreement.** One engine change after all: the
+  closing invoice of any ended agreement used to sell the next cycle's
+  incidences of a recurring item with no `expires_on` (a monthly hosting fee
+  for the month after a 30 June end; a whole quarter of it on a quarterly
+  agreement), on `main` before packages too. `RecurringItemBiller` now clamps
+  every range to the agreement's `ends_on`, the same rule as the retainer, on
+  both cadence paths, so a cancellation, a manual or backdated termination and
+  a version move are all covered without touching the items.
+  `BillingHistoryInvariantTest` gains the history (monthly and
+  quarterly, at a period close and mid-period) and its own-segment invariant
+  refuses a live retainer or recurring-item line dated after the segment ends
+  (docs/client-management/cadence-billing.md).
 - **Emails (CAN-6)**, through `PackageNotifier` after commit: owners and admins
   on a request and on a client's self-serve end; the client, with the end date,
   on any accepted cancellation (self-serve, approved or scheduled by an owner);
@@ -784,8 +796,10 @@ Slice 6 (moving subscribers to a new version) settled these:
   built. Until the engine can settle a last period beside a same-project
   successor (a follow-up), only fixed-price services move. At the effective
   date the move asks the engine, in a savepoint it always rolls back, for the
-  old agreement's closing invoice: empty for a fixed-price service (its
-  recurring items are ended the day before with it), so nothing is written and
+  old agreement's closing invoice: empty for a fixed-price service (the engine
+  sells no recurring-item incidence after an agreement's end - slice 5's
+  "Recurring items end with the agreement" - and the move also ends the items
+  the day before, so their own record says so), so nothing is written and
   no invoice number spent; anything to bill (work or expenses that reached a
   fixed-price service) holds the move (`last_period_to_settle`).
 - **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
