@@ -171,7 +171,8 @@ from its first capture. CI runs every harness group on every push to `main`,
 and on every pull request whose changes can affect a rendered screen
 (`layout` shards in `.github/workflows/tests.yml`, and `LayoutWorkflowTest`
 fails when a group has no shard). `scripts/layout-scope.sh` decides: a pull
-request changing only documentation, PHP tests and their fixtures, review and
+request changing only documentation (other than `docs/help/`, which the help
+panel bundles), PHP tests and their fixtures, review and
 agent configuration, other workflows or the CI helper scripts skips the
 screens, and anything else - application code, which seeds and renders them,
 included - runs them. The shards are balanced on measured group times, so add

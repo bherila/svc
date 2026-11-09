@@ -33,6 +33,8 @@ change resources/js/app.tsx
 expect 'the frontend' true
 change resources/docs/guide.md
 expect 'Markdown under resources' true
+change docs/help/time.md
+expect 'a help article the help panel bundles' true
 change .github/workflows/tests.yml
 expect 'this workflow' true
 change scripts/check-layout.mjs

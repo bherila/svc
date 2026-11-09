@@ -35,6 +35,9 @@ layout_scope_ignores() {
     case "$1" in
         .github/workflows/tests.yml) return 1 ;;
         resources/*) return 1 ;;
+        # The in-app help panel bundles these articles
+        # (resources/js/help/articles.ts imports them with import.meta.glob).
+        docs/help/*) return 1 ;;
         docs/* | *.md) return 0 ;;
         tests/Unit/* | tests/Feature/* | tests/Concerns/* | tests/Support/* | tests/Fixtures/* | tests/Deployment/*) return 0 ;;
         .claude/* | .github/*) return 0 ;;
