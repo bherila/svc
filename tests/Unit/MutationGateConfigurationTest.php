@@ -25,6 +25,11 @@ final class MutationGateConfigurationTest extends TestCase
         $this->assertStringContainsString('--testsuite=Unit', $configuration);
         $this->assertStringContainsString('timeout: 120', $configuration);
         $this->assertStringNotContainsString('ExternalImport', $configuration);
+        // The agent API's documentation text is pinned byte for byte by
+        // OpenApiDocumentGenerationTest, and boot-time catalog construction made
+        // every Laravel Unit test cover it (#673). Only that method is excluded.
+        $this->assertStringContainsString('"App\\\\Services\\\\AgentApi\\\\Operations\\\\*Operations::documentation"', $configuration);
+        $this->assertFileExists(base_path('tests/Feature/AgentApi/OpenApiDocumentGenerationTest.php'));
         $this->assertStringContainsString('scripts/run-mutation-diff.sh', $command);
         $this->assertStringContainsString('MUTATION_BASE:-origin/main', $runner);
         $this->assertStringContainsString('GIT_CONFIG_KEY_0=diff.renames', $runner);
