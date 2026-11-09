@@ -73,10 +73,14 @@ final class MigrationRulesTest extends TestCase
         $this->assertFalse($dates->offers(self::day('2026-12-02')));
     }
 
-    /** The earliest is always the day after the earliest end a cancellation made today could choose. */
+    /**
+     * The earliest is always the day after the earliest end a cancellation made today could choose.
+     *
+     * @param  list<string>  $offered  the provider's expectation for the other test; unused here
+     */
     #[DataProvider('effectiveDates')]
     #[Requirement('MIG-1')]
-    public function test_a_client_told_today_can_always_leave_before_the_new_terms(BillingCadence $cadence, string $startsOn, int $notice, string $today, ?string $endsOn, ?string $invoiced): void
+    public function test_a_client_told_today_can_always_leave_before_the_new_terms(BillingCadence $cadence, string $startsOn, int $notice, string $today, ?string $endsOn, ?string $invoiced, array $offered): void
     {
         $move = (new MigrationDates)->offer($cadence, self::day($startsOn), $notice, self::day($today), null, $invoiced === null ? null : self::day($invoiced));
         $leave = (new CancellationDates)->offer($cadence, self::day($startsOn), $notice, null, self::day($today));
