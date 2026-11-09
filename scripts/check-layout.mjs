@@ -1521,6 +1521,45 @@ try {
             await expect(page.getByRole('button', { name: 'Undo cancellation…' })).toBeVisible();
         }
 
+        if (screen === 'packages_editor_moves') {
+            // Slice 6: the versions with their subscribers, a scheduled and a cancelled move.
+            await expect(page.getByText('Versions and subscribers')).toBeVisible();
+            await expect(page.getByRole('link', { name: /^Move to the published version/ })).toBeVisible();
+            await page.getByRole('button', { name: 'Cancel move…' }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'cancel-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        }
+
+        if (screen === 'packages_move') {
+            await expect(page.getByRole('heading', { name: 'Move subscribers from v1 to v2' })).toBeVisible();
+            await expect(page.getByRole('combobox', { name: 'Takes effect' })).toBeVisible();
+            await page.getByLabel('Message to clients (added to the notice email)').fill('Note'.repeat(60));
+            await page.getByRole('button', { name: /^Schedule for 1 client/ }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'confirm-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+            for (const forbidden of ['package_migration_', 'cycle_amount', 'self_serve']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
+        if (screen === 'packages_portal_move_notice') {
+            await expect(page.getByRole('note', { name: /^New terms from / })).toBeVisible();
+            await expect(page.getByRole('status').filter({ hasText: 'Your autopay limit is' })).toBeVisible();
+
+            for (const forbidden of ['cycle_amount', 'agreement_text']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
         if (screen === 'packages_operator_cancellation') {
             await expect(page.getByRole('heading', { name: 'Cancellation request' })).toBeVisible();
             await page.getByRole('button', { name: /^Approve, end / }).click();
@@ -2504,6 +2543,9 @@ try {
                   'packages_portal_cancel_pending',
                   'packages_portal_cancel_scheduled',
                   'packages_operator_cancellation',
+                  'packages_editor_moves',
+                  'packages_move',
+                  'packages_portal_move_notice',
               ]
             : paletteOnly
             ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']
