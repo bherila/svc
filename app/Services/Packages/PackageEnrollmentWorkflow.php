@@ -294,12 +294,12 @@ final class PackageEnrollmentWorkflow
             }
             $version = $this->offers->version($workspace, $locked->carriedVersionId());
             $today = $this->clock->today($workspace);
-            if (! EnrollmentLapse::hasLapsed($status, $locked->offered_at, $locked->accepted_at, (int) $version->payment_lapse_days, (string) $workspace->timezone, $today)) {
+            if (! EnrollmentLapse::hasLapsed($status, $locked->offered_at, $locked->accepted_at, (int) $version->payment_lapse_days, $today->tzName, $today)) {
                 return LapseOutcome::NotDue;
             }
 
             $invoice = $this->signupInvoiceOf($workspace, $locked);
-            if (SignupGate::invoiceSettled($invoice)) {
+            if ($status === EnrollmentStatus::AwaitingPayment && SignupGate::invoiceSettled($invoice)) {
                 $moved = $this->continueSignup($workspace, $locked);
 
                 return $moved->enrollmentStatus() === EnrollmentStatus::AwaitingPayment ? LapseOutcome::Held : LapseOutcome::Continued;

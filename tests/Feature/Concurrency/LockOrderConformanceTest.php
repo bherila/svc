@@ -8,6 +8,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
@@ -55,6 +56,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\BuildsServicePackages;
 use Tests\Concerns\RecordsSnapshotReads;
 use Tests\Support\BillingWriterLockSites;
 use Tests\TestCase;
@@ -99,6 +101,7 @@ use Tests\TestCase;
  */
 final class LockOrderConformanceTest extends TestCase
 {
+    use BuildsServicePackages;
     use RecordsSnapshotReads;
     use RefreshDatabase;
 
@@ -352,6 +355,22 @@ final class LockOrderConformanceTest extends TestCase
         $waiting = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $reviewed), $signature);
         $enrollments->activate($this->user, $this->workspace, $waiting);
         $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $automatic), $signature);
+
+        // Slice 3b: an acceptance that issues the sign-up invoice (the billing
+        // maintenance share first, then the package, the enrollment, the
+        // agreement and the invoice rows), its payment moving it on, and the
+        // lapse voiding an unpaid one. Each sign-up gets its own project, so
+        // its first cycle overlaps no invoice of the company's.
+        $this->connectStripe();
+        $paying = [...$terms, 'activation_mode' => 'automatic', 'charge_first_period' => true, 'pay_before_activation' => true,
+            'charge_setup_fee_at_signup' => true, 'components' => [...$terms['components'], ['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => 15000]]];
+        $paid = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-paid', ...$paying]))), $signature);
+        $invoice = ClientInvoice::query()->whereKey($paid->signup_invoice_id)->sole();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => $invoice->balance_amount, 'currency' => $invoice->currency, 'method' => 'synthetic transfer']);
+        $unpaid = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-unpaid', ...$paying, 'charge_first_period' => false]))), $signature);
+        $this->travel(30)->days();
+        $enrollments->lapse($this->workspace, $unpaid);
+        $this->travelBack();
     }
 
     /**

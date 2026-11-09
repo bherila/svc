@@ -6,11 +6,17 @@ use App\Mail\ServicePackageNoticeMail;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
+use App\Models\ClientInvoice;
+use App\Models\ClientStripeCustomer;
+use App\Models\ClientStripePaymentMethod;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Support\Billing\Autopay\AutopayActorRole;
+use App\Support\Billing\Autopay\AutopayConsentRequest;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -242,6 +248,73 @@ final class AgentEnrollmentApiTest extends TestCase
         $this->getJson($this->services($workspace))->assertNotFound();
         $this->postJson($this->url($workspace, $enrollment->public_id).'/activate', ['expected_version' => AgentApiVersion::for($enrollment), 'confirm' => true], ['Idempotency-Key' => 'synthetic-off'])->assertNotFound();
         $this->assertSame([], array_values(array_filter($this->toolNames($this->initialize()), static fn (string $name): bool => str_starts_with($name, 'enrollments.') || str_starts_with($name, 'client_services.'))));
+    }
+
+    /**
+     * API-4: a sign-up that saved a card, authorized autopay and owes an
+     * invoice is read by its owner and its contact, over REST and MCP. The
+     * payment state and the sign-up invoice's page come back; no Stripe key,
+     * client secret, customer, card, card number or fingerprint, and no
+     * invitation link, appear anywhere in any answer.
+     */
+    #[Requirement('API-4', 'ACC-3')]
+    public function test_payment_state_is_read_without_any_secret_card_detail_or_invitation_link(): void
+    {
+        config(['services.stripe.publishable_key' => 'pk_test_synthetic_api4']);
+        $this->connectStripe();
+        [$workspace, $owner] = $this->packageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner, ['charge_first_period' => true, 'pay_before_activation' => true, 'require_autopay' => true, 'autopay_limit_amount' => 120000]);
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Lakeside Synthetic Bakery', 'slug' => 'lakeside-'.Str::uuid(), 'billing_email' => 'billing@lakeside.example.test']);
+        $contact = $this->contact($company);
+        $customer = ClientStripeCustomer::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'stripe_customer_id' => 'cus_synthetic_api4']);
+        ClientStripePaymentMethod::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_stripe_customer_id' => $customer->id,
+            'stripe_payment_method_id' => 'pm_synthetic_api4', 'type' => 'card', 'brand' => 'visa', 'last4' => '4242', 'exp_month' => 8, 'exp_year' => 2038,
+            'is_default' => true, 'fingerprint' => 'fp_synthetic_api4',
+        ]);
+        $consents = app(AutopayConsentService::class);
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Client, $contact, 120000, wording: (string) $consents->authorizationWording($workspace, $company, 120000)));
+        $workflow = app(PackageEnrollmentWorkflow::class);
+        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        $invoice = ClientInvoice::query()->whereKey($enrollment->signup_invoice_id)->sole();
+        $answers = [];
+
+        $this->actingAsMcp($owner, self::SCOPES);
+        $read = $this->getJson($this->url($workspace, $enrollment->public_id))->assertOk();
+        $this->schema('enrollments.get', $read->json());
+        $read->assertJsonPath('data.status', 'awaiting_payment')
+            ->assertJsonPath('data.payment.state', 'due')
+            ->assertJsonPath('data.payment.waiting_for', ['payment'])
+            ->assertJsonPath('data.payment.signup_invoice.id', $invoice->public_id)
+            ->assertJsonPath('data.payment.signup_invoice.url', url("/workspaces/{$workspace->public_id}/clients/{$company->public_id}/invoices/{$invoice->public_id}"))
+            ->assertJsonPath('data.payment.requires_autopay', true)
+            ->assertJsonPath('data.payment.autopay_limit_amount', 120000)
+            ->assertJsonPath('data.payment.lapses_on', $enrollment->accepted_at?->addDays(14)->toDateString());
+        $list = $this->getJson($this->url($workspace).'?status=awaiting_payment')->assertOk();
+        $this->schema('enrollments.list', $list->json());
+        $this->assertSame($read->json('data'), $list->json('data.0'));
+        $session = $this->initialize();
+        $answers[] = $read->getContent();
+        $answers[] = $list->getContent();
+        $answers[] = json_encode($this->callTool($session, 'enrollments.get', ['workspace_id' => $workspace->public_id, 'enrollment_id' => $enrollment->public_id]), JSON_THROW_ON_ERROR);
+        $answers[] = json_encode($this->callTool($session, 'enrollments.list', ['workspace_id' => $workspace->public_id]), JSON_THROW_ON_ERROR);
+        $answers[] = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/packages/{$package->public_id}")->assertOk()->getContent();
+
+        $this->actingAsMcp($contact, self::SCOPES);
+        $mine = $this->getJson($this->services($workspace, $enrollment->public_id))->assertOk();
+        $this->schema('client_services.get', $mine->json());
+        $mine->assertJsonPath('data.payment.signup_invoice.url', url("/portal/{$company->public_id}/invoices/{$invoice->public_id}"));
+        $answers[] = $mine->getContent();
+        $answers[] = $this->getJson($this->services($workspace))->assertOk()->getContent();
+        $session = $this->initialize();
+        $answers[] = json_encode($this->callTool($session, 'client_services.get', ['workspace_id' => $workspace->public_id, 'service_id' => $enrollment->public_id]), JSON_THROW_ON_ERROR);
+        $answers[] = json_encode($this->callTool($session, 'client_services.list', ['workspace_id' => $workspace->public_id]), JSON_THROW_ON_ERROR);
+
+        foreach ($answers as $answer) {
+            foreach (['sk_test', 'pk_test', 'client_secret', 'whsec', 'cus_synthetic', 'pm_synthetic', 'pi_', '4242', 'fp_synthetic', 'fingerprint', 'last4', 'invitation'] as $secret) {
+                $this->assertStringNotContainsString($secret, strtolower((string) $answer), $secret);
+            }
+        }
     }
 
     /** @return array{0: Workspace, 1: User, 2: ServicePackage, 3: ClientCompany, 4: User, 5: ServicePackageEnrollment} */

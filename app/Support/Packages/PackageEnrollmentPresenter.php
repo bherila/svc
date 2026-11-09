@@ -12,6 +12,7 @@ use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\WorkspaceClock;
 use LogicException;
 
 /**
@@ -53,7 +54,7 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
-            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopayLimit, (string) $workspace->timezone, $invoice === null ? null
+            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopayLimit, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
                 : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
             'version' => AgentApiVersion::for($enrollment),
         ];

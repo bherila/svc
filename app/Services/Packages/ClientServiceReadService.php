@@ -435,7 +435,7 @@ final class ClientServiceReadService
         $versions = $this->versions($workspace, array_values(array_unique($shown)));
         $base = rtrim((string) config('app.url'), '/');
         $limits = $this->autopay->clientLimits($workspace, array_values($enrollments->pluck('client_company_id')->all()));
-        $timezone = (string) $workspace->timezone;
+        $timezone = $this->clock->now($workspace)->tzName;
 
         return array_values($enrollments->map(static function (ServicePackageEnrollment $enrollment) use ($versions, $shown, $base, $limits, $timezone): array {
             $company = $enrollment->clientCompany ?? throw new \LogicException('An enrollment names a company outside its workspace.');
