@@ -7,6 +7,7 @@ import {
     fieldErrorProps,
 } from '@/components/form-field';
 import { ClientTermsList } from '@/components/packages/client-terms';
+import { SignupCheckout } from '@/components/packages/signup-checkout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -223,6 +224,7 @@ export default function PortalService({
     changed_terms: changedTerms,
     accept_url: acceptUrl,
     accept_refusal: acceptRefusal,
+    checkout,
 }: PortalServiceProps) {
     const { terms, acceptance } = service;
     const steps: Step[] = [
@@ -360,6 +362,15 @@ export default function PortalService({
                         <ClientTermsList terms={terms} />
                     </CardContent>
                 </Card>
+
+                {checkout !== null && (
+                    <SignupCheckout
+                        checkout={checkout}
+                        payment={service.payment}
+                        companyName={company.name}
+                        accepted={acceptance !== null}
+                    />
+                )}
 
                 {service.status === 'offered' &&
                     (acceptUrl === null ? (

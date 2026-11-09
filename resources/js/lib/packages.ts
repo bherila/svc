@@ -110,3 +110,21 @@ const TERM_LABELS: Record<string, string> = {
 export function termLabel(key: string): string {
     return TERM_LABELS[key] ?? statusLabel(key);
 }
+
+/** What a sign-up's own payment state reads as; null when nothing is charged, so nothing is said. */
+export function paymentStateLabel(state: string): string | null {
+    switch (state) {
+        case 'not_charged':
+            return null;
+        case 'not_invoiced':
+            return 'Invoice not made yet';
+        case 'due':
+            return 'Payment due';
+        case 'paid':
+            return 'Paid';
+        case 'voided':
+            return 'Invoice voided';
+        default:
+            return statusLabel(state);
+    }
+}

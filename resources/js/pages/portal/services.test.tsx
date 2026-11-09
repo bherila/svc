@@ -38,6 +38,37 @@ const LONG = 'Unbroken'.repeat(14);
 describe('portal services', () => {
     beforeEach(() => vi.mocked(router.post).mockReset());
 
+    it('[ACC-3] shows the payment state beside the status once signed, and nothing before', () => {
+        const payment = portalService().payment;
+
+        render(
+            <PortalServices
+                {...portalServicesProps({
+                    services: [
+                        portalService({
+                            status: 'awaiting_payment',
+                            acceptance: {
+                                accepted_at: '2026-11-09T10:00:00Z',
+                                signer_name: 'Morgan Synthetic',
+                                signer_title: null,
+                            },
+                            payment: { ...payment, state: 'due' },
+                        }),
+                        portalService({
+                            id: 'enrollment-2',
+                            payment: { ...payment, state: 'due' },
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        const rows = screen.getAllByRole('row').slice(1);
+
+        expect(rows[0]).toHaveTextContent('Payment due');
+        expect(rows[1]).not.toHaveTextContent('Payment due');
+    });
+
     it('lists services with the server’s own URL, one status badge per row', () => {
         render(
             <PortalServices

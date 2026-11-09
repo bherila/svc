@@ -16,7 +16,7 @@ import { formatTimestampDate } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
-import { cadencePer, priceLine } from '@/lib/packages';
+import { cadencePer, paymentStateLabel, priceLine } from '@/lib/packages';
 import { cn } from '@/lib/utils';
 import type {
     PortalAddablePackage,
@@ -116,6 +116,10 @@ function ServiceRow({ service }: { service: PortalService }) {
     const since =
         service.activated_at ?? service.acceptance?.accepted_at ?? null;
     const { terms } = service;
+    const paymentState =
+        service.acceptance === null
+            ? null
+            : paymentStateLabel(service.payment.state);
 
     return (
         <TableRow>
@@ -143,7 +147,14 @@ function ServiceRow({ service }: { service: PortalService }) {
                 {since === null ? '—' : formatTimestampDate(since)}
             </TableCell>
             <TableCell>
-                <Badge variant="outline">{statusLabel(service.status)}</Badge>
+                <div className="flex flex-wrap items-center gap-1">
+                    <Badge variant="outline">
+                        {statusLabel(service.status)}
+                    </Badge>
+                    {paymentState !== null && (
+                        <Badge variant="outline">{paymentState}</Badge>
+                    )}
+                </div>
             </TableCell>
             <TableCell className="text-right">
                 <Link

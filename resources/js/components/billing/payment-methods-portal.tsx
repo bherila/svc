@@ -352,6 +352,11 @@ export function PaymentMethodsCard({
 
 /** What removing this method changes, said before it is done. */
 function removalWarning(method: SavedMethod, autopayEnabled: boolean): string {
+    // The server's own sentence wins: it knows a service requires autopay (EDGE-2).
+    if (method.remove_warning) {
+        return method.remove_warning;
+    }
+
     if (!method.is_default) {
         return 'It will no longer be available to pay invoices. Your default method and autopay are not affected.';
     }
@@ -368,7 +373,7 @@ type Phase = 'consent' | 'starting' | 'ready' | 'saving' | 'done';
  * future payments, then enters it in Stripe's own form: SVC receives only the
  * outcome, read back from Stripe by the server.
  */
-function AddMethodDialog({
+export function AddMethodDialog({
     providerName,
     companyName,
     setup,
