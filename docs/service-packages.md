@@ -872,7 +872,16 @@ Slice 6 (moving subscribers to a new version) settled these:
   starting on its date and only while that period is current; once it has
   ended, it is invoiced late on the agreement still in force
   (`PackageRecurringInvoices::due()`, ahead of the current period), and every
-  later period bills normally. A draft-mode agreement's drafts never waited, and
+  later period bills normally. That period stays owed whatever becomes of the
+  move afterwards - still held, its subscriber cancelled beside others already
+  moved, the whole move cancelled, or replaced by a new move - until an invoice
+  covers it (Codex P1 on #674: cancelling the held move on the next period's
+  first day, before invoicing ran, dropped it). Which periods waited is read
+  from what happened, not from the target's status now: a target that is still
+  scheduled, or was settled on or after its date, deferred its first period; one
+  cancelled before its date never deferred anything (that period was the
+  ordinary current one), and an applied one started the agreement that bills
+  it. A draft-mode agreement's drafts never waited, and
   a held move discards none of them. `BillingHistoryInvariantTest` walks both
   releases, monthly and quarterly.
 - **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day

@@ -137,7 +137,10 @@ final class PackageRecurringInvoices
      * waited for the move ({@see attempt()}), so nothing else would bill it;
      * the move can no longer apply to it ({@see MigrationHold::EffectiveDatePassed}),
      * so it is billed late on the agreement in force for it, ahead of the
-     * current period.
+     * current period. It stays owed whatever becomes of the move afterwards -
+     * still held, cancelled with or without the rest of its move, or replaced
+     * by a new one - until an invoice covers it; only a move that applied
+     * started an agreement that bills it instead.
      *
      * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
      * @return list<array{ServicePackageEnrollment, ClientAgreement, BillingCycle}>
@@ -159,8 +162,19 @@ final class PackageRecurringInvoices
     }
 
     /**
-     * The first period of each scheduled move that has ended without the move
-     * applying, while nothing bills it, on the agreement still in force.
+     * The first period of each move that has ended without the move applying
+     * to it, while nothing bills it, on the agreement still in force.
+     *
+     * A period waited only if its move was still scheduled when the period
+     * began: a target still scheduled, or settled (cancelled, skipped) on or
+     * after its effective date on the workspace's calendar. One cancelled
+     * before its date never held anything back, so its period was the
+     * ordinary current one, and an owner's decision about it - a void, a
+     * refusal left alone - is not overruled by a late bill. An applied target
+     * is never one: the agreement it named has ended, and its successor bills
+     * from the date. Chosen by what happened to the period, not by what the
+     * target says now (Codex P1 on #674: a held move cancelled on the next
+     * period's first day, before invoicing ran, dropped the period).
      *
      * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
      * @return list<array{ServicePackageEnrollment, ClientAgreement, BillingCycle}>
@@ -171,10 +185,12 @@ final class PackageRecurringInvoices
         $targets = ServicePackageMigrationTarget::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('client_agreement_id', array_keys($enrollments))
-            ->where('status', MigrationTargetStatus::Scheduled->value)
+            ->where('status', '!=', MigrationTargetStatus::Applied->value)
             ->whereDate('effective_on', '<', $today)
             ->orderBy('id')
-            ->get(['id', 'client_agreement_id', 'service_package_enrollment_id', 'effective_on']);
+            ->get(['id', 'client_agreement_id', 'service_package_enrollment_id', 'effective_on', 'status', 'settled_at'])
+            ->filter(fn (ServicePackageMigrationTarget $target): bool => $target->targetStatus() === MigrationTargetStatus::Scheduled
+                || ($target->settled_at !== null && $target->settled_at->setTimezone($this->clock->now($workspace)->getTimezone())->toDateString() >= $target->effective_on->toDateString()));
         if ($targets->isEmpty()) {
             return [];
         }
@@ -187,7 +203,9 @@ final class PackageRecurringInvoices
                 continue;
             }
             $cycle = $this->cycles->cycleContaining($agreement, Carbon::parse($target->effective_on->toDateString()));
-            if ($cycle->start->toDateString() === $target->effective_on->toDateString() && $cycle->end->toDateString() < $today) {
+            if ($cycle->start->toDateString() === $target->effective_on->toDateString() && $cycle->end->toDateString() < $today
+                && $cycle->start->toDateString() >= $agreement->starts_on->toDateString()
+                && ($agreement->ends_on === null || $cycle->start->toDateString() <= $agreement->ends_on->toDateString())) {
                 $waited[$agreement->id.':'.$cycle->start->toDateString()] = [$enrollment, $agreement, $cycle];
             }
         }
