@@ -282,10 +282,18 @@ class ClientInvoice extends Model implements WorkspaceOwned
         $lines = ClientInvoiceLine::query()
             ->where('workspace_id', $this->workspace_id)
             ->where('client_invoice_id', $this->id);
-        $totals = self::totalsFromLines(
-            (int) (clone $lines)->sum('total_amount'),
-            (int) (clone $lines)->sum('tax_amount'),
-        );
+        $this->storeTotalsFromLines((int) (clone $lines)->sum('total_amount'), (int) (clone $lines)->sum('tax_amount'));
+    }
+
+    /**
+     * Store the totals of lines the caller has summed itself - from a current,
+     * locking read, where the transaction's snapshot may predate a concurrent
+     * regeneration of the lines and {@see recalculateTotals()} would total
+     * lines that no longer exist.
+     */
+    public function storeTotalsFromLines(int $lineTotal, int $lineTax): void
+    {
+        $totals = self::totalsFromLines($lineTotal, $lineTax);
         $subtotal = $totals['subtotal_amount'];
         $tax = $totals['tax_amount'];
         $total = $totals['total_amount'];

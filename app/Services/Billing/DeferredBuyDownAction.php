@@ -6,6 +6,7 @@ use App\Exceptions\DraftRegenerationRequired;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
@@ -20,6 +21,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -93,6 +95,9 @@ final class DeferredBuyDownAction
             // claim, so it is locked here, ahead of both.
             $invoice = $target === null ? null : $this->lockTarget($workspace, $company, $locked, $target);
             if ($invoice !== null) {
+                // Its lines rank after it and before the time: locked now, so
+                // the current read that totals them below takes nothing new.
+                $this->currentLines($invoice);
                 $this->assertStatementMembershipKnown($invoice);
                 // A target priced from disputed work that has since moved is
                 // regenerated first (docs/ux-overhaul.md 7b″): attaching to
@@ -127,18 +132,25 @@ final class DeferredBuyDownAction
                 $this->writeSettlementLines($invoice, $selection, $locked, $this->settlementLineDate($invoice, $workspace));
                 // The settlement links the selected work, which a disputed or
                 // settled entry's held-work basis records; the basis was
-                // current above, so it is renewed with the link.
-                if ($invoice->held_work_basis !== null) {
-                    app(HeldWorkBasisRecorder::class)->record($invoice, $locked);
-                }
+                // current above, so it is renewed with the link - from the
+                // current rows, not the caller's snapshot, which can be older.
+                app(HeldWorkBasisRecorder::class)->renewCurrent($invoice);
                 $this->removeSettledWorkFromStatement($invoice, $selection);
-                $invoice->recalculateTotals();
+                // Totalled from the current lines for the same reason: the
+                // snapshot can still hold lines a regeneration has replaced.
+                $lineTotal = 0;
+                $lineTax = 0;
+                foreach ($this->currentLines($invoice) as $line) {
+                    $lineTotal += (int) $line->total_amount;
+                    $lineTax += (int) $line->tax_amount;
+                }
+                $invoice->storeTotalsFromLines($lineTotal, $lineTax);
                 $this->activities->record($workspace, $company, 'invoice.updated', $invoice, [
                     'invoice_kind' => $invoice->invoiceKindValue(), 'total_amount' => $invoice->total_amount,
                     'currency' => $invoice->currency, 'settled_deferred_entry_count' => count($ids),
                 ], occurrence: (string) Str::uuid());
 
-                return $invoice->load('lines', 'clientCompany');
+                return $invoice->setRelation('lines', $this->currentLines($invoice))->load('clientCompany');
             }
 
             $dates = array_map(static fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString(), $selection->entries);
@@ -293,6 +305,20 @@ final class DeferredBuyDownAction
         if ($deferred !== null) {
             $this->deferredWorkStatements->write($invoice, $deferred->withoutSettledEntries($ids));
         }
+    }
+
+    /**
+     * The target's lines as they are now: a locking read, which sees the
+     * latest committed rows whatever snapshot the caller's transaction holds.
+     *
+     * @return Collection<int, ClientInvoiceLine>
+     */
+    private function currentLines(ClientInvoice $invoice): Collection
+    {
+        $invoice->assertLineOwnership();
+
+        return ClientInvoiceLine::query()->where('workspace_id', $invoice->workspace_id)->where('client_invoice_id', $invoice->id)
+            ->orderBy('sort_order')->orderBy('id')->tap(Locks::forUpdate())->get();
     }
 
     /** Write the settlement's priced lines and, when discounted, its adjustment. */

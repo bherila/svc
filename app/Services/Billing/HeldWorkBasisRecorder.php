@@ -56,6 +56,26 @@ final class HeldWorkBasisRecorder
         return $stored->matches(HeldWorkBasis::of($stored->projectId, $stored->through, $this->rows($locked, $stored->projectId, $stored->through, true)));
     }
 
+    /**
+     * Renew a locked draft's basis after a change of its own allocations, as a
+     * buy-down attached to it makes, from a current, locking read: the state
+     * {@see isCurrent()} just validated, with those rows still locked, plus the
+     * change. An ordinary read would return the transaction's snapshot, which
+     * can predate that state - a dispute since answered - and write it back as
+     * the basis, so that a later dispute matches it again.
+     *
+     * A draft with no basis this version can read is left without one.
+     */
+    public function renewCurrent(ClientInvoice $locked): void
+    {
+        $stored = HeldWorkBasis::fromStored($locked->held_work_basis);
+        if (! $stored instanceof HeldWorkBasis) {
+            return;
+        }
+        $current = HeldWorkBasis::of($stored->projectId, $stored->through, $this->rows($locked, $stored->projectId, $stored->through, true));
+        $locked->forceFill(['held_work_basis' => $current->toStored()])->save();
+    }
+
     /** The later of the work period's end and the sold cycle's: the ledger reads through both. */
     private static function through(ClientInvoice $invoice): ?string
     {

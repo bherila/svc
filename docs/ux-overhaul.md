@@ -400,7 +400,10 @@ things keep those charges current:
   either refuses the later draft. Only work the retainer ledger reads is
   recorded; flat-hourly time is priced alone. A buy-down is refused on a
   target whose basis has moved, until the target is regenerated, and renews
-  the basis of one that is current. Issuing re-reads
+  the basis of one that is current - from current, locking reads, as it
+  totals the lines: the caller's transaction may hold a snapshot older than
+  the state just checked, such as a dispute since answered, and writing that
+  back would make a later dispute match it again. Issuing re-reads
   that state with row locks - after the lines, before the company - and
   refuses a draft whose basis has moved (422, code `disputed_work_changed`);
   regenerating it prices it from the current state. A draft generated before
