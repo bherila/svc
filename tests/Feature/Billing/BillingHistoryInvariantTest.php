@@ -253,6 +253,70 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertSame($totals['sequential'], $totals['bulk']);
     }
 
+    /** @return iterable<string, array{array<string, mixed>}> */
+    public static function concurrentProjectWorlds(): iterable
+    {
+        yield 'monthly' => [['retainer_minutes' => 600, 'rollover_months' => 1]];
+        yield 'quarterly' => [['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 600, 'rollover_months' => 3]];
+    }
+
+    /**
+     * Two agreements of one company on two projects, billing the same dates
+     * (docs/service-packages.md, slice 4: the overlap guard compares invoices
+     * whose work can overlap). Each prices exactly as it would alone: the
+     * other's work, invoices and ledger change nothing about it, and no hour
+     * is charged twice or by the other agreement.
+     *
+     * @param  array<string, mixed>  $terms
+     */
+    #[DataProvider('concurrentProjectWorlds')]
+    public function test_two_project_agreements_of_one_company_bill_the_same_periods_as_each_would_alone(array $terms): void
+    {
+        Carbon::setTestNow('2026-10-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-10-10 12:00:00');
+        $history = [
+            'first' => [['2026-01-12', 300, false], ['2026-02-09', 1500, false], ['2026-03-02', 240, true], ['2026-05-11', 100, false]],
+            'second' => [['2026-01-20', 900, false], ['2026-04-20', 200, false], ['2026-07-07', 1300, false]],
+        ];
+        $totals = [];
+        foreach (['together' => ['first', 'second'], 'first alone' => ['first'], 'second alone' => ['second']] as $world => $names) {
+            [$workspace, $company, , $owner] = $this->world('projects-'.str_replace(' ', '-', $world));
+            $agreements = [];
+            foreach ($names as $name) {
+                $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic '.$name.' project']);
+                $agreements[$name] = [$this->agreement($workspace, $company, $terms + ['client_project_id' => $project->id]), $project];
+                foreach ($history[$name] as [$day, $minutes, $deferred]) {
+                    $entry = $this->hours($workspace, $company, $project, $owner, $day, $minutes);
+                    if ($deferred) {
+                        ClientTimeEntry::query()->whereKey($entry->id)->update(['is_deferred' => true]);
+                    }
+                }
+            }
+
+            app(ClientInvoicingService::class)->generateAllInvoices($company);
+            $this->assertInvariants($company, $world.', generated in bulk');
+            $this->issueEveryDraft($company, $workspace);
+            $this->assertInvariants($company, $world.', everything issued');
+
+            foreach ($agreements as $name => [$agreement, $project]) {
+                $foreign = DB::table('client_invoice_line_time_entries as allocation')
+                    ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
+                    ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+                    ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
+                    ->where('invoice.workspace_id', $workspace->id)->where('invoice.client_agreement_id', $agreement->id)
+                    ->where('entry.client_project_id', '!=', $project->id)->count();
+                $this->assertSame(0, $foreign, "{$world}: the {$name} agreement billed another project's work.");
+                $totals[$world][$name] = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)
+                    ->where('invoice_kind', 'cadence_period')->orderBy('cycle_start')->get()
+                    ->mapWithKeys(fn (ClientInvoice $invoice): array => [$invoice->cycle_start?->toDateString() => [$invoice->status, (int) $invoice->total_amount]])->all();
+            }
+        }
+
+        $this->assertGreaterThanOrEqual(2, count($totals['together']['first']));
+        $this->assertSame($totals['first alone']['first'], $totals['together']['first']);
+        $this->assertSame($totals['second alone']['second'], $totals['together']['second']);
+    }
+
     // ---- the invariants ----
 
     /**
