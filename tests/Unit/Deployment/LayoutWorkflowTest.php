@@ -49,6 +49,8 @@ final class LayoutWorkflowTest extends TestCase
 
         $job = $workflow['jobs']['layout'];
         $this->assertArrayNotHasKey('if', $job, 'Layout groups gate every push and pull request, not only a dispatch.');
+        $this->assertRunsOnlyWhenAScreenCanChange($workflow['jobs']['layout'], 'layout');
+        $this->assertRunsOnlyWhenAScreenCanChange($workflow['jobs']['layout-scripts'], 'layout-scripts');
         $this->assertSame([], $job['needs'] ?? [], 'Layout shards must be concurrent.');
         $this->assertFalse($job['strategy']['fail-fast']);
 
@@ -73,5 +75,26 @@ final class LayoutWorkflowTest extends TestCase
             }
         }
         $this->assertContains('layout-gate', $workflow['jobs']['ci']['needs']);
+    }
+
+    /**
+     * A shard decides first, from scripts/layout-scope.sh, whether the change
+     * can affect a rendered screen, and every later step waits on that: a
+     * skipped shard still reports success to the layout gate, while a push to
+     * main or a dispatch always runs.
+     *
+     * @param  array<string, mixed>  $job
+     */
+    private function assertRunsOnlyWhenAScreenCanChange(array $job, string $name): void
+    {
+        $steps = $job['steps'];
+        $this->assertSame('Checkout code', $steps[0]['name'], $name);
+        $this->assertSame(0, $steps[0]['with']['fetch-depth'] ?? null, $name.' needs the base commit to compare against.');
+        $this->assertSame('layout_scope', $steps[1]['id'] ?? null, $name.' decides its scope straight after checkout.');
+        $this->assertStringContainsString('source scripts/layout-scope.sh', $steps[1]['run']);
+        $this->assertStringContainsString('"$EVENT_NAME" != pull_request', $steps[1]['run'], 'Only a pull request may skip the screens.');
+        foreach (array_slice($steps, 2) as $step) {
+            $this->assertStringContainsString("steps.layout_scope.outputs.required == 'true'", (string) ($step['if'] ?? ''), $name.': '.$step['name'].' must wait on the layout scope.');
+        }
     }
 }
