@@ -23,13 +23,4 @@ enum AutoInvoiceOutcome: string
      * left to look at.
      */
     case Covered = 'covered';
-
-    /** Whether an owner or admin has something to look at. */
-    public function needsAttention(): bool
-    {
-        return match ($this) {
-            self::Refused => true,
-            self::Issued, self::NothingToBill, self::Covered => false,
-        };
-    }
 }
