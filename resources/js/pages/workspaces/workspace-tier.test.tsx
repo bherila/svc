@@ -162,6 +162,27 @@ describe('dashboard', () => {
 
         expect(screen.getByText(/\$120\.00 overdue since/)).toBeInTheDocument();
     });
+
+    it('describes waiting sign-up requests with no client in front of the count', () => {
+        render(
+            <Dashboard
+                workspace={WORKSPACE}
+                audience="workspace"
+                queue={[
+                    row({
+                        kind: 'package_requests',
+                        title: '2 sign-up requests to review',
+                        client: '',
+                        date: '2026-08-01',
+                        count: 2,
+                        minutes: null,
+                    }),
+                ]}
+            />,
+        );
+
+        expect(screen.getByText(/^2 waiting, oldest /)).toBeInTheDocument();
+    });
 });
 
 describe('cross-client lists', () => {

@@ -24,10 +24,7 @@ import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
-import type {
-    PackageRequestRow,
-    PackageRequestsProps,
-} from '@/types/packages';
+import type { PackageRequestRow, PackageRequestsProps } from '@/types/packages';
 
 const STALE =
     'This request changed since you opened it. The page now shows its current state.';
@@ -186,7 +183,7 @@ function Panel({
         <Card aria-label={`Request from ${companyOf(request)}`}>
             <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                    <CardTitle className="min-w-0 text-base wrap-anywhere">
+                    <CardTitle className="min-w-0 wrap-anywhere">
                         {companyOf(request)}
                     </CardTitle>
                     <Badge variant={statusVariant(request.status)}>
@@ -318,7 +315,8 @@ function Panel({
                     description="The visitor is emailed that the request was declined, with your reason if you give one. Nothing is created."
                     confirmLabel="Decline"
                     run={decide(urls.decline, {
-                        reason: reason.trim() === '' ? undefined : reason.trim(),
+                        reason:
+                            reason.trim() === '' ? undefined : reason.trim(),
                     })}
                 >
                     <div className="grid grid-cols-1 gap-1.5">
@@ -383,8 +381,8 @@ export default function PackageRequests({
                 {requests.length === 0 ? (
                     <Card>
                         <CardContent className="text-sm text-muted-foreground">
-                            No requests yet. They appear here when someone
-                            sends the form on a package’s public page.
+                            No requests yet. They appear here when someone sends
+                            the form on a package’s public page.
                         </CardContent>
                     </Card>
                 ) : (
@@ -393,14 +391,13 @@ export default function PackageRequests({
                             <CardContent>
                                 <Table
                                     scrollLabel="Requests"
-                                    className="min-w-[34rem]"
+                                    className="min-w-[28rem]"
                                 >
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="min-w-56">
                                                 From
                                             </TableHead>
-                                            <TableHead>Package</TableHead>
                                             <TableHead>Received</TableHead>
                                             <TableHead>Status</TableHead>
                                         </TableRow>
@@ -420,7 +417,7 @@ export default function PackageRequests({
                                                         'bg-muted/50',
                                                 )}
                                             >
-                                                <TableCell className="max-w-0 whitespace-normal wrap-anywhere">
+                                                <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                                                     <button
                                                         type="button"
                                                         aria-current={
@@ -449,9 +446,9 @@ export default function PackageRequests({
                                                                 : `${request.untrusted.contact_name} · ${request.untrusted.email}`}
                                                         </p>
                                                     )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {request.package.name}
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {request.package.name}
+                                                    </p>
                                                 </TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {formatTimestamp(

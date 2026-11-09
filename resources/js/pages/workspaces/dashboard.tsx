@@ -7,13 +7,14 @@ import {
     ClockIcon,
     FilePenLineIcon,
     FileSignatureIcon,
+    InboxIcon,
 } from 'lucide-react';
 import { AtRiskList } from '@/components/revenue/at-risk-list';
 import { RevenueSection } from '@/components/revenue/revenue-section';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDurationStyle } from '@/hooks/use-duration-style';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { formatDay } from '@/lib/datetime';
+import { formatDay, formatTimestampDate } from '@/lib/datetime';
 import { formatDuration } from '@/lib/duration';
 import type { DurationStyle } from '@/lib/duration';
 import { SHELL_CONTAINER } from '@/lib/layout';
@@ -27,6 +28,7 @@ export type QueueKind =
     | 'draft_invoice'
     | 'unapproved_time'
     | 'proposal_awaiting'
+    | 'package_requests'
     | 'my_draft_time'
     | 'my_task';
 
@@ -61,6 +63,7 @@ const ICONS = {
     draft_invoice: FilePenLineIcon,
     unapproved_time: ClockIcon,
     proposal_awaiting: FileSignatureIcon,
+    package_requests: InboxIcon,
     my_draft_time: ClockIcon,
     my_task: CheckSquareIcon,
 } satisfies Record<QueueKind, typeof ClockIcon>;
@@ -97,12 +100,26 @@ function detail(row: QueueRow, style: DurationStyle): string {
         case 'proposal_awaiting':
             fact = day === null ? 'Sent' : `Sent ${day}`;
             break;
+        case 'package_requests':
+            // The row's date is the oldest open request.
+            fact = [
+                row.count === null ? null : `${row.count} waiting`,
+                row.date === null
+                    ? null
+                    : `oldest ${row.date.includes('T') ? formatTimestampDate(row.date) : day}`,
+            ]
+                .filter((part) => part !== null)
+                .join(', ');
+            break;
         case 'my_task':
             fact = day === null ? 'No due date' : `Due ${day}`;
             break;
     }
 
-    return fact === null ? row.client : `${row.client} · ${fact}`;
+    // A row with no client (sign-up requests belong to none yet) is just its fact.
+    return [row.client, fact]
+        .filter((part) => part !== null && part !== '')
+        .join(' · ');
 }
 
 export default function Dashboard({

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import PublicPackageCatalog from '@/pages/packages/public/catalog';
 import PublicPackageShow from '@/pages/packages/public/show';
+import { requestForm } from '@/test/package-fixtures';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import type {
     PublicCatalogProps,
@@ -114,7 +115,7 @@ function showProps(
         package: details(),
         catalog_url: `${ORIGIN}/s/tok123`,
         sign_in_url: '/login',
-        request: null,
+        request: requestForm(),
         ...overrides,
     };
 }
@@ -182,7 +183,7 @@ describe('public catalog', () => {
 });
 
 describe('public package page', () => {
-    it('shows the offer in words and no form', () => {
+    it('shows the offer in words, then the request form', () => {
         const { container } = render(<PublicPackageShow {...showProps()} />);
 
         expect(
@@ -210,7 +211,9 @@ describe('public package page', () => {
         expect(
             screen.getAllByRole('link', { name: 'Sign in' })[0],
         ).toHaveAttribute('href', '/login');
-        expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+        expect(
+            screen.getByRole('button', { name: 'Send request' }),
+        ).toBeInTheDocument();
         expect(container.innerHTML).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
         expect(screen.queryByText('one_time')).not.toBeInTheDocument();
     });

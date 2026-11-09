@@ -107,7 +107,9 @@ export function FormField({
             ref={wrapper}
             className={cn('grid min-w-0 grid-cols-1 gap-1.5', className)}
         >
-            <Label htmlFor={id}>{label}</Label>
+            <Label htmlFor={id} className="wrap-anywhere">
+                {label}
+            </Label>
             {children(id, fieldErrorProps(id, error))}
             {hint !== undefined && (
                 <p className="text-xs text-muted-foreground">{hint}</p>

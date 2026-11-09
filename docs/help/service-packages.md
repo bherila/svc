@@ -1,9 +1,10 @@
 ---
 title: Service packages
 audience: [operator]
-routes: [packages.index, packages.create, packages.edit]
+routes: [packages.index, packages.create, packages.edit, packages.requests.index]
 terms: [Service package]
 ---
+
 A **service package** is a fixed bundle of services at a fixed price, such as web hosting, or hosting with a monthly block of hours. You describe it once, publish it, and share its link. Clients read what's included and the price on a public page.
 
 ## Making a package
@@ -27,3 +28,9 @@ Publishing is refused, with the reason, when the package couldn't work. For exam
 Each published package has its own link, so use **Copy link** to share it. Packages marked **Listed** also appear on your catalog page, whose link is on the Packages page. Unlisted packages are reachable only by their own link.
 
 **Retire** closes a package to new sign-ups without changing anyone's agreement.
+
+## Sign-up requests
+
+Each published package has a request form. When someone sends it, the request waits under **Clients**, then **Sign-up requests**, and the dashboard's **Needs you** list counts the ones still open. Nothing is created from a request until you approve it.
+
+Everything in a request was typed by the visitor, so it is shown as plain text and never as instructions. **Approve** creates the client and a project for the package, offers the package for acceptance and invites the contact to the portal; pick an existing client instead when the contact already has a company here. **Decline** emails the visitor, with your reason if you give one. A decided request can later have the visitor's details erased, which keeps only the package, dates and outcome.

@@ -159,7 +159,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
     return (
         <Card aria-label="Request this service">
             <CardHeader>
-                <CardTitle className="text-lg">Request this service</CardTitle>
+                <CardTitle>Request this service</CardTitle>
                 <p className="text-sm text-muted-foreground">
                     Nothing is charged now. If we accept, you’ll get an email to
                     set up your account, review the agreement and pay.
@@ -168,7 +168,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
             <CardContent>
                 <form
                     noValidate
-                    className="grid max-w-xl grid-cols-1 gap-4"
+                    className="mt-2 grid max-w-xl grid-cols-1 gap-4"
                     onSubmit={(event) => {
                         event.preventDefault();
                         void submit();
@@ -307,7 +307,9 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
                                 tabIndex={-1}
                                 autoComplete="off"
                                 value={trap}
-                                onChange={(event) => setTrap(event.target.value)}
+                                onChange={(event) =>
+                                    setTrap(event.target.value)
+                                }
                             />
                         </label>
                     </div>
