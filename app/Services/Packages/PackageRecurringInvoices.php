@@ -332,11 +332,15 @@ final class PackageRecurringInvoices
      * Its periods reach every project's work, this package's included
      * ({@see ClientInvoice::scopeSharingWorkWith()}). In force, or ended no
      * earlier than that work began: an ended agreement's final invoice
-     * reconciles its last work, and must not find those dates taken.
+     * reconciles its last work, and must not find those dates taken. One
+     * that starts only after the period this invoice sells has no dates here
+     * yet (Codex P2 on #671).
      */
     private function companyWideCadenceAgreementInForce(Workspace $workspace, ClientAgreement $agreement, string $periodStart): bool
     {
-        $workStart = Carbon::parse($periodStart)->subMonths($agreement->effectiveBillingCadence()->monthsInCycle());
+        $months = $agreement->effectiveBillingCadence()->monthsInCycle();
+        $workStart = Carbon::parse($periodStart)->subMonths($months);
+        $periodEnd = Carbon::parse($periodStart)->addMonths($months)->subDay();
 
         return ClientAgreement::query()
             ->where('workspace_id', $workspace->id)
@@ -345,6 +349,7 @@ final class PackageRecurringInvoices
             ->whereNull('client_project_id')
             ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
             ->where(fn ($end) => $end->whereNull('ends_on')->orWhere('ends_on', '>=', $workStart->toDateString()))
+            ->where(fn ($start) => $start->whereNull('starts_on')->orWhere('starts_on', '<=', $periodEnd->toDateString()))
             ->tap(Locks::forShare())
             ->get(['id', 'billing_cadence', 'client_project_id', 'status', 'ends_on'])
             ->contains(static fn (ClientAgreement $other): bool => $other->billsOnARecurringCadence());
