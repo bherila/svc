@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientContact;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\ServicePackageVersion;
 use App\Models\User;
@@ -67,6 +68,25 @@ final class PackageRequestReadService
         $this->requireManager($actor, $workspace);
 
         return ServicePackageRequest::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->firstOrFail();
+    }
+
+    /**
+     * The enrollment an approved request became: its client, project and
+     * agreement, from one bounded load. Never the invitation (ADM-5).
+     *
+     * @return array{id: string, status: string, client: array{id: string, name: string}, project_id: string, agreement_id: string}
+     */
+    public function enrollment(User|AgentPrincipal $actor, Workspace $workspace, string $requestPublicId): array
+    {
+        $request = $this->find($actor, $workspace, $requestPublicId);
+        $scoped = static fn ($query) => $query->where('workspace_id', $workspace->id);
+        $enrollment = ServicePackageEnrollment::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('service_package_request_id', $request->id)
+            ->with(['clientCompany' => $scoped, 'project' => $scoped, 'agreement' => $scoped])
+            ->firstOrFail();
+
+        return PackageRequestPresenter::enrollment($enrollment);
     }
 
     public function openCount(Workspace $workspace): int

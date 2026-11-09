@@ -8,7 +8,7 @@ use Mcp\Capability\Attribute\Schema;
 use Mcp\Server\RequestContext;
 
 /**
- * The service package tools. Each calls its REST operation, so the manager
+ * The service package and sign-up request tools. Each calls its REST operation, so the manager
  * rule, workspace scoping, validation, versions, receipts and cutovers are the
  * route's and cannot differ between the two transports (API-1). A write's
  * arguments are passed on exactly as sent: the fields its request schema
@@ -64,6 +64,52 @@ final class AgentMcpPackageTools
         RequestContext $request): array
     {
         return $this->rest->call('packages.retire', ['workspace' => $workspace_id, 'package' => $package_id], $this->body($request, 'packages.retire'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function listRequests(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['new', 'approved', 'declined'])] ?string $status = null,
+        #[Schema(minimum: 1, maximum: ServicePackageOperations::MAX_LIMIT)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->rest->call('package_requests.list', ['workspace' => $workspace_id],
+            query: array_filter(compact('status', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function getRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $request_id): array
+    {
+        return $this->rest->call('package_requests.get', ['workspace' => $workspace_id, 'request' => $request_id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function approveRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $request_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->decide('package_requests.approve', $workspace_id, $request_id, $idempotency_key, $request);
+    }
+
+    /** @return array<string, mixed> */
+    public function declineRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $request_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->decide('package_requests.decline', $workspace_id, $request_id, $idempotency_key, $request);
+    }
+
+    /** @return array<string, mixed> */
+    public function eraseRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $request_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->decide('package_requests.erase', $workspace_id, $request_id, $idempotency_key, $request);
+    }
+
+    /** @return array<string, mixed> */
+    private function decide(string $operation, string $workspace_id, string $request_id, string $idempotency_key, RequestContext $request): array
+    {
+        return $this->rest->call($operation, ['workspace' => $workspace_id, 'request' => $request_id], $this->body($request, $operation), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

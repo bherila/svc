@@ -53,6 +53,9 @@ final class PackageRequestWorkflow
     /** Open requests one address may have per workspace before more are refused (PUB-5). */
     public const MAX_OPEN_PER_ADDRESS = 3;
 
+    /** What a decline's optional reason may be; the agent contract is generated from it. */
+    public const array REASON_RULES = ['nullable', 'string', 'max:1000'];
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly CreateClientCompany $companies,
@@ -209,7 +212,7 @@ final class PackageRequestWorkflow
     {
         $this->requireManager($actor, $workspace);
         $reason = self::nullableText($reason);
-        Validator::make(['reason' => $reason], ['reason' => ['nullable', 'string', 'max:1000']])->validate();
+        Validator::make(['reason' => $reason], ['reason' => self::REASON_RULES])->validate();
 
         return DB::transaction(function () use ($actor, $workspace, $request, $reason, $expectedVersion): ServicePackageRequest {
             $locked = $this->locked($workspace, $request);

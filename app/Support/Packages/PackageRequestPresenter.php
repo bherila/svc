@@ -3,7 +3,10 @@
 namespace App\Support\Packages;
 
 use App\Models\ClientCompany;
+use App\Models\ClientAgreement;
+use App\Models\ClientProject;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\ServicePackageVersion;
 use App\Support\AgentApi\AgentApiVersion;
@@ -46,6 +49,29 @@ final class PackageRequestPresenter
                 ], $questions),
             ],
             'version' => AgentApiVersion::for($request),
+        ];
+    }
+
+    /**
+     * What an approval created, with its client, project and agreement loaded.
+     *
+     * @return array{id: string, status: string, client: array{id: string, name: string}, project_id: string, agreement_id: string}
+     */
+    public static function enrollment(ServicePackageEnrollment $enrollment): array
+    {
+        $client = $enrollment->clientCompany;
+        $project = $enrollment->project;
+        $agreement = $enrollment->agreement;
+        if (! $client instanceof ClientCompany || ! $project instanceof ClientProject || ! $agreement instanceof ClientAgreement) {
+            throw new \LogicException('An enrollment names a client, project or agreement outside its workspace.');
+        }
+
+        return [
+            'id' => $enrollment->public_id,
+            'status' => $enrollment->status,
+            'client' => ['id' => $client->public_id, 'name' => $client->name],
+            'project_id' => $project->public_id,
+            'agreement_id' => $agreement->public_id,
         ];
     }
 }

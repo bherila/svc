@@ -1979,8 +1979,8 @@ final class AgentOperationCatalog
     }
 
     /**
-     * The service package tools (docs/service-packages.md). Each calls its
-     * REST operation; reads and writes are manager-only, and writes sit behind
+     * The service package and sign-up request tools
+     * (docs/service-packages.md). Each calls its REST operation; reads and writes are manager-only, and writes sit behind
      * the package write cutover inside the outer workflow one.
      *
      * @return list<Operation>
@@ -1992,8 +1992,11 @@ final class AgentOperationCatalog
             $write = $request !== null;
             $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpPackageTools::class, $handler],
                 match ($id) {
-                    'packages.retire' => Effect::Destructive,
-                    'packages.list', 'packages.get' => Effect::Read,
+                    // Erasing a request's contact details cannot be undone.
+                    'packages.retire', 'package_requests.erase' => Effect::Destructive,
+                    // Approving invites through the identity provider or emails the contact; declining emails the visitor.
+                    'package_requests.approve', 'package_requests.decline' => Effect::ExternalWrite,
+                    'packages.list', 'packages.get', 'package_requests.list', 'package_requests.get' => Effect::Read,
                     default => Effect::LocalWrite,
                 }, true, $write ? 'mcp.write' : 'mcp.read',
                 cutovers: $write ? [AgentDeploymentFlags::PACKAGES] : [],
