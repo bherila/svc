@@ -220,6 +220,8 @@ jobs:
             groups: '--tasks --task-lookups --expenses --expense-schedules --receipts --projects'
           - name: dashboards and shared work
             groups: '--revenue --work-portal --shared-projects --reviewers --light-workspace --workspaces --square --invoice-document --palette'
+          - name: service packages
+            groups: '--packages'
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
