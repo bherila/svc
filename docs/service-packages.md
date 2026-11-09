@@ -82,13 +82,20 @@ when they open the page.
 
 ### Cancellation
 
-The client picks an end date from the dates the server offers. In
-**self-serve** mode, `terminate()` runs with that date straight away and the
-client sees "Ends Dec 31". In **request** mode, a cancellation request sits in
-Needs you. The owner/admin approves it (which runs `terminate()` with the
-date chosen) or declines it. The client can withdraw a pending request.
-Billing then follows today's termination rules: the final month is prorated,
-deferred work is collected, and rollover is forfeited the month after.
+The client picks an end date from the dates the server offers.
+
+- **Self-serve mode:** the end is scheduled straight away. The agreement stays
+  active with `ends_on` set, and the client sees "Ends Dec 31" with an undo
+  control.
+- **Request mode:** a cancellation request sits in Needs you. The owner/admin
+  approves it (which schedules the end on the date they choose) or declines
+  it. The client can withdraw a pending request.
+
+A scheduled end can be undone until its date (EDGE-9). On the date, a
+scheduled command runs `terminate()`. Billing then follows today's
+termination rules: deferred work is collected, and rollover is forfeited the
+month after. Because the end falls at a period close, there is no partial
+final period.
 
 ### Moving subscribers to a new version
 
@@ -129,6 +136,10 @@ placement, and isolation tests (see
 - `agreement_cancellation_requests`: requested by, requested end date, reason,
   status (`pending`, `approved`, `declined`, `withdrawn`), who decided, the
   decided end date, a note.
+- `agreement_scheduled_terminations`: agreement, end date, the previous
+  `ends_on`, the source (self-serve, an approved request, or an owner/admin),
+  status (`scheduled`, `undone`, `terminated`), who scheduled it, and who
+  undid it. At most one is `scheduled` per agreement.
 - `service_package_migrations` and their targets: from/to version, effective
   date, message, status, and per-agreement outcome.
 - Workspace public profile: the catalog token and the logo, as a private
@@ -249,14 +260,16 @@ company with `access_scope = company`.
   (today + notice) falls, and no earlier than the end of the minimum term.
   The server offers that date and later period closes; any other date is
   refused.
-- **CAN-3** In `self_serve` mode, a company contact's cancellation terminates
-  the agreement on the chosen date immediately. In `request` mode it creates a
-  pending request. In `none` mode the portal offers no cancellation.
+- **CAN-3** In `self_serve` mode, a company contact's cancellation schedules
+  the end on the chosen date immediately (EDGE-9). In `request` mode it
+  creates a pending request. In `none` mode the portal offers no
+  cancellation.
 - **CAN-4** A company contact can withdraw a pending request. An owner/admin
   can approve it (on the requested or another date, including waiving notice)
   or decline it, with a note.
-- **CAN-5** Termination writes `status`, `ends_on` and `terminated_at`, and
-  records activity. Billing after it follows the existing termination rules.
+- **CAN-5** On the scheduled end date, termination writes `status`,
+  `ends_on` and `terminated_at`, and records activity (EDGE-9). Billing after
+  it follows the existing termination rules.
 - **CAN-6** A scheduled or requested cancellation emails owners/admins; an
   accepted cancellation emails the client with the end date.
 
@@ -319,13 +332,170 @@ company with `access_scope = company`.
 | Agents approving requests | Yes, with `confirm` |
 | Client agents | Read services only |
 | Scope grouping | A new `packages` scope group |
+| Edge cases | EDGE-1 to EDGE-11, all as proposed except retention (kept indefinitely, with manual deletion) |
+
+## Edge cases (EDGE)
+
+Decided on 2026-11-09, before any code. These are traced like every other
+requirement.
+
+- **EDGE-1 A payment arrives after the sign-up has lapsed.** Stripe reports a
+  payment as succeeded after the lapse job voided its setup invoice. SVC
+  records it as an overpayment credit through the existing overpayment path,
+  keeps the agreement inactive, and puts it in Needs you. An owner/admin
+  reactivates the enrollment (which uses the credit) or refunds it. Nothing is
+  refunded or activated automatically.
+- **EDGE-2 Autopay is required but stops working.** On a package that requires
+  autopay, neither a failed charge nor removing the card changes the
+  agreement. A failed charge follows today's autopay attempt handling.
+  Removing the last saved card is allowed after a warning in the portal, and
+  puts "autopay required but off" in Needs you. Nothing is suspended
+  automatically.
+- **EDGE-3 A contact loses access part-way through accepting.** Acceptance and
+  payment each check access again under a lock. A recorded signature stays.
+  A person who has lost access can't start a payment, and any other company
+  contact can finish the enrollment before its lapse date.
+- **EDGE-4 A request comes from a known email.** When the address belongs to a
+  contact of an existing client in this workspace, the review panel shows the
+  match and pre-selects "attach to existing client". Nothing the visitor sees
+  reveals that the address is known.
+- **EDGE-5 A currency Stripe can't charge.** Publishing checks the version's
+  currency against the connected Stripe account and refuses with a coded
+  refusal (this extends PKG-4).
+- **EDGE-6 First period in advance.** The amount is prorated: it covers the
+  rest of the current period, according to the agreement's
+  `first_cycle_proration`. The first regular invoice covers the next full
+  period.
+- **EDGE-7 A new version is published before the client accepts.** Approval
+  and acceptance always offer the currently published version. When it
+  differs from the version the visitor requested, the review panel and the
+  acceptance page show what changed.
+- **EDGE-8 A package is retired with offers still open.** Offers already made
+  can still be accepted until their lapse date. Retiring stops only new
+  requests and portal additions (this refines PKG-6).
+- **EDGE-9 Cancellation is a scheduled end that can be undone.** Accepting a
+  cancellation keeps the agreement `active`, sets `ends_on` to the chosen
+  date, and records a scheduled termination holding the previous `ends_on`.
+  On that date a scheduled command runs `terminate()`. Until then the
+  cancellation can be undone, which restores the previous `ends_on`:
+  - by a company contact, in `self_serve` mode;
+  - by an owner/admin, in any mode.
+
+  Undoing records activity and emails owners/admins and the client.
+  Recurring invoices never cover a period after a scheduled end. This changes
+  CAN-3 and CAN-5: `terminate()` now runs on the end date, not when the
+  request is accepted.
+- **EDGE-10 Requests are kept.** Requests, declined and abandoned ones
+  included, are kept indefinitely. An owner/admin can delete a closed request,
+  which erases its contact details and answers and leaves a stub recording
+  the package, the dates and the outcome.
+- **EDGE-11 An overdue balance never blocks cancellation.** Cancelling
+  (self-serve or by request) is never blocked by a balance. The amount still
+  owed is shown on the confirmation and stays owed.
+
+## Validation plan
+
+### Tracing requirements to tests
+
+- **Naming the requirement.** Every test that proves a requirement names its
+  ID:
+  - PHP: `#[Requirement('CAN-2')]` (a new attribute in `tests/Support`) on
+    the test method or class.
+  - Vitest and Playwright: `[CAN-2]` in the test title.
+- **The tracing test** (`tests/Feature/ServicePackages/RequirementTraceabilityTest.php`):
+  - reads every `**XXX-n**` identifier in this document;
+  - reads every ID named in `tests/`, `resources/js/**/*.test.ts(x)` and the
+    browser journeys;
+  - fails when a requirement has no test, or a test names an ID that doesn't
+    exist;
+- **What the tracing test can't do.** It proves coverage exists, not that it
+  is meaningful. The post-build review checks each requirement against its
+  tests and code.
+
+### Layers
+
+1. **Pure calculations, with no database** (`tests/Unit/ServicePackages`):
+   - the earliest end date and the dates offered (CAN-2), and the scheduled
+    end and its undo (EDGE-9), table-driven
+     across every cadence, notice periods crossing period boundaries,
+     month-end and leap-year dates, the minimum term, and the workspace's
+     timezone;
+   - the enrollment state machine: every from/to pair, legal and illegal;
+   - whether a package may auto-issue (PKG-5), whether a migration date is
+     valid (MIG-1), and the differences between two package versions.
+
+   These classes are the main target of `composer test:mutation-diff`. The
+   aim is no escaped mutants; any exception needs an `@infection-ignore-all`
+   comment saying why.
+2. **Workflows, with a database** (`tests/Feature/ServicePackages`):
+   - **Isolation:** one test per new table, plus the inventory tests that pick
+     up new tables on their own: tenant keys, the composite-key rollback,
+     scoped write statements, lock order, the lock registry, and fillable
+     coverage.
+   - **Concurrency:** two approvals of the same request; approve racing
+     decline; the payment webhook racing the lapse job (EDGE-1); a double
+     acceptance; a cancellation racing a version move; an undo racing the
+     scheduled termination (EDGE-9). Each test asserts that exactly one
+     side wins.
+   - **Idempotency:** a replayed Stripe webhook activates once; the auto-issue
+     job run twice for one period produces one invoice; applying a migration
+     twice changes nothing the second time; a repeated acceptance from the
+     same signer is a no-op.
+   - **After-commit effects (X-5):** a rolled-back approval sends no email and
+     no invitation. These tests assert on the effect itself, never on
+     `DB::transactionLevel()`.
+   - **Billing goldens** (`BuildsGoldenInvoices`):
+     - the setup fee is billed once (ACC-3);
+     - the first period is prorated;
+     - termination at a period end leaves no partial final period (CAN-5);
+     - a migrated price applies from its effective period (MIG-3);
+     - nothing auto-issues for a Square-collected agreement (INV-3).
+3. **Public surface:**
+   - a submission writes exactly one row, in `service_package_requests`, and
+     nothing else (PUB-4, using `CapturesTenantOwnedWrites`);
+   - identical 404 status and body for a draft, retired, unknown or
+     wrong-token link (PUB-1);
+   - the honeypot, minimum fill time, throttles and per-address cap each
+     refuse without saying which (PUB-5);
+   - a snapshot of every route reachable without signing in, so a new public
+     endpoint has to be added to it deliberately;
+   - the public pages pass under the CSP in enforce mode (PUB-7);
+   - with the feature flag off, no route, tool or scheduled command of the
+     feature exists (X-1, API-6).
+4. **API:**
+   - the existing parity, inventory, OpenAPI and visibility-snapshot tests,
+     updated with the new operations;
+   - every `confirm` operation refuses without it (API-2);
+   - visitor text is returned only inside the untrusted wrapper (API-3);
+   - a client contact's token gets "not found" from owner/admin operations
+     (API-5).
+5. **Front end:**
+   - Vitest: pages render exactly the actions and links the server sends; for
+     example, no cancel link when the server sends `null`.
+   - `pnpm test:layout` at 390, 820, 1440 and 1920 px, with deliberately
+     oversized data (long company, package and contact names, long emails and
+     domains), plus `uiConsistencyRisks` and axe on every new screen (X-4).
+6. **Browser journeys** (Playwright, with fake Stripe and identity provider):
+   - request → approve → sign in → accept and pay → active → request
+     cancellation → approve;
+   - an existing client adds a service from the portal;
+   - a self-serve cancellation.
+
+   Keep these few; the layers above carry the detail.
+
+### Where each check runs
+
+- **Locally while building:** the unit tests and the feature tests for the
+  slice being built, Pint on the files touched, the sensitive-data scan, and
+  the layout check for any screen that changed.
+- **On every push, in hosted CI:** the full PHPUnit run, PHPStan, Pint, the
+  mutation diff, Vitest and the layout runs.
+- **Before merging:** CI green on the exact commit being merged, the tracing
+  test green, and the post-build review against this document.
 
 ## Open items for the next round
 
 - Wording of the client emails and the "Approving will" summary.
-- Whether "first period in advance" covers the whole first cycle or the
-  prorated part only. The mockup assumes **prorated**, matching
-  `first_cycle_proration`.
 
 ## MCP and REST surface
 

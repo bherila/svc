@@ -105,7 +105,7 @@ textarea.input{min-height:96px;resize:vertical}
     <div class="grid1">
       <section class="card" aria-label="Self-serve variant">
         <h2>Variant · package allows self-serve</h2>
-        <div class="soft" style="font-size:14px">Web hosting · Essentials ends on <strong>Dec 31, 2026</strong> (30 days' notice from today, to the close of the billing month).</div>
+        <div class="soft" style="font-size:14px">Web hosting · Essentials ends on <strong>Dec 31, 2026</strong> (30 days' notice from today, to the close of the billing month). You can undo this until then.</div>
         <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px"><a href="#" class="btn">Keep service</a><button class="btn danger" type="button">Cancel on Dec 31</button></div>
       </section>
       <section class="card" aria-label="Pending state">
@@ -113,11 +113,13 @@ textarea.input{min-height:96px;resize:vertical}
         <div class="list">
           <div><span>Hosting + Care plan</span><span><span class="badge b-amber">Cancellation requested · May 31</span></span></div>
           <div><span class="muted">Sent Nov 9 · waiting for Herila</span><a href="#">Withdraw request</a></div>
+          <div><span>Web hosting · Essentials</span><span><span class="badge b-amber">Ends Dec 31</span></span></div>
+          <div><span class="muted">Cancelled by you Nov 9 · service continues until then</span><a href="#">Undo cancellation</a></div>
         </div>
       </section>
     </div>
   </div>
-  <div class="annot"><strong>Design note.</strong> The server offers only legal end dates: the close of each billing period from the earliest allowed onward. The browser never computes them. A pending request can be withdrawn by the client until an owner or admin decides it.</div>
+  <div class="annot"><strong>Design note.</strong> The server offers only legal end dates: the close of each billing period from the earliest allowed onward. The browser never computes them. A pending request can be withdrawn until an owner or admin decides it. A cancellation only schedules the end: the service stays active until that date and can be undone until then (by the client in self-serve mode, by an owner or admin always). An overdue balance never blocks cancelling; it stays owed and is shown here.</div>
 </main>
 </div>
 </body>

@@ -101,7 +101,7 @@ textarea.input{min-height:96px;resize:vertical}
       </dl>
       <div class="field" style="margin-top:14px"><label>End on</label><select class="input"><option>Jan 31, 2027 (requested)</option><option>Dec 31, 2026 (waive notice)</option></select></div>
       <div class="field" style="margin-top:14px"><label>Note to client <span class="muted">(optional)</span></label><textarea class="input" rows="2"></textarea></div>
-      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:16px"><a href="#">Decline…</a><button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg> Approve, end Jan 31</button></div>
+      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:16px"><a href="#">Decline…</a><button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg> Approve, end Jan 31</button></div><div class="muted" style="text-align:right;margin-top:6px">Schedules the end. You can undo it until Jan 31.</div>
     </section>
 
     <div class="grid1">
@@ -121,7 +121,7 @@ textarea.input{min-height:96px;resize:vertical}
       </section>
     </div>
   </div>
-  <div class="annot"><strong>Design note.</strong> Any agreement, not only package ones, can carry cancellation terms; without them the portal shows no cancel action and the operator ends it as today. Approving runs the existing terminate step with the chosen date and also records the termination time, which terminate() doesn't write today.</div>
+  <div class="annot"><strong>Design note.</strong> Any agreement, not only package ones, can carry cancellation terms; without them the portal shows no cancel action and the operator ends it as today. Approving schedules the end: the agreement stays active with that end date, and a scheduled step runs terminate() on the date, which now also records the termination time. Until then an owner or admin can undo it.</div>
 </main>
 </div>
 </body>
