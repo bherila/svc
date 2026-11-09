@@ -1928,20 +1928,13 @@ final class ClientInvoicingService
      * cycle, and an ad-hoc invoice raised mid-quarter must not block that
      * quarter's cadence invoice.
      *
-     * "Another invoice" means one whose work this agreement could also reach.
-     * Every selector the period reconciles - time, deferred work, milestones,
-     * expenses, subcontractor time and the retainer ledger - reads through the
-     * agreement's project scope (`forAgreementScope()`), so two agreements of
-     * one company on two different projects reconcile disjoint work and each
-     * bills its own periods (docs/service-packages.md, slice 4). An invoice is
-     * therefore ignored only when it names an agreement of this company that
-     * is scoped to a different project, and this agreement is project-scoped
-     * too. Everything else still refuses: this agreement's own invoices, a
-     * company-wide agreement's (its selectors read every project's work, so
-     * its periods and a project agreement's do overlap), another agreement on
-     * the same project, an invoice naming no agreement, and one whose
-     * agreement cannot be resolved in this company - unattributable history
-     * fails closed, as before.
+     * "Another invoice" means one whose work this agreement could also reach
+     * ({@see ClientInvoice::scopeSharingWorkWith()}): two agreements of one
+     * company on two different projects reconcile disjoint work, so each bills
+     * its own periods (docs/service-packages.md, slice 4). A company-wide
+     * agreement's invoices, another agreement's on the same project, and any
+     * invoice naming no agreement, or one this company cannot account for,
+     * still refuse.
      */
     private function assertNoOverlappingInvoice(
         ClientCompany $company,
@@ -1956,18 +1949,7 @@ final class ClientInvoicingService
                 $query->whereNull('invoice_kind')
                     ->orWhereNotIn('invoice_kind', InvoiceKind::cycleGuardExclusions());
             })
-            ->when($agreement->client_project_id !== null, function (Builder $query) use ($company, $agreement): void {
-                // Explicitly null-safe: `NOT IN` drops a null agreement id,
-                // which must keep refusing.
-                $query->where(fn (Builder $scope): Builder => $scope
-                    ->whereNull('client_agreement_id')
-                    ->orWhereNotIn('client_agreement_id', ClientAgreement::query()
-                        ->where('workspace_id', $company->workspace_id)
-                        ->where('client_company_id', $company->id)
-                        ->whereNotNull('client_project_id')
-                        ->where('client_project_id', '!=', $agreement->client_project_id)
-                        ->select('id')));
-            })
+            ->sharingWorkWith($agreement)
             ->where(function ($query) use ($periodStart, $periodEnd): void {
                 // Inclusive on both ends, matching how entries are selected:
                 // a strict comparison lets a new period start on an existing

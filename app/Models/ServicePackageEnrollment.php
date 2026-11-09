@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
@@ -61,7 +62,7 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
             'accepted_at' => 'immutable_datetime',
             'activated_at' => 'immutable_datetime',
             'lapsed_at' => 'immutable_datetime',
-            'auto_invoice_period_start' => 'immutable_date',
+            'auto_invoice_period_start' => DateOnly::class,
             'auto_invoice_recorded_at' => 'immutable_datetime',
             'lock_version' => 'integer',
         ];

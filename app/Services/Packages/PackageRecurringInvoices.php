@@ -4,6 +4,8 @@ namespace App\Services\Packages;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
+use App\Models\ClientTimeEntry;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
@@ -12,6 +14,7 @@ use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\CadencePeriodGuard;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\InvoiceNumberAllocator;
 use App\Services\Billing\UncoveredCadencePeriods;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\EmptyCadenceDraft;
@@ -74,6 +77,7 @@ final class PackageRecurringInvoices
         private readonly CadencePeriodGuard $guard,
         private readonly ClientInvoicingService $cadence,
         private readonly InvoiceLifecycleService $invoices,
+        private readonly InvoiceNumberAllocator $numbers = new InvoiceNumberAllocator,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -215,10 +219,14 @@ final class PackageRecurringInvoices
         }
         $claims = ClientInvoice::query()
             ->where('workspace_id', $workspace->id)
-            ->whereIn('client_agreement_id', array_keys($refused))
+            ->where(function ($periods) use ($refused): void {
+                foreach ($refused as $agreementId => $enrollment) {
+                    $periods->orWhere(fn ($period) => $period->where('client_agreement_id', $agreementId)
+                        ->whereDate('cycle_start', (string) $enrollment->auto_invoice_period_start?->toDateString()));
+                }
+            })
             ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
             ->whereIn('status', InvoiceStatus::live())
-            ->whereIn('cycle_start', array_values(array_unique(array_map(static fn (ServicePackageEnrollment $enrollment): string => (string) $enrollment->auto_invoice_period_start?->toDateString(), $refused))))
             ->get(['client_agreement_id', 'cycle_start', 'status']);
         $settled = [];
         foreach ($refused as $agreementId => $enrollment) {
@@ -269,6 +277,20 @@ final class PackageRecurringInvoices
         if ($record->square_series_key !== null) {
             throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::CollectedInSquare));
         }
+
+        // Issuing below locks the invoice's lines and the agreement's time
+        // after the engine has numbered the invoice and locked milestones.
+        // Taken here first, in the registry's order - the lines, the
+        // workspace's numbering, the time - generating and issuing in one
+        // transaction acquire nothing out of order, as acceptance does
+        // ({@see PackageSignupInvoices}). The lines the issue locks are the new
+        // invoice's own, so one of the agreement's ranks them; the time it
+        // locks - the invoice's and the agreement's disputed history - is all
+        // inside the agreement's scope, which is locked whole, so the issue
+        // waits on nothing new once milestones are held.
+        ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $record->id)->tap(Locks::forUpdate())->first(['id']);
+        $this->numbers->lockNumbering($workspace->id);
+        ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->forAgreementScope($record)->tap(Locks::forUpdate())->get(['id']);
 
         try {
             $draft = $this->cadence->generateCadencePeriod($company, $record, $start);
