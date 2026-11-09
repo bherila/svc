@@ -1995,6 +1995,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/package-migrations/{migration}/cancel': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, cancel a scheduled move: before its effective date the whole move, from it on the subscribers still waiting (the ones moved stay moved). Each client whose move is cancelled is emailed that their terms stay as they are. Refused with package_migration_not_scheduled once completed or cancelled. The move's current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['package_migrations.cancel'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/package-migrations/{migration}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read one move of package subscribers with its subscribers and the version to send with package_migrations.cancel. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['package_migrations.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/package-migrations': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the workspace's scheduled, completed and cancelled moves of package subscribers to a new version, newest first, optionally by status. Each has its package, versions, effective date, message, the terms that change, the new price, and each subscriber's status (scheduled, applied, skipped, cancelled), the reason it was skipped or why it waits (outcome), its agreement and, once moved, the agreement carrying the new terms. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['package_migrations.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/packages/{package}/migration-preview': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Before moving a package's subscribers to its published version, read what the move would do and change nothing: the terms that change (old and new value of each), the new price, each subscriber of from_version_id (active services carrying that version) with its earliest effective date, the dates it may move on, its autopay limit and whether that is below the new price (SVC never raises a limit), any pending cancellation or scheduled end, and refusal: why it cannot move on effective_on (or the suggested date). effective_dates lists every date some subscriber may move on with how many it suits; a date is the start of a billing period, after the subscriber's notice period and after every period already invoiced. A subscriber whose agreement bills by usage (an hourly rate or a retainer) is refused with package_migration_bills_by_usage, one Square collects with package_migration_square_collected, and one billing on another cadence than the published version with package_migration_changes_cadence (a version on another cadence refuses the whole move); a version with a recurring charge off the billing cycle (an annual licence in a monthly service, a one-time charge) refuses the whole move with package_migration_off_cycle_component; a subscriber whose recurring charges do not follow one schedule (an item added or re-anchored by hand) is refused with package_migration_ambiguous_recurrence. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['package_migrations.preview'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/packages/{package}/migrations': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, schedule moving the chosen subscribers (enrollment_ids, from package_migrations.preview) from from_version_id to the package's published version on effective_on, which must suit every one of them. Each client is emailed the old and new terms, the date and the optional message (which they read), and sees a notice in the portal; a client whose autopay limit is below the new price is told it will not be raised. On the date the agreement ends the day before and an agreement carrying the new terms starts that day, unless the client has ended it first. Refused with package_migration_not_newer, package_migration_date_not_offered, package_migration_already_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected, package_migration_off_cycle_component, package_migration_ambiguous_recurrence and the other package_migration_* codes, naming the client. The package's current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['package_migrations.schedule'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/package-requests/{request}/approve': {
         parameters: {
             query?: never;
@@ -4011,6 +4096,7 @@ export interface components {
             /** Format: date */
             next_period_start: string | null;
             cancellation: components['schemas']['ClientServiceCancellation'];
+            move: components['schemas']['ClientServiceMove'] | null;
             /** Format: uri */
             url: string;
         };
@@ -4048,6 +4134,17 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+        };
+        ClientServiceMove: {
+            /** Format: date */
+            effective_on: string;
+            version_number: number;
+            changes: components['schemas']['PackageMigrationTermChange'][];
+            terms: components['schemas']['ClientServiceTerms'];
+            message: string | null;
+            new_price_amount: number;
+            autopay_limit_amount: number | null;
+            autopay_below_price: boolean;
         };
         ClientServiceResponse: {
             data: components['schemas']['ClientService'];
@@ -5736,6 +5833,215 @@ export interface components {
             parent_version: string;
             next_href: string | null;
         };
+        PackageMigration: {
+            id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            status: 'scheduled' | 'completed' | 'cancelled';
+            package: {
+                id: components['schemas']['Uuid'];
+                link_name: string;
+                name: string;
+            };
+            from_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            };
+            to_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            };
+            /** Format: date */
+            effective_on: string;
+            message: string | null;
+            changes: components['schemas']['PackageMigrationTermChange'][];
+            new_price: {
+                amount: number;
+                currency: string;
+                label: string;
+            } | null;
+            /** Format: date-time */
+            scheduled_at: string;
+            scheduled_by: string | null;
+            /** Format: date-time */
+            cancelled_at: string | null;
+            /** Format: date-time */
+            completed_at: string | null;
+            counts: {
+                scheduled: number;
+                applied: number;
+                skipped: number;
+                cancelled: number;
+            };
+            subscribers: {
+                id: components['schemas']['Uuid'];
+                /** Format: uuid */
+                enrollment_id: string | null;
+                client: {
+                    id: components['schemas']['Uuid'];
+                    name: string;
+                };
+                agreement: {
+                    id: components['schemas']['Uuid'];
+                    title: string;
+                    /** Format: uri */
+                    url: string;
+                };
+                successor_agreement: {
+                    id: components['schemas']['Uuid'];
+                    title: string;
+                    /** Format: uri */
+                    url: string;
+                } | null;
+                /** @enum {string} */
+                status: 'scheduled' | 'applied' | 'skipped' | 'cancelled';
+                outcome: {
+                    /** @enum {string} */
+                    code:
+                        | 'agreement_ended'
+                        | 'ends_before_effective'
+                        | 'version_moved'
+                        | 'enrollment_inactive'
+                        | 'period_invoiced'
+                        | 'cancellation_pending'
+                        | 'draft_kept'
+                        | 'last_period_to_settle'
+                        | 'settlement_refused'
+                        | 'cadence_changed'
+                        | 'effective_date_passed'
+                        | 'owed_period_unbilled'
+                        | 'off_cycle_component'
+                        | 'ambiguous_recurrence'
+                        | 'square_collected'
+                        | 'failed';
+                    message: string;
+                    detail: string | null;
+                } | null;
+                autopay_limit_amount: number | null;
+                autopay_below_price: boolean;
+                /** Format: date-time */
+                settled_at: string | null;
+            }[];
+            version: components['schemas']['Version'];
+        };
+        PackageMigrationListResponse: {
+            data: components['schemas']['PackageMigration'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        PackageMigrationPreview: {
+            package: {
+                id: components['schemas']['Uuid'];
+                link_name: string;
+                name: string;
+            };
+            from_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            };
+            to_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            } | null;
+            refusal: {
+                /** @enum {string} */
+                code:
+                    | 'package_migration_not_newer'
+                    | 'package_migration_not_recurring'
+                    | 'package_migration_no_subscribers'
+                    | 'package_migration_not_a_subscriber'
+                    | 'package_migration_already_scheduled'
+                    | 'package_migration_ends_first'
+                    | 'package_migration_date_not_offered'
+                    | 'package_migration_currency_changed'
+                    | 'package_migration_not_scheduled'
+                    | 'package_migration_bills_by_usage'
+                    | 'package_migration_changes_cadence'
+                    | 'package_migration_square_collected'
+                    | 'package_migration_off_cycle_component'
+                    | 'package_migration_ambiguous_recurrence';
+                message: string;
+            } | null;
+            changes: components['schemas']['PackageMigrationTermChange'][];
+            new_price: {
+                amount: number;
+                currency: string;
+                label: string;
+            } | null;
+            effective_dates: {
+                /** Format: date */
+                date: string;
+                subscribers: number;
+            }[];
+            /** Format: date */
+            effective_on: string | null;
+            subscribers: {
+                enrollment_id: components['schemas']['Uuid'];
+                client: {
+                    id: components['schemas']['Uuid'];
+                    name: string;
+                };
+                agreement: {
+                    id: components['schemas']['Uuid'];
+                    title: string;
+                    /** Format: date */
+                    starts_on: string;
+                    /** Format: date */
+                    ends_on: string | null;
+                };
+                /** Format: date */
+                earliest_effective_on: string | null;
+                effective_dates: string[];
+                autopay_limit_amount: number | null;
+                autopay_below_price: boolean;
+                /** Format: date */
+                pending_cancellation_end_on: string | null;
+                /** Format: date */
+                scheduled_end_on: string | null;
+                refusal: {
+                    /** @enum {string} */
+                    code:
+                        | 'package_migration_not_newer'
+                        | 'package_migration_not_recurring'
+                        | 'package_migration_no_subscribers'
+                        | 'package_migration_not_a_subscriber'
+                        | 'package_migration_already_scheduled'
+                        | 'package_migration_ends_first'
+                        | 'package_migration_date_not_offered'
+                        | 'package_migration_currency_changed'
+                        | 'package_migration_not_scheduled'
+                        | 'package_migration_bills_by_usage'
+                        | 'package_migration_changes_cadence'
+                        | 'package_migration_square_collected'
+                        | 'package_migration_off_cycle_component'
+                        | 'package_migration_ambiguous_recurrence';
+                    message: string;
+                } | null;
+            }[];
+        };
+        PackageMigrationPreviewResponse: {
+            data: components['schemas']['PackageMigrationPreview'];
+        };
+        PackageMigrationResponse: {
+            data: components['schemas']['PackageMigration'];
+        };
+        PackageMigrationScheduleRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            /** Format: uuid */
+            from_version_id: string;
+            /** Format: date */
+            effective_on: string;
+            enrollment_ids: string[];
+            message?: string | null;
+        };
+        PackageMigrationTermChange: {
+            term: string;
+            label: string;
+            from: string;
+            to: string;
+        };
         PaginationMeta: {
             next_cursor: string | null;
         };
@@ -6635,6 +6941,10 @@ export interface components {
                 id: components['schemas']['Uuid'];
                 number: number;
             } | null;
+            current_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            } | null;
             version_changed: boolean;
             client: {
                 id: components['schemas']['Uuid'];
@@ -6660,6 +6970,7 @@ export interface components {
             lapsed_at: string | null;
             payment: components['schemas']['ServicePackageSignupPayment'];
             invoicing: components['schemas']['ServicePackageInvoicing'];
+            move: components['schemas']['ServicePackageEnrollmentMove'] | null;
             version: components['schemas']['Version'];
         };
         ServicePackageEnrollmentListResponse: {
@@ -6667,6 +6978,39 @@ export interface components {
             meta: {
                 next_cursor: string | null;
             };
+        };
+        ServicePackageEnrollmentMove: {
+            migration_id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            status: 'scheduled' | 'applied' | 'skipped' | 'cancelled';
+            /** Format: date */
+            effective_on: string;
+            to_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            };
+            outcome: {
+                /** @enum {string} */
+                code:
+                    | 'agreement_ended'
+                    | 'ends_before_effective'
+                    | 'version_moved'
+                    | 'enrollment_inactive'
+                    | 'period_invoiced'
+                    | 'cancellation_pending'
+                    | 'draft_kept'
+                    | 'last_period_to_settle'
+                    | 'settlement_refused'
+                    | 'cadence_changed'
+                    | 'effective_date_passed'
+                    | 'owed_period_unbilled'
+                    | 'off_cycle_component'
+                    | 'ambiguous_recurrence'
+                    | 'square_collected'
+                    | 'failed';
+                message: string;
+                detail: string | null;
+            } | null;
         };
         ServicePackageEnrollmentResponse: {
             data: components['schemas']['ServicePackageEnrollment'];
@@ -15982,6 +16326,387 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SummaryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'package_migrations.cancel': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                migration: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Package move */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PackageMigrationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, package, version or move is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package or move again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected, package_migration_off_cycle_component, package_migration_ambiguous_recurrence. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'package_migrations.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                migration: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package move */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PackageMigrationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, package, version or move is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description from_version_id or effective_on is missing or malformed, status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'package_migrations.list': {
+        parameters: {
+            query?: {
+                status?: 'scheduled' | 'completed' | 'cancelled';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package moves */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PackageMigrationListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, package, version or move is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description from_version_id or effective_on is missing or malformed, status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'package_migrations.preview': {
+        parameters: {
+            query: {
+                from_version_id: string;
+                effective_on?: string;
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What moving the subscribers would do */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PackageMigrationPreviewResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, package, version or move is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description from_version_id or effective_on is missing or malformed, status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'package_migrations.schedule': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['PackageMigrationScheduleRequest'];
+            };
+        };
+        responses: {
+            /** @description Package move */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['PackageMigrationResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, package, version or move is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package or move again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected, package_migration_off_cycle_component, package_migration_ambiguous_recurrence. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

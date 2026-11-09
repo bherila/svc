@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\Cancellation\CancellationState;
+use App\Support\Packages\Migration\PackageMigrationPresenter;
 use App\Support\WorkspaceClock;
 use LogicException;
 
@@ -35,16 +36,19 @@ final class PackageEnrollmentPresenter
      */
     public static function forManager(Workspace $workspace, ServicePackageEnrollment $enrollment, ?ClientAutopay $clientAutopay = null): array
     {
-        [$company, $project, $agreement, $package, $offered, $accepted] = self::loaded($enrollment);
+        [$company, $project, $agreement, $package, $offered, $accepted, $current] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
         $invoice = self::signupInvoice($enrollment);
+        // The terms in force: a move's version (MIG-3), else the one signed, else the offer.
+        $carried = $current ?? $accepted ?? $offered;
 
         return [
             'id' => $enrollment->public_id,
             'status' => $enrollment->status,
-            'package' => ['id' => $package->public_id, 'link_name' => $package->link_name, 'name' => ($accepted ?? $offered)->name],
+            'package' => ['id' => $package->public_id, 'link_name' => $package->link_name, 'name' => $carried->name],
             'offered_version' => self::versionRef($offered),
             'accepted_version' => $accepted === null ? null : self::versionRef($accepted),
+            'current_version' => $current === null ? null : self::versionRef($current),
             'version_changed' => self::versionChanged($enrollment),
             'client' => ['id' => $company->public_id, 'name' => $company->name],
             'project_id' => $project->public_id,
@@ -55,9 +59,11 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
-            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopay, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
+            'payment' => self::payment($enrollment, $carried, $clientAutopay, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
                 : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
-            'invoicing' => self::invoicing($workspace, $enrollment, $company, $agreement, $accepted ?? $offered),
+            'invoicing' => self::invoicing($workspace, $enrollment, $company, $agreement, $carried),
+            // The scheduled move to a new version it is part of, if any (MIG-1, MIG-3).
+            'move' => PackageMigrationPresenter::forEnrollment($enrollment->migrationTargets->first()),
             'version' => AgentApiVersion::for($enrollment),
         ];
     }
@@ -191,6 +197,8 @@ final class PackageEnrollmentPresenter
             // could choose today, and what is pending or scheduled (CAN-2,
             // CAN-3, EDGE-9). Read-only here: a client cancels in the portal.
             'cancellation' => CancellationState::of($agreement, $agreement->cancellationRequests->first(), $agreement->scheduledTerminations->first(), (new WorkspaceClock)->today($timezone))->forClient(),
+            // A scheduled move to new terms, with the old and new terms and the date (MIG-2).
+            'move' => PackageMigrationPresenter::forClient($enrollment->migrationTargets->first(), PackageTerms::fromVersion($terms), $company),
             'url' => $url,
         ];
     }
@@ -268,9 +276,10 @@ final class PackageEnrollmentPresenter
         return $invoice;
     }
 
-    /** @return array{ClientCompany, ClientProject, ClientAgreement, ServicePackage, ServicePackageVersion, ServicePackageVersion|null} */
+    /** @return array{ClientCompany, ClientProject, ClientAgreement, ServicePackage, ServicePackageVersion, ServicePackageVersion|null, ServicePackageVersion|null} */
     private static function loaded(ServicePackageEnrollment $enrollment): array
     {
+        $current = $enrollment->current_version_id === null ? null : $enrollment->currentVersion;
         $company = $enrollment->clientCompany;
         $project = $enrollment->project;
         $agreement = $enrollment->agreement;
@@ -279,10 +288,11 @@ final class PackageEnrollmentPresenter
         $accepted = $enrollment->accepted_version_id === null ? null : $enrollment->acceptedVersion;
         if (! $company instanceof ClientCompany || ! $project instanceof ClientProject || ! $agreement instanceof ClientAgreement
             || ! $package instanceof ServicePackage || ! $offered instanceof ServicePackageVersion
-            || ($enrollment->accepted_version_id !== null && ! $accepted instanceof ServicePackageVersion)) {
+            || ($enrollment->accepted_version_id !== null && ! $accepted instanceof ServicePackageVersion)
+            || ($enrollment->current_version_id !== null && ! $current instanceof ServicePackageVersion)) {
             throw new LogicException('An enrollment names a record outside its workspace, or was presented without its relations loaded.');
         }
 
-        return [$company, $project, $agreement, $package, $offered, $accepted];
+        return [$company, $project, $agreement, $package, $offered, $accepted, $current];
     }
 }

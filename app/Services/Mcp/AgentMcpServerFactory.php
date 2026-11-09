@@ -541,6 +541,9 @@ final class AgentMcpServerFactory
         if (array_intersect(['cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before deciding a client\'s cancellation request or scheduling or undoing an agreement\'s end (cancellation_requests.approve, cancellation_requests.decline, agreements.schedule_end, agreements.undo_scheduled_end), and choose an end date only from the offered dates the user picked. Each emails the client; an approved or scheduled end terminates the agreement on that date.';
         }
+        if (array_intersect(['package_migrations.schedule', 'package_migrations.cancel'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before scheduling or cancelling a move of package subscribers to a new version (package_migrations.schedule, package_migrations.cancel), with the subscribers and the effective date the user chose from package_migrations.preview. Each emails the clients; on the date their agreements move to the new terms. Never raise a client\'s autopay limit: a limit below the new price is only reported.';
+        }
         if (isset($available['attachments.delete'])) {
             $mode .= ' Obtain explicit user confirmation before deleting an attachment.';
         }

@@ -17,6 +17,14 @@ final readonly class AutoInvoiceResult
     /** The enrollment or agreement no longer qualifies (no longer active, no longer automatic, or the period is no longer one it bills). */
     public const string NOT_DUE = 'not_due';
 
+    /**
+     * A move to a new version takes effect at the period's start and has not
+     * applied yet, while the period is current (MIG-3): the period is the new
+     * terms' to bill, after the move. Once the period ends without the move,
+     * it no longer waits and is billed on the agreement in force.
+     */
+    public const string WAITS_FOR_MOVE = 'waits_for_move';
+
     private function __construct(
         public ?AutoInvoiceOutcome $outcome,
         public ?string $skipped,
@@ -45,7 +53,7 @@ final readonly class AutoInvoiceResult
         return new self(AutoInvoiceOutcome::Refused, null, $refusal, $detail === null ? null : mb_substr($detail, 0, 500));
     }
 
-    /** @param self::ALREADY_INVOICED|self::NOT_DUE $why */
+    /** @param self::ALREADY_INVOICED|self::NOT_DUE|self::WAITS_FOR_MOVE $why */
     public static function skipped(string $why): self
     {
         return new self(null, $why);

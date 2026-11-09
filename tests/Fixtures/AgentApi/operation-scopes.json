@@ -1661,6 +1661,67 @@
             "mcp.switch:operations.summary"
         ]
     },
+    "package_migrations.cancel": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:package_migrations.cancel"
+        ]
+    },
+    "package_migrations.get": {
+        "scopes": [
+            "packages:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:package_migrations.get"
+        ]
+    },
+    "package_migrations.list": {
+        "scopes": [
+            "packages:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:package_migrations.list"
+        ]
+    },
+    "package_migrations.preview": {
+        "scopes": [
+            "packages:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:package_migrations.preview"
+        ]
+    },
+    "package_migrations.schedule": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:package_migrations.schedule"
+        ]
+    },
     "package_requests.approve": {
         "scopes": [
             "packages:write",

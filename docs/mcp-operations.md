@@ -361,10 +361,13 @@ and `AGENT_API_WRITES_ENABLED`, and the package operations exist at all only whi
 `SVC_SERVICE_PACKAGES_ENABLED` is on: switched off, their routes and tools are not
 registered and the served OpenAPI document leaves them out. Switching a write
 switch off removes create/update/publish/retire, the sign-up request decisions
-(approve/decline/erase) and `enrollments.activate` from MCP discovery and REST
-while `packages.list`, `packages.get`, `package_requests.list`,
-`package_requests.get`, `enrollments.list`, `enrollments.get` and the client side's
-`client_services.list` and `client_services.get` remain for `packages:read`.
+(approve/decline/erase), `enrollments.activate` and scheduling or cancelling a
+move to a new version (`package_migrations.schedule`, `package_migrations.cancel`)
+from MCP discovery and REST while `packages.list`, `packages.get`,
+`package_requests.list`, `package_requests.get`, `enrollments.list`,
+`enrollments.get`, `package_migrations.preview`, `package_migrations.list`,
+`package_migrations.get` and the client side's `client_services.list` and
+`client_services.get` remain for `packages:read`.
 The cancellation decisions (`cancellation_requests.approve`,
 `cancellation_requests.decline`, `agreements.schedule_end` and
 `agreements.undo_scheduled_end`) sit behind `AGENT_API_CLIENT_WRITES_ENABLED`

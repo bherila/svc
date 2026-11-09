@@ -8,6 +8,7 @@ import {
     fieldErrorProps,
 } from '@/components/form-field';
 import { ClientTermsList } from '@/components/packages/client-terms';
+import { MoveNotice } from '@/components/packages/move-notice';
 import { SignupCheckout } from '@/components/packages/signup-checkout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -308,6 +309,13 @@ export default function PortalService({
                             )}
                         </CardContent>
                     </Card>
+                )}
+
+                {service.move != null && (
+                    <MoveNotice
+                        move={service.move}
+                        serviceName={service.name}
+                    />
                 )}
 
                 {cancellation !== null && (

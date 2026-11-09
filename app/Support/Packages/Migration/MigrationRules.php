@@ -1,0 +1,213 @@
+<?php
+
+namespace App\Support\Packages\Migration;
+
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
+
+/**
+ * The decisions of a move, pure (MIG-1, MIG-3, MIG-5): whether a subscriber
+ * due to move is moved, skipped or held, whether a move is due, and whether
+ * it may still be cancelled. No database, no clock: the caller reads the
+ * facts under its locks and the workspace's today.
+ */
+final class MigrationRules
+{
+    /**
+     * One subscriber on or after the effective date (MIG-3). In order: a
+     * service or agreement that has stopped is skipped for good, as is one
+     * ending before the new terms would start; a move whose first period on
+     * the new terms has already ended waits for an owner to reschedule it
+     * (applied, it would start the new agreement in the past with that period
+     * never invoiced); one whose agreement still owes the first period of an
+     * earlier move that never applied waits until that period is invoiced
+     * (ending the agreement would leave it to no one); an agreement Square came to collect, whose cadence was
+     * changed away from the new version's, or that came to carry a recurring
+     * item on another cadence than its billing, since it was scheduled waits
+     * for an owner (scheduling refuses all three);
+     * a client's request to leave before the date waits for its answer; and
+     * an issued invoice already selling a period from the date on waits for
+     * an owner, since applying would bill that period twice.
+     *
+     * @param  CarbonInterface|null  $endsOn  the agreement's `ends_on`, a scheduled end included
+     * @param  CarbonInterface|null  $pendingEndOn  the end a pending cancellation request asks for, if any
+     */
+    public static function decide(
+        bool $enrollmentActive,
+        bool $carriesFromVersion,
+        string $agreementStatus,
+        ?CarbonInterface $endsOn,
+        CarbonInterface $effectiveOn,
+        ?CarbonInterface $pendingEndOn,
+        bool $periodInvoiced,
+        bool $squareCollected,
+        bool $cadenceChanged,
+        bool $firstPeriodEnded,
+        bool $offCycleComponent,
+        bool $owedPeriodUnbilled,
+        bool $recurrenceAmbiguous,
+    ): MigrationDecision {
+        $effective = $effectiveOn->toDateString();
+
+        return match (true) {
+            ! $enrollmentActive => MigrationDecision::skip(MigrationSkip::EnrollmentInactive),
+            ! $carriesFromVersion => MigrationDecision::skip(MigrationSkip::VersionMoved),
+            $agreementStatus !== 'active' => MigrationDecision::skip(MigrationSkip::AgreementEnded),
+            $endsOn !== null && $endsOn->toDateString() < $effective => MigrationDecision::skip(MigrationSkip::EndsBeforeEffective),
+            $firstPeriodEnded => MigrationDecision::hold(MigrationHold::EffectiveDatePassed),
+            $owedPeriodUnbilled => MigrationDecision::hold(MigrationHold::OwedPeriodUnbilled),
+            $squareCollected => MigrationDecision::hold(MigrationHold::SquareCollected),
+            $cadenceChanged => MigrationDecision::hold(MigrationHold::CadenceChanged),
+            $offCycleComponent => MigrationDecision::hold(MigrationHold::OffCycleComponent),
+            $recurrenceAmbiguous => MigrationDecision::hold(MigrationHold::AmbiguousRecurrence),
+            $pendingEndOn !== null && $pendingEndOn->toDateString() < $effective => MigrationDecision::hold(MigrationHold::CancellationPending),
+            $periodInvoiced => MigrationDecision::hold(MigrationHold::PeriodInvoiced),
+            default => MigrationDecision::apply(),
+        };
+    }
+
+    /**
+     * Why one subscriber cannot be part of a move on `$chosen`, or null when
+     * it can (MIG-1): it must be an active service on the version moved from,
+     * in no other scheduled move, not collected by Square (INV-3, X-2), not
+     * billing by usage, billing on the new version's cadence, with the date
+     * among those its notice and its invoices allow. Without a date, only
+     * whether it could be moved at all.
+     *
+     * The cadence stays because a successor's first period of another length
+     * is placed by the billing engine on its own period grid: a longer one
+     * (monthly to quarterly on Jan 1, Nov and Dec issued) is assigned the
+     * work period Oct-Dec, which the old agreement's issued invoices on the
+     * same project already claim, so it is refused and never invoiced.
+     */
+    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen, bool $billsByUsage = false, bool $squareCollected = false, bool $changesCadence = false, bool $recurrenceAmbiguous = false): ?MigrationRefusal
+    {
+        return match (true) {
+            ! $activeOnFromVersion => MigrationRefusal::NotASubscriber,
+            $alreadyScheduled => MigrationRefusal::AlreadyScheduled,
+            $squareCollected => MigrationRefusal::SquareCollected,
+            $billsByUsage => MigrationRefusal::BillsByUsage,
+            $dates === null => MigrationRefusal::NotRecurring,
+            $changesCadence => MigrationRefusal::ChangesCadence,
+            $recurrenceAmbiguous => MigrationRefusal::AmbiguousRecurrence,
+            $dates->offered === [] => MigrationRefusal::EndsFirst,
+            $chosen !== null && ! $dates->offers($chosen) => MigrationRefusal::DateNotOffered,
+            default => null,
+        };
+    }
+
+    /**
+     * Whether a package version or an agreement carries a recurring charge
+     * off the billing cycle: on another cadence than `$billing`, a one-time
+     * charge included. The billing engine anchors such a charge at its item's
+     * start, so a new agreement carrying it from the effective date would
+     * bill an annual licence again in the middle of the year the client paid
+     * for, or a one-time charge a second time (Codex P1 on #674).
+     *
+     * @param  list<string>  $cadences  the cadence of each recurring charge
+     */
+    public static function hasOffCycleCharge(string $billing, array $cadences): bool
+    {
+        foreach ($cadences as $cadence) {
+            if ($cadence !== $billing) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a move held its first period back from automatic invoicing:
+     * it was still scheduled when the period began - still scheduled now, or
+     * settled (cancelled, skipped) on or after its effective date on the
+     * workspace's calendar. One cancelled before its date never deferred
+     * anything; an applied one started the agreement that bills the period.
+     */
+    public static function deferredFirstPeriod(MigrationTargetStatus $status, ?CarbonInterface $settledOn, CarbonInterface $effectiveOn): bool
+    {
+        return match ($status) {
+            MigrationTargetStatus::Scheduled => true,
+            MigrationTargetStatus::Applied => false,
+            MigrationTargetStatus::Cancelled, MigrationTargetStatus::Skipped => $settledOn !== null && $settledOn->toDateString() >= $effectiveOn->toDateString(),
+        };
+    }
+
+    /**
+     * Whether a deferred first period is owed late by the agreement still in
+     * force: the agreement's own period from the effective date, ended by
+     * today, and inside the agreement. Whether an invoice already covers it
+     * is the caller's to ask.
+     */
+    public static function owesDeferredPeriod(CarbonInterface $periodStart, CarbonInterface $periodEnd, CarbonInterface $effectiveOn, CarbonInterface $today, CarbonInterface $startsOn, ?CarbonInterface $endsOn): bool
+    {
+        $start = $periodStart->toDateString();
+
+        return $start === $effectiveOn->toDateString()
+            && $periodEnd->toDateString() < $today->toDateString()
+            && $start >= $startsOn->toDateString()
+            && ($endsOn === null || $start <= $endsOn->toDateString());
+    }
+
+    /** Whether a subscriber's move is due on the workspace's today: from its effective date on, while scheduled. */
+    public static function isDue(MigrationTargetStatus $status, CarbonInterface $effectiveOn, CarbonInterface $today): bool
+    {
+        return $status === MigrationTargetStatus::Scheduled && $today->toDateString() >= $effectiveOn->toDateString();
+    }
+
+    /**
+     * Why a move cannot be cancelled now, or null when it can (MIG-5): while
+     * it is scheduled. Before its date that stops the whole move; from it on,
+     * only the subscribers still waiting, the ones already moved staying moved.
+     */
+    public static function cancelRefusal(MigrationStatus $status): ?MigrationRefusal
+    {
+        return $status === MigrationStatus::Scheduled ? null : MigrationRefusal::NotScheduled;
+    }
+
+    /**
+     * Whether an agreement bills by usage: an hourly rate, or a retainer (whose
+     * hours are reconciled after the period, as overage). Such an agreement's
+     * last period is settled on the invoice that opens the next, which a new
+     * agreement on the same project would also claim, so a move refuses it
+     * (MIG-1).
+     */
+    public static function billsByUsage(?int $hourlyRate, ?int $retainerAmount, ?int $retainerMinutes, ?int $periodRetainerAmount, ?int $periodRetainerMinutes): bool
+    {
+        return $hourlyRate !== null || ($retainerAmount ?? 0) > 0 || ($retainerMinutes ?? 0) > 0 || ($periodRetainerAmount ?? 0) > 0 || ($periodRetainerMinutes ?? 0) > 0;
+    }
+
+    /**
+     * Whether a company's autopay would stop short of the new price (MIG-4):
+     * autopay is on with a limit below it. SVC never raises the limit; this
+     * only says so. Off, there is no limit to fall short.
+     */
+    public static function autopayBelowPrice(?int $autopayLimit, int $newPrice): bool
+    {
+        return $autopayLimit !== null && $autopayLimit < $newPrice;
+    }
+
+    /**
+     * What is left of the agreement's minimum term on the effective date, in
+     * whole months from it: the agreement that carries the new terms keeps the
+     * old commitment and never starts a new one. Null when none is left.
+     */
+    public static function remainingMinimumTerm(CarbonInterface $startsOn, ?int $minimumTermMonths, CarbonInterface $effectiveOn): ?int
+    {
+        if ($minimumTermMonths === null || $minimumTermMonths < 1) {
+            return null;
+        }
+        $start = CarbonImmutable::parse($startsOn->toDateString(), 'UTC');
+        $effective = CarbonImmutable::parse($effectiveOn->toDateString(), 'UTC');
+        $termEnds = $start->addMonthsNoOverflow($minimumTermMonths)->subDay();
+        if ($termEnds->lt($effective)) {
+            return null;
+        }
+        $months = 1;
+        while ($effective->addMonthsNoOverflow($months)->subDay()->lt($termEnds)) {
+            $months++;
+        }
+
+        return $months;
+    }
+}

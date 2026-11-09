@@ -12,7 +12,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
-import { formatTimestampDate } from '@/lib/datetime';
+import { formatDay, formatTimestampDate } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
@@ -133,6 +133,11 @@ function ServiceRow({ service }: { service: PortalService }) {
                 {service.version_changed && (
                     <p className="text-xs text-muted-foreground">
                         Signed on updated terms
+                    </p>
+                )}
+                {service.move != null && (
+                    <p className="text-xs text-muted-foreground">
+                        New terms from {formatDay(service.move.effective_on)}
                     </p>
                 )}
             </TableCell>

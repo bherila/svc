@@ -41,6 +41,11 @@ Route::middleware(['web', 'auth', EnsureServicePackagesEnabled::class, ResolveWo
     Route::get('/workspaces/{workspace}/packages/{servicePackage}', [PackageAdminController::class, 'edit'])
         ->whereUuid('servicePackage')
         ->name('packages.edit');
+    // Moving a version's subscribers to the published version (MIG-1): a preview
+    // page; scheduling posts to package_migrations.schedule.
+    Route::get('/workspaces/{workspace}/packages/{servicePackage}/move', [PackageAdminController::class, 'move'])
+        ->whereUuid('servicePackage')
+        ->name('packages.move');
 });
 
 // The portal's Services tab (ACC-8, ACC-1, ACC-2): a client's services, adding a

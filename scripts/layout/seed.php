@@ -47,6 +47,8 @@ use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Mcp\McpCredentialSettings;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\PackageMigrationPlanner;
+use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\Payments\PaymentConnectionResolver;
@@ -1484,6 +1486,47 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $cancellations->cancelByContact($squarePortalContact, $company, $pendingAgreement, $offeredEnds($pendingAgreement)[1], str_repeat('UnbrokenReason', 30).' and a reason that wraps normally across the line.');
     $cancellations->cancelByContact($squarePortalContact, $company, $cancelScheduled->agreement, $offeredEnds($cancelScheduled->agreement)[0], null);
 
+    // Slice 6: moving subscribers to a new version. A package with an oversized name on v1,
+    // three subscribers of their own oversized companies (one with autopay below the new price,
+    // one cancelling after the date), then v2. One move is scheduled and one cancelled, so the
+    // editor lists both; the move page previews the third subscriber; the first one's contact
+    // reads the portal notice with an oversized note.
+    $movePackage = $packages->create($owner, $workspace, [
+        'name' => 'Moving '.$word, 'link_name' => 'moving-service', 'is_listed' => false, 'activation_mode' => 'automatic',
+        'billing_cadence' => 'monthly', 'cancellation_mode' => 'self_serve', 'notice_days' => 30, 'minimum_term_months' => null,
+        'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1]],
+    ]);
+    $movePackage = $packages->publish($owner, $workspace, $movePackage)->refresh();
+    $moveFrom = ServicePackageVersion::query()->findOrFail($movePackage->published_version_id);
+    $moveSubscribers = [];
+    foreach (['First', 'Second', 'Third'] as $index => $label) {
+        $moveCompany = ClientCompany::query()->create([
+            'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticMovingClient'.$label, 4), 'slug' => 'layout-moving-'.strtolower($label),
+            'billing_email' => 'billing-'.strtolower($label).'@moving.example.test', 'currency' => 'USD',
+        ]);
+        $moveContact = User::factory()->create([
+            'name' => str_repeat('SyntheticMovingContact', 4), 'email' => 'layout-moving-'.strtolower($label).'@client.example.test',
+            'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-moving-contact-'.strtolower($label),
+        ]);
+        app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $moveCompany, $moveContact, PortalAccessScope::Company, []);
+        $moveSubscribers[] = [$moveCompany, $moveContact, $enrollments->accept($moveContact, $moveCompany, $offer = $enrollments->addFromPortal($moveContact, $moveCompany, $movePackage), $signs($offer))->refresh()];
+        if ($index === 0) {
+            $moveCompany->forceFill(['autopay_enabled_at' => now(), 'autopay_limit_amount' => 4800])->save();
+        }
+    }
+    $packages->update($owner, $workspace, $movePackage->refresh(), [
+        'agreement_text' => str_repeat('Revised synthetic agreement text. ', 6),
+        'components' => [['kind' => 'recurring', 'description' => str_repeat('Unbroken', 12), 'cadence' => 'monthly', 'amount' => 5000, 'quantity' => 1]],
+    ]);
+    $movePackage = $packages->publish($owner, $workspace, $movePackage->refresh())->refresh();
+    $movePreview = app(PackageMigrationPlanner::class)->preview($owner, $workspace, $movePackage, $moveFrom->public_id, null);
+    $migrations = app(PackageMigrationWorkflow::class);
+    $migrations->schedule($owner, $workspace, $movePackage, $moveFrom->public_id, (string) $movePreview['effective_on'],
+        [$moveSubscribers[0][2]->public_id, $moveSubscribers[1][2]->public_id], str_repeat('UnbrokenNote', 25).' and a note that wraps normally across the line.');
+    $abandoned = $migrations->schedule($owner, $workspace, $movePackage->refresh(), $moveFrom->public_id, (string) $movePreview['effective_on'], [$moveSubscribers[2][2]->public_id], null);
+    $migrations->cancel($owner, $workspace, $abandoned);
+    [$moveNoticeCompany, $moveNoticeContact, $moveNoticeService] = $moveSubscribers[0];
+
     $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
     $packagePages = [
         'packages_list' => route('packages.index', $workspace, absolute: false),
@@ -1504,8 +1547,12 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'packages_portal_cancel_pending' => route('portal.services.show', [$company, $cancelPending->public_id], absolute: false),
         'packages_portal_cancel_scheduled' => route('portal.services.show', [$company, $cancelScheduled->public_id], absolute: false),
         'packages_operator_cancellation' => route('clients.agreement', [$workspace, $company, $pendingAgreement], absolute: false),
+        'packages_editor_moves' => $edit($movePackage),
+        'packages_move' => route('packages.move', ['workspace' => $workspace, 'servicePackage' => $movePackage->public_id, 'from' => $moveFrom->public_id], absolute: false),
+        'packages_portal_move_notice' => route('portal.services.show', [$moveNoticeCompany, $moveNoticeService->public_id], absolute: false),
         // Read as the company's contact rather than the owner.
         'package_viewers' => [
+            route('portal.services.show', [$moveNoticeCompany, $moveNoticeService->public_id], absolute: false) => $moveNoticeContact->id,
             route('portal.services.show', [$company, $cancelForm->public_id], absolute: false) => $squarePortalContact->id,
             route('portal.services.show', [$company, $cancelPending->public_id], absolute: false) => $squarePortalContact->id,
             route('portal.services.show', [$company, $cancelScheduled->public_id], absolute: false) => $squarePortalContact->id,

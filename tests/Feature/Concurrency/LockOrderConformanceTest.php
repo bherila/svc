@@ -18,6 +18,8 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageMigrationTarget;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -40,6 +42,9 @@ use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Files\AttachmentAction;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\PackageMigrationApplier;
+use App\Services\Packages\PackageMigrationPlanner;
+use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\PackageRecurringInvoices;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\WorkspaceProjectMutationAction;
@@ -338,7 +343,75 @@ final class LockOrderConformanceTest extends TestCase
         $this->driveTheExpenseLifecycle();
         $this->driveTheServicePackageEnrollments();
         $this->driveTheCancellations();
+        $this->driveThePackageMigrations();
         $this->driveTheAccessMutations();
+    }
+
+    /**
+     * Slice 6 (MIG-1, MIG-3, MIG-5): scheduling a move (the package, then its
+     * subscribers' enrollments, their scheduled targets, agreements and
+     * invoices), cancelling one (the move, then its targets), automatic
+     * invoicing waiting for a due move (a locking read of its targets after
+     * the enrollment), and applying it on the date: the maintenance share,
+     * the enrollment, the move, the target, the agreement with its open
+     * cancellation, its invoice claims, then a successor agreement, the
+     * termination, a draft's discard and the activation - and a hold recorded
+     * apart under the target's lock.
+     */
+    private function driveThePackageMigrations(): void
+    {
+        [$company] = $this->secondaryCompany('migration');
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $packages = app(ServicePackageWorkflow::class);
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        $terms = [
+            'name' => 'Locks move', 'currency' => 'USD', 'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
+            'notice_days' => 0, 'cancellation_mode' => 'self_serve',
+            'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]],
+        ];
+        $package = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-move', ...$terms]));
+        $subscribers = [];
+        foreach (['applied', 'held', 'cancelled'] as $name) {
+            $subscribers[$name] = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $package->refresh()), $this->signatureFor($offer, 'Synthetic Signer'));
+        }
+        $from = (int) $package->refresh()->published_version_id;
+        $packages->update($this->user, $this->workspace, $package, ['components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 5000]]]);
+        $package = $packages->publish($this->user, $this->workspace, $package->refresh());
+        $fromId = ServicePackageVersion::query()->findOrFail($from)->public_id;
+        $effective = (string) app(PackageMigrationPlanner::class)->preview($this->user, $this->workspace, $package, $fromId, null)['effective_on'];
+
+        $migrations = app(PackageMigrationWorkflow::class);
+        $moving = $migrations->schedule($this->user, $this->workspace, $package, $fromId, $effective, [$subscribers['applied']->public_id, $subscribers['held']->public_id], null);
+        $cancelled = $migrations->schedule($this->user, $this->workspace, $package->refresh(), $fromId, $effective, [$subscribers['cancelled']->public_id], 'Synthetic note');
+        $migrations->cancel($this->user, $this->workspace, $cancelled);
+
+        // A draft for the new period (discarded by the move) and an issued
+        // invoice for it (which holds the move).
+        $invoice = static fn (ServicePackageEnrollment $enrollment, string $number, string $status): ClientInvoice => ClientInvoice::query()->create([
+            'workspace_id' => $enrollment->workspace_id, 'client_company_id' => $enrollment->client_company_id, 'client_agreement_id' => $enrollment->client_agreement_id,
+            'invoice_number' => $number, 'invoice_kind' => 'cadence_period', 'status' => $status, 'currency' => 'USD',
+            'subtotal_amount' => 4500, 'tax_amount' => 0, 'total_amount' => 4500, 'balance_amount' => 4500,
+            'service_period_start' => $effective, 'service_period_end' => CarbonImmutable::parse($effective)->endOfMonth()->toDateString(),
+            'cycle_start' => $effective, 'cycle_end' => CarbonImmutable::parse($effective)->endOfMonth()->toDateString(),
+            'issue_date' => $effective, 'issued_at' => $status === 'draft' ? null : now(), 'hours_billed_at_rate' => 0,
+        ]);
+        $invoice($subscribers['applied'], 'LOCKS-MOVE-1', 'draft');
+        $invoice($subscribers['held'], 'LOCKS-MOVE-2', 'issued');
+
+        $this->travelTo(CarbonImmutable::parse($effective.' 00:30:00', $this->workspace->timezone));
+        $recurring = app(PackageRecurringInvoices::class);
+        $mine = array_filter($recurring->automaticEnrollments($this->workspace), static fn ($enrollment): bool => $enrollment->id === $subscribers['applied']->id);
+        foreach ($recurring->due($this->workspace, $mine) as [$enrollment, $agreement, $cycle]) {
+            $this->assertSame('waits_for_move', $recurring->invoice($this->workspace, $enrollment, $agreement, $cycle)->label());
+        }
+        $applier = app(PackageMigrationApplier::class);
+        $outcomes = [];
+        foreach (ServicePackageMigrationTarget::query()->where('service_package_migration_id', $moving->id)->orderBy('id')->get() as $target) {
+            $outcomes[] = $applier->applyDue($this->workspace, $target)->value;
+        }
+        $this->assertSame(['applied', 'held'], $outcomes, 'Both a move and a hold must happen to be measured.');
+        $this->travelBack();
     }
 
     /**

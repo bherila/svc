@@ -763,6 +763,234 @@ Slice 5 (cancellation) settled these:
   The operator's panel on the agreement's page posts to the agent endpoints.
   Each pending request is its own Needs you row, dated with the end asked for.
 
+Slice 6 (moving subscribers to a new version) settled these:
+
+- **A move is a new agreement term, not an edit.** The billing engine reads an
+  agreement's terms - hourly rate, retainer fee and hours, rollover, cadence -
+  for every period it reconciles, including work done before today and
+  invoiced after it (December's time is reconciled on January's invoice), and
+  its retainer ledger is recomputed from the agreement's start. Rewriting an
+  active agreement in place would therefore price the last old period's work,
+  and rewrite past months' ledger, on the new terms. The engine's own way to
+  change terms over time is a sequence of agreements on one project
+  (`AgreementSelector`: "each segment owns the cycles that fall inside it",
+  and `AgreementBillingRateResolver` already prefers a renewal over the term it
+  replaced). So on the effective date the move ends the current agreement on
+  the day before through `AgreementWorkflow::terminate()` (it stays the record
+  of what the client signed, its text never rewritten) and starts an agreement
+  on the same project carrying the new version's terms and recurring items
+  (`PackageAgreementTerms::createDraft()`), activated through
+  `AgreementWorkflow::activate()`. That is the "audited, versioned update" of
+  MIG-3: both agreements' activity, `agreement.moved` / `agreement.moved_in`,
+  and the move's own record. The enrollment - the service - then names the new
+  agreement and `current_version_id`; `accepted_version_id`, what the client
+  signed, never changes (ACC-2), and everything that reads the terms in force
+  (automatic invoicing - slice 4's note - required autopay, Needs you names,
+  the client's terms) reads the carried version
+  (`ServicePackageEnrollment::carriedVersionId()`, `CARRIED_VERSION_SQL`).
+- **What carries over** to the new agreement: its `ends_on`, what is left of
+  the minimum term in whole months from the effective date (a move never
+  starts a new commitment; `MigrationRules::remainingMinimumTerm()`), the
+  notice period and portal mode of the new version, a pending cancellation
+  request and a scheduled end from the date on (re-pointed, so the client's
+  request is still answered and their end still happens), the client-visibility
+  settings, interim overage and rollover policy.
+  **Unused retainer hours do not** - the engine's ledger ends with its
+  agreement - which is moot today because of the usage refusal below. **Nor
+  does a setup fee**: the successor continues a service the client already set
+  up, so `PackageAgreementTerms::createDraft(..., continuing: true)` leaves the
+  new version's setup fee off its recurring items even when the version bills
+  it with a new sign-up's first cycle (`charge_setup_fee_at_signup` false;
+  Codex P1 on #674: the successor's first invoice charged it again). A sign-up
+  of that version still pays it; the owner's preview lists it as "new sign-ups
+  only" and the client's notice not at all. `BillingHistoryInvariantTest` has
+  the history.
+- **Agreements that bill by usage are refused** (`package_migration_bills_by_usage`).
+  An hourly rate or a retainer means the last old period's work is settled on
+  the invoice that opens the next period; the new agreement's first invoice
+  claims that same work period, so the engine's overlap guard refuses
+  whichever is written second - the old term's settlement, leaving its work to
+  be priced on the new terms, or the new term's first period, never sold.
+  `BillingHistoryInvariantTest` caught exactly this while the move was being
+  built. Until the engine can settle a last period beside a same-project
+  successor (a follow-up), only fixed-price services move. At the effective
+  date the move asks the engine, in a savepoint it always rolls back, for the
+  old agreement's closing invoice: empty for a fixed-price service (the engine
+  sells no recurring-item incidence after an agreement's end - slice 5's
+  "Recurring items end with the agreement" - and the move also ends the items
+  the day before, so their own record says so), so nothing is written and
+  no invoice number spent; anything to bill (work or expenses that reached a
+  fixed-price service) holds the move (`last_period_to_settle`).
+- **A move keeps the billing cadence** (`package_migration_changes_cadence`).
+  The engine places a successor's first period on its own period grid: monthly
+  to quarterly on Jan 1, with November and December issued, puts the first
+  quarterly invoice on the work period October-December, which the old
+  agreement's issued invoices on the same project already claim, so the overlap
+  guard refuses it and January-March is never invoiced while the move reports
+  applied (Codex P1 on #674). A shorter cadence has the mirror problem from a
+  quarter boundary. No narrower rule was proven safe for every pair of monthly,
+  quarterly, semi-annual and annual, so a version on another cadence refuses
+  the whole move (`packageRefusal()`), and a subscriber whose own agreement was
+  set to another cadence than the new version's is refused by name. Offer the
+  new cadence as a new service instead.
+- **Square-collected agreements are refused** (`package_migration_square_collected`).
+  Square collects them and SVC never reshapes them (INV-3, X-2); carrying the
+  series marker over to the successor would also break its uniqueness per
+  workspace and location (`ca_ws_square_location_series_unique`), and clearing
+  it on the old agreement would orphan its Square linkage (Codex P2 on #674).
+- **Recurring charges off the billing cycle are refused**
+  (`package_migration_off_cycle_component`). The engine anchors a recurring
+  item on another cadence than its agreement's billing - an annual licence in a
+  monthly service - at the item's own start, and bills a one-time item once on
+  its agreement. The successor's items start on the effective date, so an
+  annual licence paid in November was charged again in January (November $165,
+  December $45, January $165 again; Codex P1 on #674), and a one-time charge a
+  second time. Carrying each item's anchor and paid-through date over would need
+  an unambiguous mapping from every old component to its new one (renamed,
+  repriced, added or dropped components make it a guess), so a move whose
+  current or new version has any recurring component off the service's cadence,
+  a one-time one included, is refused whole. A setup fee is not one (the
+  successor never carries it, above).
+- **The charge schedule continues** (`ContinuedRecurrence`). The engine places
+  a recurring item's charges by its anchor day and month - unset, the 1st and
+  the month the item starts - and in the item's first cycle falls back to a
+  charge on its start date when the anchor has passed. A successor's items
+  started fresh on the effective date restarted that schedule: a quarterly
+  service started Nov 9 charges Nov 9, Feb 1, May 1; moved on Feb 9, it was
+  charged Feb 9 and May 1 in its first new quarter, where the never-moved
+  service is charged May 1 alone (Codex P1 on #674 - every non-monthly cadence
+  started on a day other than the 1st did the same). So the successor's items
+  carry the old items' anchors explicitly and start when the old items did
+  (`PackageAgreementTerms::createDraft(..., continuing: $recurrence)`): before
+  the successor itself, whose cycles bound every charge, so no first-charge
+  fallback applies and each item charges on the dates the old ones would have,
+  a new component included. The schedule is read from the old agreement's open
+  items on its cadence; when they follow no one schedule (different anchor
+  days, a different place in the cycle, an item starting later - only an
+  operator's edit makes these), the subscriber is refused
+  (`package_migration_ambiguous_recurrence`) and, if it happens after
+  scheduling, the move holds (`ambiguous_recurrence`). With no such item, the
+  schedule an item started with the agreement would have. A property in
+  `BillingHistoryInvariantTest` proves it: for identical terms a moved twin
+  and a never-moved twin bill the same total for every period, each once, on
+  every cadence, for services started on the 1st, 9th and 31st, moved on each
+  of the first two dates a move may take (a full cycle apart), with one or two
+  components or a setup fee billed with the first cycle.
+- **Asked again on the date.** The version is fixed at scheduling, but an
+  operator can change an active agreement's cadence or recurring items, and a
+  Square series can be linked to it, after scheduling, so the applier reads
+  them under the agreement's lock and holds the move (`cadence_changed`,
+  `off_cycle_component`, `ambiguous_recurrence`, `square_collected`) rather than apply it, retried
+  every run and shown in Needs you until the agreement is restored or the move
+  cancelled for that subscriber.
+- **Never started in the past** (`effective_date_passed`). A move held on its
+  date (a pending request to leave, an invoice to void, any hold) applies once
+  released while the first period on the new terms is still current: the
+  successor starts on the effective date and automatic invoicing, which sells
+  only the period containing today, sells that period on the new terms.
+  Released after that period ended, the move used to apply backdated: the
+  successor's first period was no longer current, so nothing ever invoiced it,
+  and the old agreement had waited for the move all through it (Codex P1 on
+  #674: declined on Feb 1, a Jan 1 move applied and January was never billed).
+  Now it holds instead, for an owner to cancel and schedule again, and nothing
+  is left unbilled: automatic invoicing waits for a move only for the period
+  starting on its date and only while that period is current; once it has
+  ended, it is invoiced late on the agreement still in force
+  (`PackageRecurringInvoices::due()`, ahead of the current period), and every
+  later period bills normally. That period stays owed whatever becomes of the
+  move afterwards - still held, its subscriber cancelled beside others already
+  moved, the whole move cancelled, or replaced by a new move - until an invoice
+  covers it (Codex P1 on #674: cancelling the held move on the next period's
+  first day, before invoicing ran, dropped it). Which periods waited is read
+  from what happened, not from the target's status now: a target that is still
+  scheduled, or was settled on or after its date, deferred its first period; one
+  cancelled before its date never deferred anything (that period was the
+  ordinary current one), and an applied one started the agreement that bills
+  it. The rule is `MigrationRules::deferredFirstPeriod()` and
+  `owesDeferredPeriod()`, pure, shared by the late billing and the applier.
+- **A move never ends an agreement that still owes a period**
+  (`owed_period_unbilled`). The late invoice can be refused (an ended
+  company-wide agreement covering the work dates, say), and once a later move
+  ended that agreement nothing would ever bill the period: automatic invoicing
+  reads only the enrollment's agreement in force, and the guard bills only an
+  active one (Codex P1 on #674). So the applier reads, under its locks, every
+  earlier move of the service on the same agreement that deferred its first
+  period, and the invoices covering those periods, and holds while one is
+  uncovered, naming the period; the enrollment's refusal says why it is
+  refused. Resolved while the move's own first period is current, the late
+  invoice is issued and the move applies on the next run; resolved after, the
+  move waits with `effective_date_passed` instead, and its own first period is
+  in turn owed late. Each owed period is billed once, and every hold names
+  something an owner can do.
+- **The editor keeps open moves.** The package editor lists every scheduled
+  move (held ones included), however many newer ones exist, then the newest
+  page of history (Codex P2 on #674: a scheduled move older than a page of
+  history lost its cancel). A draft-mode agreement's drafts never waited, and
+  a held move discards none of them. `BillingHistoryInvariantTest` walks both
+  releases, monthly and quarterly.
+- **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
+  after the earliest end a cancellation made today could choose (the close of
+  the period in which today plus the agreement's own notice falls), so a client
+  told now can always leave before the new terms; later period starts of the
+  engine's own periods follow; none on or before the last day of a period an
+  issued invoice already sold (so nothing is billed twice and no issued invoice
+  rewritten); none after the agreement's end. MIG-1 names the notice alone, so
+  the minimum term does not hold a move back. One date per move; a subscriber
+  whose own periods it does not start, or whose notice it falls inside, is
+  refused by name (`package_migration_date_not_offered`), and the preview
+  offers every subscriber's dates with how many each suits, suggesting the
+  earliest that suits the most. Only to the package's published version, from
+  an older one, in the same currency, both billing in periods on the same
+  cadence; a subscriber in one scheduled move at a time.
+- **Records.** `service_package_migrations` (package, from/to version, date,
+  message, `scheduled`/`completed`/`cancelled`) and
+  `service_package_migration_targets` (enrollment, company, the agreement moved
+  from and, once applied, the successor; `scheduled`/`applied`/`skipped`/
+  `cancelled`; an outcome code - a skip, or why a scheduled one waits; the new
+  price and the company's autopay limit at scheduling). Composite tenant keys;
+  `LockResource` places the move and its targets after the enrollment, so
+  automatic invoicing can ask under the enrollment's lock whether a move is due.
+- **On the date (MIG-3)** `svc:packages:apply-migrations`, hourly behind the
+  flag, before the invoicing command, walks every scheduled target in pages by
+  id, decides which are due on each workspace's calendar, and applies each in
+  its own transaction: the maintenance share lock, the enrollment, the move,
+  the target, the agreement, its pending request and scheduled end, its
+  invoices from the date on, then the successor, the termination, the closing
+  invoice probe, any draft's discard and the activation. Decisions
+  (`MigrationRules::decide()`, pure): a stopped service, a service already moved
+  by another move, an agreement no longer active or ending before the date is
+  **skipped** and recorded; a pending request to leave before the date, or an
+  issued invoice already selling a period from the date on, **holds** it
+  (recorded once, retried every run, a Needs you row). Drafts the walk already
+  made for those periods were priced on the old terms and are discarded through
+  the ordinary discard. Automatic invoicing skips the period starting on a due
+  move's date while it is current and the move has not applied yet
+  (`waits_for_move`), so the new period is never issued on the old terms (and,
+  once it ends unapplied, bills it late - "Never started in the past" below).
+  A second run, or one beside it, finds the target settled.
+- **Cancelling (MIG-5)** is allowed while the move is scheduled: before the date
+  the whole move, from it on the subscribers still waiting (held); one already
+  moved stays moved and the move completes. Each client whose move is cancelled
+  is emailed.
+- **Notices (MIG-2, MIG-4).** `MigrationTermChanges` words each term that
+  changes, old and new, once, for the email, the portal notice, the owner's
+  preview and the agent API (the owner also sees operator settings and terms
+  that only shape new sign-ups, marked so). Clients are emailed at scheduling
+  and at a cancellation, after commit; nothing is emailed when the move applies
+  (the spec names no such message). An autopay limit below the new price - read
+  live against the company's limit - is flagged in the preview, the email, the
+  portal notice and Needs you, and never raised.
+- **Agent surface.** `package_migrations.preview|list|get` (`packages:read`)
+  and `package_migrations.schedule|cancel` (`packages:write`, `confirm`,
+  `expected_version` - the package's to schedule, the move's to cancel), behind
+  the package write cutover. `enrollments.*` gains `current_version` and
+  `move`; `client_services.*` gains `move`, read-only.
+- **Screens.** The package editor lists versions with their active subscribers
+  and a link to move an older version's, and the package's moves with a
+  confirmed cancel; the move page (`packages.move`) is the preview with the
+  date Select, the subscribers and their flags, and the confirmed schedule; the
+  portal service page carries the notice and the Services list notes the date.
+
 ## Validation plan
 
 ### Tracing requirements to tests

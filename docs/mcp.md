@@ -2162,6 +2162,11 @@ still answers 404 and offers no tool.
 | `cancellation_requests.decline` | `clients:write`, `billing:read` | `expected_version` and `confirm: true`; optional `note` the client reads |
 | `agreements.schedule_end` | `clients:write`, `billing:read` | The agreement's `expected_version`, `confirm: true` and `end_date`; optional `waive_notice`; emails the client |
 | `agreements.undo_scheduled_end` | `clients:write`, `billing:read` | The agreement's `expected_version` and `confirm: true`; emails owners and admins and the client |
+| `package_migrations.preview` | `packages:read` | `from_version_id` (required) and optional `effective_on` as query parameters; changes nothing |
+| `package_migrations.schedule` | `packages:write`, `packages:read` | The package's `expected_version`, `confirm: true`, `from_version_id`, `effective_on` and `enrollment_ids` (1-100); optional `message` (at most 2000 characters) the clients read; returns 201 and emails each client |
+| `package_migrations.list` | `packages:read` | Newest first; optional `status` (`scheduled`, `completed`, `cancelled`), `limit` 1-100, `cursor` |
+| `package_migrations.get` | `packages:read` | |
+| `package_migrations.cancel` | `packages:write`, `packages:read` | The move's `expected_version` and `confirm: true`; emails each client whose move it cancels |
 
 All but `client_services.*` are workspace owner/admin operations. Anyone else, a
 portal contact included, and any other workspace's package, is answered 404 as if
@@ -2238,7 +2243,80 @@ also carries `cancellation`: the agreement's own cancellation terms (`mode`,
 `notice_days`, `minimum_term_months`), the end dates the client could choose
 today (`offered_end_dates`, empty when they cannot cancel now), and any
 `pending_request` or `scheduled_end`. Cancelling, withdrawing and undoing are the
-portal's; no client agent operation does them.
+portal's; no client agent operation does them. A service a scheduled move will
+change carries `move`: the date, the version it moves to, `changes` (each term
+that changes, with its old and new value in words), the new terms in full, the
+owner's `message`, the new price and whether the company's autopay limit is below
+it (`autopay_below_price`; SVC never raises it). Otherwise `move` is null.
+
+#### Moving subscribers to a new version
+
+A package's subscribers can be moved to its published version after notice
+(`docs/service-packages.md`, MIG-1 to MIG-5). `package_migrations.preview`
+changes nothing: for every active service carrying `from_version_id` it answers
+the earliest `effective_on` and the `effective_dates` it may move on - starts of
+its own billing periods, the first being the day after the earliest end a
+cancellation made today could choose (so a client told now can always leave
+before the new terms), and after every period an issued invoice already sold -
+its autopay limit and `autopay_below_price`, any pending cancellation or
+scheduled end, and `refusal`, why it cannot move on the date asked (or the
+suggested one: the earliest date that suits the most subscribers). It also
+answers `changes`, each term that differs with its old and new value in words
+(operator settings and terms that only shape a new sign-up included, marked as
+such), and `new_price`.
+
+`package_migrations.schedule` moves the chosen `enrollment_ids` on
+`effective_on`, which must suit every one of them, or refuses the whole move with
+a code naming the client: `package_migration_not_newer` (only to the published
+version, from an older one), `package_migration_not_a_subscriber`,
+`package_migration_already_scheduled`, `package_migration_date_not_offered`,
+`package_migration_ends_first`, `package_migration_not_recurring`,
+`package_migration_currency_changed`, `package_migration_bills_by_usage` (an
+agreement with an hourly rate or a retainer: the billing engine settles its last
+period's work on the invoice that also opens the next, which a new agreement on
+the same project would claim too), `package_migration_changes_cadence` (the new
+version, or this agreement, bills on another cadence: a first period of another
+length would claim work periods already invoiced) or
+`package_migration_square_collected` (Square collects the agreement; SVC never
+reshapes it) or `package_migration_off_cycle_component` (the current or new
+version has a recurring charge off the service's cadence, such as an annual
+licence in a monthly service or a one-time charge, which a new agreement would
+charge again) or `package_migration_ambiguous_recurrence` (the agreement's
+recurring charges, edited by hand, no longer follow one schedule for the new
+agreement to continue). The new agreement's recurring items continue the old
+charge schedule, so a move never adds or skips a charge. A setup fee on the new version is never charged to a subscriber
+who moves. Each client is emailed the date, the changes
+and the message, and sees the notice in the portal; a client whose autopay limit
+is below the new price is told SVC will not raise it, and Needs you lists it.
+
+On the date, `svc:packages:apply-migrations` (hourly, in process) ends the
+current agreement on the day before through the same workflow as
+`agreements.terminate` and starts an agreement carrying the new version's terms
+and recurring items on the same project, so every period bills on the terms in
+force for it and no issued invoice is touched. The enrollment then names the new
+agreement and `current_version`; `accepted_version`, what the client signed,
+never changes, and automatic invoicing reads the carried version. A subscriber
+whose agreement has ended, or ends first, is `skipped` with its reason in
+`outcome`; one whose next period an issued invoice already sells, whose client
+asked to leave before the date, whose last old period still has something to
+invoice, or whose agreement changed cadence, came to carry an off-cycle
+recurring charge or came to be collected by Square since scheduling
+(`cadence_changed`, `off_cycle_component`, `ambiguous_recurrence`, `square_collected`) waits
+`scheduled` with the reason in `outcome` and is retried every hour. A move still
+waiting when its first period on the new terms has ended is never started in the
+past: it waits with `effective_date_passed` until it is cancelled (schedule a new
+one), and the current agreement invoices every period, that one included, even
+once the move is cancelled or replaced. While such a period's invoice is refused,
+a later move of the same service waits with `owed_period_unbilled` (its
+`outcome.detail` names the period) and applies once the period is invoiced.
+A move (`package_migrations.get`) answers its versions, date, message, changes,
+new price, `counts` and each subscriber's `status`, `outcome`, agreement and,
+once moved, `successor_agreement`. `enrollments.*` carries `move` for a service
+in a scheduled move. `package_migrations.cancel` cancels a scheduled move: before
+its date the whole move, from it on the subscribers still waiting; each client
+is told their terms stay. Refused with `package_migration_not_scheduled` once
+completed or cancelled. The server instructions ask for the user's confirmation
+before scheduling or cancelling.
 
 #### Cancellation
 
@@ -2279,9 +2357,10 @@ are `cancellation_request_not_pending`, `cancellation_agreement_not_active`,
 confirmation before each decision.
 
 The routes, the tools and the website call the same `ServicePackageWorkflow`,
-`PackageRequestWorkflow`, `PackageEnrollmentWorkflow`, `ServicePackageReadService`,
-`PackageRequestReadService`, `PackageEnrollmentReadService` and
-`ClientServiceReadService`, so authorization, term validation, locking and
+`PackageRequestWorkflow`, `PackageEnrollmentWorkflow`, `PackageMigrationWorkflow`,
+`ServicePackageReadService`, `PackageRequestReadService`,
+`PackageEnrollmentReadService`, `PackageMigrationPlanner`,
+`PackageMigrationReadService` and `ClientServiceReadService`, so authorization, term validation, locking and
 versions cannot differ between them. The request schemas are generated from
 `ServicePackageRules` and `ServicePackageOperations::DECISION_RULES`, the rules
 those workflows validate with, and every schema is
