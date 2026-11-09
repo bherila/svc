@@ -110,7 +110,7 @@ final class DisputedDraftRebuilder
                 ->where('workspace_id', $workspaceId)
                 ->where('client_company_id', $expense->client_company_id)
                 ->where('status', InvoiceStatus::Draft->value)
-                ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
+                ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
                 ->whereNotNull('client_agreement_id')
                 // Claims take historical expenses through the draft's end, with
                 // no lower bound, so an expense answered after its own period

@@ -1421,7 +1421,12 @@ final class ClientInvoicingService
                 $agreement,
                 $periodEnd,
                 false,
-                max(0.0, $cycleLedger['covered_hours'] - $plan->totalPriorMonthRetainerHours),
+                // What the cycle's pool has left once its own work drew on it:
+                // the ledger's closing unused hours, which already count that
+                // work. Covered hours less the draw is the work's own share of
+                // the pool, which left deferred work no room even in a cycle
+                // whose pool went unused (docs/ux-overhaul.md 7b″).
+                max(0.0, (float) $cycleLedger['unused_hours']),
                 $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $periodEnd->format('Y-m'))->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );

@@ -335,7 +335,13 @@ final class InvoiceLifecycleService
             // to meet in whatever order two issues reach each other's rows.
             // A reissue also asks which later invoices were sized against this
             // one's charge, so it takes the same lock.
-            $basisAgreement = $invoice->catch_up_basis === null && $invoice->reopened_at === null ? null : $this->lockAgreementOf($invoice);
+            // So is a draft with a held-work basis: its issue locks its own
+            // time and then the agreement's disputed history, and two drafts
+            // of one agreement that each lock their own first could otherwise
+            // wait on each other's history (docs/ux-overhaul.md 7b″).
+            $basisAgreement = $invoice->catch_up_basis === null && $invoice->reopened_at === null && $invoice->held_work_basis === null
+                ? null
+                : $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
             // A caller's check of version or status belongs on this row, not on
             // the copy it read before asking: another request can issue the

@@ -36,7 +36,7 @@ Time on an issued invoice is different: the charge stands until you correct the 
 
 To settle a dispute, choose **Respond to dispute** on the entry and write a reply. The client reads the reply exactly as you write it. Then choose one of:
 
-- **Send answer**: the dispute is cleared and the entry goes back on the client's list to approve. It bills on the next draft invoice. If its month's invoice was already issued, it becomes deferred work instead: it's billed from spare retainer hours on a later invoice, with a buy-down, or when the agreement ends. To change the hours first, edit the entry before you answer.
+- **Send answer**: the dispute is cleared and the entry goes back on the client's list to approve. It bills on the next draft invoice. If its month's invoice was already issued, consultant or retainer time becomes deferred work instead: it's billed from spare retainer hours on a later invoice, with a buy-down, or when the agreement ends. Flat-hourly subcontractor time goes on the next draft, and time an issued invoice already charges keeps that charge. To change the hours first, edit the entry before you answer.
 - **Write off**: the entry is never billed. Only someone who may approve time on the project can write it off, and only while no issued invoice charges it.
 
 Expenses work the same way, and an owner or admin settles them.

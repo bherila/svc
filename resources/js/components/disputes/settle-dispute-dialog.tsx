@@ -121,12 +121,14 @@ export function SettleDisputeDialog({
                             className="text-xs text-muted-foreground"
                         >
                             The client reads this as you write it. Answering
-                            puts it back on their list and on the next draft. If
-                            its month's invoice was already issued, it becomes
-                            deferred work instead, billed from spare retainer
-                            hours, a buy-down or when the agreement ends. To
-                            change the hours or amount first, edit it before you
-                            answer.
+                            puts it back on their list. If an issued invoice
+                            already charges it, that charge stands; otherwise it
+                            goes on the next draft - except consultant or
+                            retainer time whose month was already invoiced,
+                            which becomes deferred work, billed from spare
+                            retainer hours, a buy-down or when the agreement
+                            ends. To change the hours or amount first, edit it
+                            before you answer.
                             {settle.outcomes.includes('written_off') &&
                                 ' Writing it off means it is never billed.'}
                         </p>

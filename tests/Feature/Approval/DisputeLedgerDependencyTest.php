@@ -23,6 +23,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -487,5 +488,101 @@ final class DisputeLedgerDependencyTest extends TestCase
         $this->assertSame(1, $this->onAnyLine($flat->fresh()));
         app(ClientInvoicingService::class)->regenerateDraftInvoice($march->fresh());
         $this->assertSame(1, $this->onAnyLine($flat->fresh()));
+    }
+
+    /** @return array{Workspace, ClientCompany, ClientProject, ClientAgreement, User} */
+    private function quarterly(string $name): array
+    {
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $agreement, $owner] = $this->world($name, 200);
+        $agreement->forceFill([
+            'billing_cadence' => 'quarterly', 'bill_overage_interim' => false,
+            'period_retainer_minutes' => 600, 'period_retainer_amount' => 100000,
+        ])->save();
+
+        return [$workspace, $company, $project, $agreement, $owner];
+    }
+
+    /** @return iterable<string, array{int, bool}> */
+    public static function quarterPools(): iterable
+    {
+        yield 'Q2 left its whole pool unused' => [0, true];
+        yield 'Q2 left two hours of its pool' => [480, true];
+        yield 'Q2 used its whole pool' => [600, false];
+    }
+
+    /**
+     * The third review: a quarterly pool's unused hours take deferred work. The
+     * March hours, answered after Q1 was invoiced, are drawn from whatever Q2's
+     * pool has left - once, through a regeneration - and wait when it has none.
+     */
+    #[DataProvider('quarterPools')]
+    public function test_a_late_answer_on_a_quarter_is_drawn_from_the_next_quarters_unused_pool(int $q2Minutes, bool $drawn): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->quarterly('quarter-'.$q2Minutes);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 600);
+        $march = $this->hours($workspace, $company, $project, $owner, '2026-03-20', 120);
+        $this->stampDispute($march);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-04-01'), $workspace);
+        $this->answer($workspace, $march, $owner);
+        if ($q2Minutes > 0) {
+            $this->hours($workspace, $company, $project, $owner, '2026-05-10', $q2Minutes);
+        }
+
+        $q2 = $this->period($company, $agreement, '2026-07-01');
+        $this->assertSame($drawn ? 1 : 0, $this->onAnyLine($march->fresh()));
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($q2->fresh());
+        $this->assertSame($drawn ? 1 : 0, $this->onAnyLine($march->fresh()));
+        if ($drawn) {
+            $this->assertSame(0, ClientTimeEntry::query()->whereKey($march->id)->awaitingDeferredBilling()->count());
+        }
+        app(InvoiceLifecycleService::class)->issue($q2->fresh(), $workspace);
+        $this->assertSame('issued', $q2->fresh()->status);
+    }
+
+    /**
+     * Owner decision 2026-11-09: like all deferred work, a late answer still
+     * waiting when the agreement ends is collected by the termination invoice,
+     * at the hourly rate, exactly once.
+     */
+    public function test_termination_collects_a_late_answer_still_waiting_once(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('termination', 0);
+        $agreement->forceFill(['ends_on' => '2026-02-28'])->save();
+        $a = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 120);
+        $this->hours($workspace, $company, $project, $owner, '2026-01-21', 60);
+        $this->stampDispute($a);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
+        $this->answer($workspace, $a, $owner);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 60);
+
+        $closing = $this->period($company, $agreement, '2026-03-01');
+        $this->assertSame(30000, (int) $closing->total_amount, "February's hour and A's two hours at the hourly rate.");
+        $this->assertSame(1, $this->onAnyLine($a->fresh()));
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($closing->fresh());
+        $this->assertSame(1, $this->onAnyLine($a->fresh()));
+        $this->assertSame(30000, (int) $closing->fresh()->total_amount);
+    }
+
+    /** The third review: a legacy draft with no recorded kind claims an answered expense too. */
+    public function test_an_expense_answered_after_its_period_was_invoiced_is_claimed_by_a_legacy_draft(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('legacy-expense', 600);
+        $expense = ClientExpense::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'created_by_user_id' => $owner->id, 'spent_on' => '2026-01-15', 'amount' => 4200, 'currency' => 'USD',
+            'description' => 'Synthetic expense', 'status' => 'approved',
+        ])->refresh();
+        ClientExpense::query()->whereKey($expense->id)->update(['client_disputed_at' => now(), 'lock_version' => DB::raw('lock_version + 1')]);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
+        $march = $this->period($company, $agreement, '2026-03-01');
+        ClientInvoice::query()->whereKey($march->id)->update(['invoice_kind' => null]);
+
+        $fresh = $expense->fresh();
+        app(DisputeSettlements::class)->settleExpense($workspace, $fresh->public_id, $owner, DisputeSettlement::Answered, 'Synthetic reply', AgentApiVersion::for($fresh));
+
+        $line = $expense->fresh()->client_invoice_line_id;
+        $this->assertNotNull($line);
+        $this->assertSame($march->id, (int) DB::table('client_invoice_lines')->where('id', $line)->value('client_invoice_id'));
     }
 }

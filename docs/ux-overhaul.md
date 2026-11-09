@@ -388,12 +388,18 @@ things keep those charges current:
   interim before cadence, not only the draft that carries the row.
 - *The issue checks what the draft was priced from.* A cadence draft records
   its held-work basis when it is generated (`HeldWorkBasisRecorder`): its
-  project scope, the last day its ledger read, and a digest of the dispute and
-  settlement state of that scope's time through that day. Issuing re-reads
+  project scope, the last day its ledger read, and a digest of the dispute,
+  settlement and allocation state of that scope's disputed and settled time
+  through that day. The allocation is what makes a disputed row charged
+  rather than held, and a void releases it without the dispute columns
+  moving, so a void refuses the later draft too. A buy-down attached to the
+  draft renews a basis that was current before it. Issuing re-reads
   that state with row locks - after the lines, before the company - and
   refuses a draft whose basis has moved (422, code `disputed_work_changed`);
   regenerating it prices it from the current state. A draft generated before
-  the basis existed is issued as before.
+  the basis existed is issued as before. A draft with a basis is issued under
+  its agreement's lock, so two drafts of one agreement never wait on each
+  other's history.
 
 #### Settling a dispute
 
@@ -440,7 +446,9 @@ period can no longer bill it (decided 2026-11-09, `LateAnswer`):
 
 - Work the retainer ledger reads becomes **deferred work**. It joins the
   deferred backlog and is listed under the draft's *Still deferred*. It is
-  drawn from a later draft's free capacity, settled by a buy-down, or - like
+  drawn from a later draft's free capacity - on a quarterly or other cycle,
+  what the cycle's pool has left after its own work - settled by a buy-down,
+  or - like
   all deferred work - collected at the hourly rate when the agreement
   terminates. With no retainer there is no free capacity, so a buy-down or
   termination collects it. Waiting, it takes no
