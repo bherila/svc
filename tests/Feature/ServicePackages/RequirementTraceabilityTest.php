@@ -24,10 +24,7 @@ final class RequirementTraceabilityTest extends TestCase
      *
      * @var list<string>
      */
-    private const PENDING = [
-        // Slice 6: version migration.
-        'MIG-1', 'MIG-2', 'MIG-3', 'MIG-4', 'MIG-5',
-    ];
+    private const PENDING = [];
 
     public function test_every_requirement_has_a_test_and_every_named_requirement_exists(): void
     {

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
@@ -34,6 +35,7 @@ use DomainException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -408,56 +410,54 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertNotSame($totals['never cancelled'], $totals['cancelled']);
     }
 
-    /** @return iterable<string, array{array<string, mixed>, array<string, mixed>, string}> */
+    /** @return iterable<string, array{array<string, mixed>, array<string, mixed>, int}> */
     public static function movedWorlds(): iterable
     {
-        // Version 1, version 2, and the line type a period's recurring item is billed under.
+        // Version 1, version 2, and how many periods are sold from January
+        // through the walk on October 1 (which reaches one period ahead).
         yield 'monthly' => [
-            ['billing_cadence' => 'monthly', 'retainer_amount' => 60000, 'retainer_minutes' => 600, 'rollover_months' => 1, 'hourly_rate_amount' => 10000,
-                'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]]],
-            ['billing_cadence' => 'monthly', 'retainer_amount' => 65000, 'retainer_minutes' => 600, 'rollover_months' => 1, 'hourly_rate_amount' => 12000,
-                'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 5000]]],
-            'monthly',
+            ['billing_cadence' => 'monthly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]]],
+            ['billing_cadence' => 'monthly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 5000]]],
+            11,
         ];
         yield 'quarterly' => [
-            ['billing_cadence' => 'quarterly', 'retainer_amount' => 180000, 'retainer_minutes' => 1800, 'rollover_months' => 3, 'hourly_rate_amount' => 10000,
-                'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'quarterly', 'amount' => 13500]]],
-            ['billing_cadence' => 'quarterly', 'retainer_amount' => 195000, 'retainer_minutes' => 1800, 'rollover_months' => 3, 'hourly_rate_amount' => 12000,
-                'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'quarterly', 'amount' => 15000]]],
-            'quarterly',
+            ['billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'quarterly', 'amount' => 13500]]],
+            ['billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'quarterly', 'amount' => 15000]]],
+            5,
         ];
     }
 
     /**
      * A package agreement moved to a new version mid-life (docs/service-packages.md,
-     * MIG-3), invoiced and issued month by month as the year goes: every
-     * period before the effective date bills on the old terms - its retainer,
-     * its hosting and its hours, the last old period's work included, settled
-     * after the date - and every period from it on the new terms, with no
-     * period sold twice or skipped and no hour charged twice or left behind.
-     * The draft the walk had already made for the first new period is
-     * discarded, never issued on the old terms.
+     * MIG-3), invoiced and issued period by period as the year goes: every
+     * period before the effective date bills on the old terms and every period
+     * from it on the new, with no period sold twice or skipped. The draft the
+     * walk had already made for the first new period is discarded, never
+     * issued on the old terms, and the issued invoices before the date are
+     * never touched.
      *
      * Three twins: moved by the scheduled move, renewed by hand on the same
-     * date (the old agreement ended the day before, a new one from the new
-     * version's terms started on it), and never moved. The move bills exactly
-     * as the hand-made renewal, and every period before the date exactly as
-     * the agreement never moved.
+     * date (the old agreement ended the day before with its recurring items, a
+     * new one from the new version's terms started on it), and never moved.
+     * The move bills exactly as the hand-made renewal, and every period before
+     * the date exactly as the agreement never moved.
+     *
+     * Fixed-price terms: a move refuses an agreement that bills by usage
+     * (MIG-1), whose last period's work the engine settles on the invoice that
+     * also opens the next.
      *
      * @param  array<string, mixed>  $v1
      * @param  array<string, mixed>  $v2
      */
     #[DataProvider('movedWorlds')]
     #[Requirement('MIG-3')]
-    public function test_a_mid_life_move_to_a_new_version_bills_each_period_once_on_the_terms_in_force(array $v1, array $v2, string $cadence): void
+    public function test_a_mid_life_move_to_a_new_version_bills_each_period_once_on_the_terms_in_force(array $v1, array $v2, int $periods): void
     {
         config(['svc.service_packages.enabled' => true]);
         Mail::fake();
         $effective = '2026-07-01';
-        // day, minutes: overage on the old terms in May and June (June's settled after the move), on the new in August.
-        $history = [['2026-02-10', 300], ['2026-05-12', 2400], ['2026-06-15', 2700], ['2026-07-20', 300], ['2026-08-11', 2700], ['2026-09-09', 120]];
         $invoices = [];
-        $hourly = [];
+        $issuedBefore = [];
         foreach (['moved', 'renewed by hand', 'never moved'] as $world) {
             $this->travelTo(CarbonImmutable::parse('2026-01-01 10:00:00', 'UTC'));
             [$workspace, $owner] = $this->packageWorkspace('Synthetic invariants move '.$world);
@@ -476,21 +476,23 @@ final class BillingHistoryInvariantTest extends TestCase
             $original = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
             $packages->update($owner, $workspace, $package->refresh(), $v2);
             $package = $packages->publish($owner, $workspace, $package->refresh());
-            foreach ($history as [$day, $minutes]) {
-                $this->hours($workspace, $company, $project, $owner, $day, $minutes);
-            }
 
             for ($month = CarbonImmutable::parse('2026-01-01'); $month->lte(CarbonImmutable::parse('2026-10-01')); $month = $month->addMonth()) {
                 $this->travelTo($month->setTime(6, 0));
                 if ($month->toDateString() === $effective && $world === 'moved') {
-                    $this->artisan('svc:packages:apply-migrations', ['--apply' => true])->assertSuccessful();
+                    $issuedBefore = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('status', '!=', InvoiceStatus::Draft->value)
+                        ->orderBy('id')->get()->map(fn (ClientInvoice $invoice): array => [$invoice->id, $invoice->status, (int) $invoice->total_amount, $invoice->lock_version])->all();
+                    $this->assertSame(0, Artisan::call('svc:packages:apply-migrations', ['--apply' => true]));
                     $this->assertSame('applied', ServicePackageMigrationTarget::query()->where('workspace_id', $workspace->id)->sole()->status);
+                    $this->assertSame($issuedBefore, ClientInvoice::query()->whereIn('id', array_column($issuedBefore, 0))->orderBy('id')->get()
+                        ->map(fn (ClientInvoice $invoice): array => [$invoice->id, $invoice->status, (int) $invoice->total_amount, $invoice->lock_version])->all(), 'No issued invoice is touched.');
                 }
                 if ($month->toDateString() === $effective && $world === 'renewed by hand') {
                     $this->renewByHand($workspace, $company, $project, $original, $package, $effective);
                 }
                 app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
                 $this->issueEveryDraft($company, $workspace);
+                $this->assertInvariants($company, $world.', '.$month->toDateString());
                 if ($month->toDateString() === '2026-06-01' && $world === 'moved') {
                     $this->travelTo(CarbonImmutable::parse('2026-06-10 12:00:00', 'UTC'));
                     $preview = app(PackageMigrationPlanner::class)->preview($owner, $workspace, $package, $from->public_id, null);
@@ -498,55 +500,22 @@ final class BillingHistoryInvariantTest extends TestCase
                     app(PackageMigrationWorkflow::class)->schedule($owner, $workspace, $package, $from->public_id, $effective, [$enrollment->public_id], null);
                 }
             }
-            $this->assertInvariants($company, $world.', a year billed');
-            if (getenv('DUMP_MOVE')) {
-                fwrite(STDERR, "== {$world}\n");
-                foreach (ClientInvoice::query()->where('workspace_id', $workspace->id)->orderBy('id')->with('lines.timeEntries')->get() as $inv) {
-                    fwrite(STDERR, sprintf("%s ag=%s %s %s..%s cyc %s..%s total=%d\n", $inv->invoice_number, $inv->client_agreement_id, $inv->status, $inv->service_period_start?->toDateString(), $inv->service_period_end?->toDateString(), $inv->cycle_start?->toDateString(), $inv->cycle_end?->toDateString(), $inv->total_amount));
-                    foreach ($inv->lines as $line) {
-                        fwrite(STDERR, sprintf("   %s %s qty=%s unit=%d total=%d entries=%s\n", $line->type, $line->line_date?->toDateString(), $line->quantity, $line->unit_amount, $line->total_amount, $line->timeEntries->map(fn ($e) => $e->worked_on->toDateString().':'.$e->minutes)->implode(',')));
-                    }
-                }
-            }
 
             $invoices[$world] = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('status', '!=', InvoiceStatus::Void->value)
                 ->orderBy('cycle_start')->orderBy('id')->get()
                 ->map(fn (ClientInvoice $invoice): array => [$invoice->invoice_kind, $invoice->cycle_start?->toDateString(), $invoice->cycle_end?->toDateString(), $invoice->status, (int) $invoice->total_amount])->all();
-            $hourly[$world] = DB::table('client_invoice_line_time_entries as allocation')
-                ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
-                ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
-                ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
-                ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
-                ->where('line.type', 'additional_hours')
-                ->orderBy('entry.worked_on')
-                ->get(['entry.worked_on', 'line.unit_amount'])
-                ->map(fn ($row): array => [substr((string) $row->worked_on, 0, 10), (int) $row->unit_amount])->unique()->values()->all();
 
-            // No hour worked before the horizon is left unbilled.
-            $this->assertSame(0, ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereDate('worked_on', '<', '2026-10-01')
-                ->whereNotIn('id', DB::table('client_invoice_line_time_entries as allocation')
-                    ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
-                    ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
-                    ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
-                    ->select('allocation.client_time_entry_id'))->count(), "{$world}: an hour was left unbilled.");
-
-            // Each period's retainer and hosting sold once, on the terms in force for it.
+            // Each period's service sold once, on the terms in force for it.
             $sold = ClientInvoiceLine::query()->join('client_invoices as invoice', 'invoice.id', '=', 'client_invoice_lines.client_invoice_id')
                 ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
-                ->whereIn('client_invoice_lines.type', ['retainer', 'recurring_item'])->where('client_invoice_lines.total_amount', '>', 0)
-                ->orderBy('client_invoice_lines.line_date')->get(['client_invoice_lines.type', 'client_invoice_lines.line_date', 'client_invoice_lines.total_amount'])
-                ->map(fn (ClientInvoiceLine $line): array => [(string) $line->type, $line->line_date?->toDateString(), (int) $line->total_amount])->all();
-            $periods = $cadence === 'monthly' ? 11 : 5;
-            foreach (['retainer', 'recurring_item'] as $type) {
-                $lines = array_values(array_filter($sold, static fn (array $line): bool => $line[0] === $type));
-                $this->assertCount($periods, $lines, "{$world}: every period's {$type} once, none skipped.");
-                $this->assertSame(count($lines), count(array_unique(array_column($lines, 1))), "{$world}: no period's {$type} twice.");
-                if ($world !== 'never moved') {
-                    foreach ($lines as [, $day, $amount]) {
-                        $terms = $day < $effective ? $v1 : $v2;
-                        $this->assertSame($type === 'retainer' ? $terms['retainer_amount'] : $terms['components'][0]['amount'], $amount, "{$world}: the {$type} of the period from {$day}.");
-                    }
-                }
+                ->where('client_invoice_lines.type', 'recurring_item')
+                ->orderBy('client_invoice_lines.line_date')->get(['client_invoice_lines.line_date', 'client_invoice_lines.total_amount'])
+                ->map(fn (ClientInvoiceLine $line): array => [$line->line_date?->toDateString(), (int) $line->total_amount])->all();
+            $this->assertCount($periods, $sold, "{$world}: every period sold, none skipped.");
+            $this->assertSame($periods, count(array_unique(array_column($sold, 0))), "{$world}: no period sold twice.");
+            foreach ($sold as [$day, $amount]) {
+                $terms = $world === 'never moved' || $day < $effective ? $v1 : $v2;
+                $this->assertSame($terms['components'][0]['amount'], $amount, "{$world}: the period from {$day}.");
             }
         }
 
@@ -554,25 +523,23 @@ final class BillingHistoryInvariantTest extends TestCase
         $before = static fn (array $rows): array => array_values(array_filter($rows, static fn (array $row): bool => $row[1] !== null && $row[1] < $effective));
         $this->assertSame($before($invoices['never moved']), $before($invoices['moved']), 'Every period before the move bills as if it had never been scheduled.');
         $this->assertNotSame($invoices['never moved'], $invoices['moved']);
-        // Hours worked before the date at the old rate, after it at the new.
-        foreach ($hourly['moved'] as [$day, $rate]) {
-            $this->assertSame($day < $effective ? 10000 : 12000, $rate, "The overage worked on {$day}.");
-        }
-        $this->assertNotEmpty(array_filter($hourly['moved'], static fn (array $row): bool => $row[0] >= $effective), 'The history must bill an overage on the new terms.');
-        $this->assertNotEmpty(array_filter($hourly['moved'], static fn (array $row): bool => $row[0] < $effective && $row[0] >= '2026-06-01'), 'The history must settle the last old period\'s overage after the move.');
+        $this->assertNotSame([], $issuedBefore);
     }
 
     /**
-     * What the move does, done by hand: the old agreement ended the day
-     * before, its invoice for the first new period rebuilt to settle its last
-     * period's work, and a new agreement from the new version started on the date.
+     * What the move does, done by hand: the agreement ended the day before
+     * with its recurring items, the draft for the first new period discarded,
+     * and a new agreement from the new version started on the date.
      */
     private function renewByHand(Workspace $workspace, ClientCompany $company, ClientProject $project, ClientAgreement $old, ServicePackage $package, string $effective): void
     {
         $version = ServicePackageVersion::query()->with('components')->findOrFail($package->refresh()->published_version_id);
         $agreements = app(AgreementWorkflow::class);
         $agreements->terminate($old, CarbonImmutable::parse($effective)->subDay()->toDateString());
-        app(ClientInvoicingService::class)->generateCadencePeriod($company, $old->refresh(), Carbon::parse($effective));
+        ClientAgreementRecurringItem::query()->where('client_agreement_id', $old->id)->update(['expires_on' => CarbonImmutable::parse($effective)->subDay()->toDateString()]);
+        foreach (ClientInvoice::query()->where('client_agreement_id', $old->id)->where('status', InvoiceStatus::Draft->value)->whereDate('cycle_start', '>=', $effective)->orderByDesc('cycle_start')->get() as $draft) {
+            app(InvoiceLifecycleService::class)->discardDraft($draft, $workspace, 'Synthetic renewal');
+        }
         $renewal = app(PackageAgreementTerms::class)->createDraft($workspace, $company, $project, $version, CarbonImmutable::parse($effective));
         $agreements->activate($renewal);
     }

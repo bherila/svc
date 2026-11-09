@@ -108,7 +108,7 @@ final class PackageMigrationPresenter
             throw new LogicException('A move names a record outside its workspace, or was presented without its relations loaded.');
         }
         $toTerms = PackageTerms::fromVersion($to);
-        $limit = $company?->autopay_enabled_at !== null && $company?->autopay_limit_amount !== null ? (int) $company->autopay_limit_amount : null;
+        $limit = $company instanceof ClientCompany && $company->autopay_enabled_at !== null && $company->autopay_limit_amount !== null ? (int) $company->autopay_limit_amount : null;
 
         return [
             'effective_on' => $target->effective_on->toDateString(),

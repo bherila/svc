@@ -200,7 +200,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->carriedVersion()?->name ?? $agreement->title).' to activate', $company['name'],
+                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->carriedVersion()->name ?? $agreement->title).' to activate', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->accepted_at?->toDateString());
             }
@@ -287,7 +287,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->carriedVersion()?->name ?? $agreement->title).': autopay required but off', $company['name'],
+                $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->carriedVersion()->name ?? $agreement->title).': autopay required but off', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->activated_at?->toDateString());
             }
@@ -369,7 +369,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-auto-invoice-'.$enrollment->public_id, 'enrollment_auto_invoice_refused', ($enrollment->carriedVersion()?->name ?? $agreement->title).': invoice not issued automatically', $company['name'],
+                $rows[] = $this->row('enrollment-auto-invoice-'.$enrollment->public_id, 'enrollment_auto_invoice_refused', ($enrollment->carriedVersion()->name ?? $agreement->title).': invoice not issued automatically', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->auto_invoice_period_start?->toDateString());
             }

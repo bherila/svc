@@ -86,13 +86,13 @@ final class PackageMigrationWorkflow
                 throw PackageMigrationRefused::because($refusal ?? MigrationRefusal::NotNewer);
             }
 
-            $ids = ServicePackageEnrollment::query()
+            $ids = array_values(ServicePackageEnrollment::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('service_package_id', $locked->id)
                 ->whereIn('public_id', $enrollmentIds)
                 ->pluck('id')
                 ->map(static fn (mixed $id): int => (int) $id)
-                ->all();
+                ->all());
             if (count($ids) !== count($enrollmentIds)) {
                 throw PackageMigrationRefused::because(MigrationRefusal::NotASubscriber);
             }
@@ -150,7 +150,11 @@ final class PackageMigrationWorkflow
         });
     }
 
-    /** Cancel a scheduled move before its effective date, and tell each client (MIG-5). */
+    /**
+     * Cancel a scheduled move and tell each client (MIG-5): before its date,
+     * the whole move; from it on, the subscribers still waiting (held), the
+     * ones already moved staying moved.
+     */
     public function cancel(User $actor, Workspace $workspace, ServicePackageMigration $migration, ?string $expectedVersion = null): ServicePackageMigration
     {
         abort_unless($this->access->isWorkspaceManager($actor, $workspace), 404);
@@ -158,7 +162,7 @@ final class PackageMigrationWorkflow
         return DB::transaction(function () use ($actor, $workspace, $migration, $expectedVersion): ServicePackageMigration {
             $locked = ServicePackageMigration::query()->where('workspace_id', $workspace->id)->whereKey($migration->getKey())->tap(Locks::forUpdate())->firstOrFail();
             abort_unless($expectedVersion === null || AgentApiVersion::matches($locked, $expectedVersion), 409, 'This move changed since it was read. Read it again before retrying.');
-            $refusal = MigrationRules::cancelRefusal($locked->migrationStatus(), $locked->effective_on, $this->clock->today($workspace));
+            $refusal = MigrationRules::cancelRefusal($locked->migrationStatus());
             if ($refusal !== null) {
                 throw PackageMigrationRefused::because($refusal);
             }
@@ -170,7 +174,19 @@ final class PackageMigrationWorkflow
                 ->tap(Locks::forUpdate())
                 ->get();
             $now = $this->instant();
-            $locked->forceFill(['status' => MigrationStatus::Cancelled->value, 'cancelled_by_user_id' => $actor->id, 'cancelled_at' => $now])->save();
+            // From its date on, subscribers already moved stay moved: the move then completes with them.
+            $applied = ServicePackageMigrationTarget::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('service_package_migration_id', $locked->id)
+                ->where('status', MigrationTargetStatus::Applied->value)
+                ->tap(Locks::forShare())
+                ->exists();
+            $locked->forceFill([
+                'status' => ($applied ? MigrationStatus::Completed : MigrationStatus::Cancelled)->value,
+                'cancelled_by_user_id' => $actor->id,
+                'cancelled_at' => $now,
+                'completed_at' => $applied ? $now : null,
+            ])->save();
             if ($targets->isEmpty()) {
                 return $locked;
             }

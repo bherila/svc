@@ -3,6 +3,7 @@
 namespace App\Services\Packages;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
@@ -200,14 +201,21 @@ final class PackageMigrationApplier
     }
 
     /**
-     * The old term's own invoice for the first period from the effective date:
-     * the agreement has ended, so it sells nothing, and it reconciles the
-     * last old period's work (December's time, on January's invoice) on the
-     * terms that work was done under. Written now, before the new agreement
-     * starts, so no generator of the new agreement can reach that work first
-     * and price it on the new terms. A draft already made for that period is
-     * rebuilt into it; drafts for later periods are discarded; one that bills
-     * nothing (a fixed-price service has nothing to settle) is discarded too.
+     * The old term's own invoice for the first period from the effective date,
+     * which closes it: the agreement has ended, so it sells nothing, and its
+     * recurring items end with it. Generated now, before the new agreement
+     * starts, through the ordinary cadence engine, so it is the one invoice
+     * that would reconcile the last old period's work (December's time, on
+     * January's invoice) on the terms the work was done under. A draft
+     * already made for that period is rebuilt into it, and drafts for later
+     * periods are discarded.
+     *
+     * For an agreement that does not bill by usage - the only kind a move
+     * takes ({@see MigrationRules::billsByUsage()}) - it bills nothing and is
+     * discarded. When it does bill something (work or expenses that reached a
+     * fixed-price service), the new agreement's first invoice would claim the
+     * same work period and the engine would refuse it, so the move is held
+     * for an owner instead (`last_period_to_settle`).
      *
      * @param  Collection<int, ClientInvoice>  $drafts  the old agreement's drafts from the effective date on, latest first
      *
@@ -215,23 +223,47 @@ final class PackageMigrationApplier
      */
     private function settleLastOldPeriod(Workspace $workspace, ClientCompany $company, ClientAgreement $old, Collection $drafts, CarbonImmutable $effective): void
     {
+        ClientAgreementRecurringItem::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $old->id)
+            ->where(fn ($open) => $open->whereNull('expires_on')->orWhereDate('expires_on', '>=', $effective->toDateString()))
+            ->update(['expires_on' => $effective->subDay()->toDateString()]);
+        $current = null;
         try {
             foreach ($drafts as $draft) {
                 if ($draft->cycle_start?->toDateString() !== $effective->toDateString()) {
                     $this->invoices->discardDraft($draft, $workspace, 'A period after the agreement ended, on a move to a new package version from '.$effective->toDateString().'.');
+                } else {
+                    $current = $draft;
                 }
             }
         } catch (DomainException $kept) {
             throw new MigrationHeld(MigrationHold::DraftKept, $kept->getMessage());
         }
         $ended = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($old->id)->tap(Locks::forUpdate())->firstOrFail();
+        // Asked in a savepoint and always rolled back: an empty settlement is
+        // never written (no invoice number is spent on it), and a non-empty
+        // one holds the move, which rolls everything back anyway.
+        DB::beginTransaction();
         try {
             $settlement = EmptyCadenceDraft::load($workspace, $this->invoicing->generateCadencePeriod($company, $ended, Carbon::parse($effective->toDateString())));
-            if (EmptyCadenceDraft::billsNothing($settlement)) {
-                $this->invoices->discardDraft($settlement, $workspace, 'Nothing to settle on the terms a move to a new package version replaced from '.$effective->toDateString().'.');
-            }
+            $empty = EmptyCadenceDraft::billsNothing($settlement);
+            $number = $settlement->invoice_number;
         } catch (RuntimeException|DomainException $refused) {
             throw new MigrationHeld(MigrationHold::SettlementRefused, $refused->getMessage());
+        } finally {
+            DB::rollBack();
+        }
+        if (! $empty) {
+            throw new MigrationHeld(MigrationHold::LastPeriodToSettle, $number);
+        }
+        // A draft already made for the first new period sold it on the old terms.
+        if ($current !== null) {
+            try {
+                $this->invoices->discardDraft($current, $workspace, 'Priced on terms a move to a new package version replaced from '.$effective->toDateString().'.');
+            } catch (DomainException $kept) {
+                throw new MigrationHeld(MigrationHold::DraftKept, $kept->getMessage());
+            }
         }
     }
 

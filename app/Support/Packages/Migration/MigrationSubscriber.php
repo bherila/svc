@@ -36,6 +36,10 @@ final readonly class MigrationSubscriber
 
     public function refusal(?CarbonInterface $chosen): ?MigrationRefusal
     {
-        return MigrationRules::eligibility($this->activeOnFromVersion, $this->alreadyScheduled, $this->dates, $chosen);
+        $agreement = $this->agreement;
+
+        return MigrationRules::eligibility($this->activeOnFromVersion, $this->alreadyScheduled, $this->dates, $chosen, MigrationRules::billsByUsage(
+            $agreement->hourly_rate_amount, $agreement->retainer_amount, $agreement->retainer_minutes, $agreement->period_retainer_amount, $agreement->period_retainer_minutes,
+        ));
     }
 }

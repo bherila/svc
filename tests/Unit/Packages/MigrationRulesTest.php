@@ -167,13 +167,26 @@ final class MigrationRulesTest extends TestCase
     }
 
     #[Requirement('MIG-5')]
-    public function test_a_move_may_be_cancelled_only_while_scheduled_and_before_its_date(): void
+    public function test_a_move_may_be_cancelled_only_while_scheduled(): void
     {
-        $date = self::day('2027-01-01');
-        $this->assertNull(MigrationRules::cancelRefusal(MigrationStatus::Scheduled, $date, self::day('2026-12-31')));
-        $this->assertSame(MigrationRefusal::EffectiveDateReached, MigrationRules::cancelRefusal(MigrationStatus::Scheduled, $date, $date));
-        $this->assertSame(MigrationRefusal::NotScheduled, MigrationRules::cancelRefusal(MigrationStatus::Cancelled, $date, self::day('2026-12-31')));
-        $this->assertSame(MigrationRefusal::NotScheduled, MigrationRules::cancelRefusal(MigrationStatus::Completed, $date, self::day('2026-12-31')));
+        $this->assertNull(MigrationRules::cancelRefusal(MigrationStatus::Scheduled));
+        $this->assertSame(MigrationRefusal::NotScheduled, MigrationRules::cancelRefusal(MigrationStatus::Cancelled));
+        $this->assertSame(MigrationRefusal::NotScheduled, MigrationRules::cancelRefusal(MigrationStatus::Completed));
+    }
+
+    #[Requirement('MIG-1')]
+    public function test_an_agreement_billing_by_usage_is_not_moved(): void
+    {
+        $this->assertFalse(MigrationRules::billsByUsage(null, null, null, null, null));
+        $this->assertFalse(MigrationRules::billsByUsage(null, 0, 0, 0, 0));
+        $this->assertTrue(MigrationRules::billsByUsage(0, null, null, null, null), 'an hourly rate, even of zero, prices work');
+        $this->assertTrue(MigrationRules::billsByUsage(null, 1, null, null, null));
+        $this->assertTrue(MigrationRules::billsByUsage(null, null, 1, null, null));
+        $this->assertTrue(MigrationRules::billsByUsage(null, null, null, 1, null));
+        $this->assertTrue(MigrationRules::billsByUsage(null, null, null, null, 1));
+        $dates = new MigrationEffectiveDates(self::day('2027-01-01'), [self::day('2027-01-01')]);
+        $this->assertSame(MigrationRefusal::BillsByUsage, MigrationRules::eligibility(true, false, $dates, null, true));
+        $this->assertSame(MigrationRefusal::AlreadyScheduled, MigrationRules::eligibility(true, true, $dates, null, true));
     }
 
     #[Requirement('MIG-4')]

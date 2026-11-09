@@ -15,6 +15,12 @@ enum MigrationHold: string
     case CancellationPending = 'cancellation_pending';
     /** A draft for a period from the effective date on could not be discarded. */
     case DraftKept = 'draft_kept';
+    /**
+     * The last period on the old terms has something to invoice (work,
+     * expenses) on the invoice that would also open the new agreement's first
+     * period, which the billing engine then refuses.
+     */
+    case LastPeriodToSettle = 'last_period_to_settle';
     /** The last period on the old terms could not be invoiced on the agreement that ends. */
     case SettlementRefused = 'settlement_refused';
     /** Something unexpected; the error was reported. */
@@ -26,6 +32,7 @@ enum MigrationHold: string
             self::PeriodInvoiced => 'An issued invoice already bills a period from the effective date on. Void it to let the move apply, or cancel the move.',
             self::CancellationPending => 'The client asked to end the agreement before the effective date. Approve or decline the request; the move applies after a decline.',
             self::DraftKept => 'A draft invoice for a period from the effective date on could not be discarded. Discard it or let it be issued, then the move applies on the next run.',
+            self::LastPeriodToSettle => 'The last period on the current terms still has work or expenses to invoice, on the invoice that would also open the new terms\' first period. Invoice them separately (an ad hoc invoice), or cancel the move for this subscriber; then the move applies on the next run.',
             self::SettlementRefused => 'The last period on the current terms could not be invoiced, so the move waits rather than leave that work to the new terms. Resolve what the billing engine reports, then the move applies on the next run.',
             self::Failed => 'The move could not be applied. It is tried again every hour.',
         };
