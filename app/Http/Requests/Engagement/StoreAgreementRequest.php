@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Engagement;
 
+use App\Support\Engagement\AgreementTermRules;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreAgreementRequest extends FormRequest
 {
@@ -22,14 +22,14 @@ class StoreAgreementRequest extends FormRequest
             // the edge an operator could still push one through.
             'starts_on' => ['required', 'date_format:Y-m-d'],
             'ends_on' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:starts_on'],
-            'agreement_text' => ['nullable', 'string', 'max:30000'],
+            'agreement_text' => AgreementTermRules::rule('agreement_text', 'nullable'),
             'is_visible_to_client' => ['sometimes', 'boolean'],
             'show_deferred_backlog_to_client' => ['sometimes', 'boolean'],
-            'billing_cadence' => ['sometimes', Rule::in(['one_time', 'monthly', 'quarterly', 'semi_annual', 'annual'])],
-            'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
-            'hourly_rate_amount' => ['nullable', 'integer', 'min:0'],
-            'retainer_amount' => ['nullable', 'integer', 'min:0'],
-            'retainer_minutes' => ['nullable', 'integer', 'min:0'],
+            'billing_cadence' => AgreementTermRules::rule('billing_cadence', 'sometimes'),
+            'currency' => AgreementTermRules::rule('currency', 'required'),
+            'hourly_rate_amount' => AgreementTermRules::rule('hourly_rate_amount', 'nullable'),
+            'retainer_amount' => AgreementTermRules::rule('retainer_amount', 'nullable'),
+            'retainer_minutes' => AgreementTermRules::rule('retainer_minutes', 'nullable'),
             'source_proposal' => ['nullable', 'uuid'],
         ];
     }

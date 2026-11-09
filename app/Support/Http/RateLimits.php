@@ -25,6 +25,8 @@ final class RateLimits
         'payment-intents' => 30,
         'invitations' => 30,
         'csp-reports' => 120,
+        // Public service-package pages, read without signing in; per address.
+        'public-packages' => 120,
     ];
 
     public static function register(): void

@@ -2,6 +2,7 @@
 
 namespace App\Services\Navigation;
 
+use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\User;
@@ -135,6 +136,8 @@ final class WorkspaceNavigationFactory
             // A member's own hours and expenses for the month, and what a reviewer approved of them.
             submissionsHref: $isMember ? route('workspaces.submissions', $workspace, absolute: false) : null,
             timesheetHref: $isMember ? route('workspaces.timesheet', $workspace, absolute: false) : null,
+            // Service packages, beside the client roster. Owners and admins, while the feature is on.
+            packagesHref: $manages && EnsureServicePackagesEnabled::enabled() ? route('packages.index', $workspace, absolute: false) : null,
             light: $edition->isLight(),
             // The one way out of a light workspace; its owner's choice alone.
             fullWorkspaceUrl: $edition->isLight() && $manages ? route('workspaces.edition.full', $workspace, absolute: false) : null,

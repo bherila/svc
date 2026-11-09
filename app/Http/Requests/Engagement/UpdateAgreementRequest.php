@@ -3,9 +3,9 @@
 namespace App\Http\Requests\Engagement;
 
 use App\Models\ClientAgreement;
+use App\Support\Engagement\AgreementTermRules;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 /**
  * Correcting an agreement that was recorded wrong.
@@ -50,26 +50,26 @@ class UpdateAgreementRequest extends FormRequest
             // read - and a rule with nothing to compare against passes
             // anything, including an end date before the start.
             'ends_on' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'billing_cadence' => ['sometimes', 'required', Rule::in(['one_time', 'monthly', 'quarterly', 'semi_annual', 'annual'])],
-            'currency' => ['sometimes', 'required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
-            'agreement_text' => ['sometimes', 'nullable', 'string', 'max:30000'],
+            'billing_cadence' => AgreementTermRules::rule('billing_cadence', 'sometimes', 'required'),
+            'currency' => AgreementTermRules::rule('currency', 'sometimes', 'required'),
+            'agreement_text' => AgreementTermRules::rule('agreement_text', 'sometimes', 'nullable'),
             'is_visible_to_client' => ['sometimes', 'boolean'],
             'show_deferred_backlog_to_client' => ['sometimes', 'boolean'],
 
-            'hourly_rate_amount' => ['sometimes', 'nullable', 'integer', 'min:0'],
-            'retainer_amount' => ['sometimes', 'nullable', 'integer', 'min:0'],
-            'retainer_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'hourly_rate_amount' => AgreementTermRules::rule('hourly_rate_amount', 'sometimes', 'nullable'),
+            'retainer_amount' => AgreementTermRules::rule('retainer_amount', 'sometimes', 'nullable'),
+            'retainer_minutes' => AgreementTermRules::rule('retainer_minutes', 'sometimes', 'nullable'),
             'period_retainer_amount' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'period_retainer_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'catch_up_threshold_minutes' => ['sometimes', 'nullable', 'integer', 'min:0'],
-            'rollover_months' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:120'],
+            'rollover_months' => AgreementTermRules::rule('rollover_months', 'sometimes', 'nullable'),
             // No vocabulary: nothing in the billing engine reads this column,
             // and the importer records that the source expressed rollover
             // through `rollover_months` instead. Free text, so a wrong value
             // can be corrected rather than becoming permanent because no list
             // admits it.
             'rollover_policy' => ['sometimes', 'nullable', 'string', 'max:40'],
-            'first_cycle_proration' => ['sometimes', 'nullable', Rule::in(['prorate_hours', 'full_period', 'align_next_cycle'])],
+            'first_cycle_proration' => AgreementTermRules::rule('first_cycle_proration', 'sometimes', 'nullable'),
             'bill_overage_interim' => ['sometimes', 'nullable', 'boolean'],
         ];
     }

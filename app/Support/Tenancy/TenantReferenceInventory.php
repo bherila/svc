@@ -108,6 +108,12 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_expense_schedules', 'client_project_id', 'client_projects', 'ces_ws_project_fk'),
             TenantReference::enforcedBy('client_expenses', 'client_expense_schedule_id', 'client_expense_schedules', 'cex_ws_schedule_fk'),
 
+            // Service packages: a version, its components and the package's
+            // published version all stay inside the package's workspace.
+            TenantReference::enforcedBy('service_package_versions', 'service_package_id', 'service_packages', 'svpkv_ws_package_fk'),
+            TenantReference::enforcedBy('service_package_components', 'service_package_version_id', 'service_package_versions', 'svpkc_ws_version_fk'),
+            TenantReference::enforcedBy('service_packages', 'published_version_id', 'service_package_versions', 'svpkg_ws_published_version_fk'),
+
             // Projects.
             TenantReference::enforcedBy('client_task_graph_states', 'client_project_id', 'client_projects', 'task_graph_ws_project_fk'),
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),

@@ -65,6 +65,7 @@ final class FillableCoverageTest extends TestCase
             'edition' => 'Whether the workspace is full or a partner\'s light one. Written only by the participation flow when it makes a light workspace, and by WorkspaceEditionController when an owner turns the full workspace on; a value assignable through a workspace update would let a caller change what a business has switched on.',
             'stripe_refused_at' => 'When Stripe last refused the workspace\'s own key or account while autopay was charging (#641). Written only by StripeConnectionHealth with the workspace clock, never caller mass assignment.',
             'has_square_connection' => 'A navigation hint derived from workspace_payment_connections and written only by WorkspacePaymentConnections after a connection changes; never caller mass assignment.',
+            'package_catalog_token' => 'The unguessable public address of the workspace\'s package catalog (docs/service-packages.md PUB-2). Minted only by ServicePackageWorkflow on first publish through a conditional update; assignable through the model, a caller could point the public catalog at a guessable address.',
         ],
         ClientCollaborationTopic::class => [
             'edited_at' => 'Set only by CollaborationAction through the scoped repository after an authorized text edit, using the workspace clock; callers cannot supply an edit timestamp.',

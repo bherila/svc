@@ -255,6 +255,7 @@ require __DIR__.'/files.php';
 require __DIR__.'/collaboration.php';
 require __DIR__.'/shared-projects.php';
 require __DIR__.'/approvals.php';
+require __DIR__.'/packages.php';
 require __DIR__.'/submissions.php';
 
 // Every portal route is reached by a client contact, so each carries the portal ceiling and
