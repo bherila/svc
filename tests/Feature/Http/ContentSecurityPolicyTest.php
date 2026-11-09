@@ -17,7 +17,7 @@ final class ContentSecurityPolicyTest extends TestCase
 {
     protected function tearDown(): void
     {
-        @unlink(public_path('hot'));
+        @unlink(self::viteHotFile());
         parent::tearDown();
     }
 
@@ -44,7 +44,7 @@ final class ContentSecurityPolicyTest extends TestCase
 
     public function test_the_vite_dev_server_scripts_carry_the_nonce_too(): void
     {
-        file_put_contents(public_path('hot'), 'http://[::1]:5173');
+        file_put_contents(self::viteHotFile(), 'http://[::1]:5173');
         $this->withVite();
         $response = $this->get('/');
         $policy = (string) $response->headers->get('Content-Security-Policy-Report-Only');

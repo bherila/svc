@@ -23,7 +23,7 @@ final class SecurityHeadersTest extends TestCase
 
     protected function tearDown(): void
     {
-        @unlink(public_path('hot'));
+        @unlink(self::viteHotFile());
         parent::tearDown();
     }
 
@@ -102,19 +102,19 @@ final class SecurityHeadersTest extends TestCase
 
     public function test_the_vite_dev_server_is_allowed_only_while_it_is_running(): void
     {
-        file_put_contents(public_path('hot'), "http://[::1]:5173\n");
+        file_put_contents(self::viteHotFile(), "http://[::1]:5173\n");
         $policy = (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only');
 
         $this->assertMatchesRegularExpression("/script-src 'self' 'nonce-[A-Za-z0-9]{40}' https:\/\/js\.stripe\.com https:\/\/\*\.js\.stripe\.com http:\/\/\[::1\]:5173;/", $policy);
         $this->assertStringContainsString("connect-src 'self' https://api.stripe.com http://[::1]:5173 ws://[::1]:5173;", $policy);
 
-        file_put_contents(public_path('hot'), 'https://dev.example.test');
+        file_put_contents(self::viteHotFile(), 'https://dev.example.test');
         $this->assertStringContainsString('wss://dev.example.test', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
 
-        file_put_contents(public_path('hot'), 'javascript:alert(1)');
+        file_put_contents(self::viteHotFile(), 'javascript:alert(1)');
         $this->assertStringNotContainsString('javascript', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
 
-        unlink(public_path('hot'));
+        unlink(self::viteHotFile());
         $this->assertStringNotContainsString('5173', (string) $this->get('/')->headers->get('Content-Security-Policy-Report-Only'));
     }
 

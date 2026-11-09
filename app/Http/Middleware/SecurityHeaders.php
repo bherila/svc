@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Support\Http\CspMode;
 use Closure;
+use Illuminate\Foundation\Vite as ViteAssets;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
@@ -131,7 +132,8 @@ final class SecurityHeaders
     /** @return array{http: list<string>, ws: list<string>} */
     private function devServerOrigins(): array
     {
-        $hot = public_path('hot');
+        // Vite's own hot file: `public/hot` unless something pointed Vite elsewhere, as the test suite does per process.
+        $hot = app(ViteAssets::class)->hotFile();
         if (! is_file($hot)) {
             return ['http' => [], 'ws' => []];
         }
