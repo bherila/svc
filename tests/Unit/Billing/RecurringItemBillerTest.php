@@ -378,6 +378,7 @@ class RecurringItemBillerTest extends TestCase
         return $item;
     }
 
+    /** @param list<ClientAgreementRecurringItem> $items */
     private function makeAgreement(array $items, ?string $endsOn = null): ClientAgreement
     {
         $agreement = new ClientAgreement;
