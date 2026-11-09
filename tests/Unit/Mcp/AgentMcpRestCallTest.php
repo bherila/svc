@@ -9,9 +9,12 @@ use App\Services\Mcp\Context\McpRequestContext;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use LogicException;
 use Mcp\Exception\ToolCallException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\Concerns\RecordingAgentApiTransport;
 use Tests\TestCase;
 
+#[CoversClass(AgentMcpRestCall::class)]
+#[CoversClass(McpRequestContext::class)]
 final class AgentMcpRestCallTest extends TestCase
 {
     public function test_it_sends_the_operations_documented_method_and_path(): void

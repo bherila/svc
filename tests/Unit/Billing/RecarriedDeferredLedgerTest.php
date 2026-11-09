@@ -2,17 +2,27 @@
 
 namespace Tests\Unit\Billing;
 
+use App\Services\Billing\Balances\ClosingBalance;
 use App\Services\Billing\Balances\MonthSummary;
+use App\Services\Billing\Balances\OpeningBalance;
 use App\Services\Billing\CapacityLedgerInputs;
 use App\Services\Billing\RolloverCalculator;
 use App\Support\Billing\CarriedDeferredLine;
 use App\Support\Billing\InvoiceLineType;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
  * Deferred work draws only on free capacity; what an invoice applied beyond
  * it is carried forward again as a quantity, and later lines settle it.
  */
+#[CoversClass(RolloverCalculator::class)]
+#[CoversClass(CapacityLedgerInputs::class)]
+#[CoversClass(MonthSummary::class)]
+#[CoversClass(OpeningBalance::class)]
+#[CoversClass(ClosingBalance::class)]
+#[CoversClass(CarriedDeferredLine::class)]
+#[CoversClass(InvoiceLineType::class)]
 final class RecarriedDeferredLedgerTest extends TestCase
 {
     public function test_deferred_work_applied_beyond_free_capacity_is_carried_not_owed(): void

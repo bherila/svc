@@ -9,6 +9,7 @@ use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\CoversClass;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -29,6 +30,12 @@ use Tests\TestCase;
  * zero mutants, which the workflow itself says is not evidence that anything
  * discriminated a behavioural change - so the discrimination belongs here.
  */
+#[CoversClass(LockOrderRecorder::class)]
+#[CoversClass(LockResource::class)]
+#[CoversClass(Locks::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientTimeEntry::class)]
 final class ConcurrencyLockRegistryTest extends TestCase
 {
     protected function tearDown(): void

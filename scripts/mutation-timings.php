@@ -64,6 +64,14 @@ function mutation_timings_parse(string $log): array
         } elseif ($message === 'testIgnored') {
             $mutants[$node]['status'] = preg_match('/Mutation result: (.+)/', $attributes['message'] ?? '', $result) === 1 ? trim($result[1]) : 'ignored';
         }
+        // With a `global-ignore` configured, Infection wraps every mutator in
+        // IgnoreMutator, so the test name no longer says which one it was; the
+        // result message still does.
+        $text = $attributes['out'] ?? $attributes['message'] ?? '';
+        if (str_starts_with($mutants[$node]['name'], 'Infection\\Mutator\\IgnoreMutator ')
+            && preg_match('/Mutator: (\S+)/', $text, $mutator) === 1) {
+            $mutants[$node]['name'] = preg_replace('/^\S+/', $mutator[1], $mutants[$node]['name']) ?? $mutants[$node]['name'];
+        }
         if (in_array($message, ['testFinished', 'testFailed', 'testIgnored'], true)) {
             $mutants[$node]['status'] ??= 'finished';
             $mutants[$node]['ms'] = (int) ($attributes['duration'] ?? 0);

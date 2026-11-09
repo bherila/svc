@@ -5,9 +5,11 @@ namespace Tests\Unit\Http;
 use App\Http\Middleware\PublishApiDocumentation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
+#[CoversClass(PublishApiDocumentation::class)]
 final class PublishApiDocumentationTest extends TestCase
 {
     public function test_metadata_retains_its_resource_and_headers_and_adds_the_document_url(): void

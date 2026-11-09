@@ -3,9 +3,11 @@
 namespace Tests\Unit\Billing;
 
 use App\Support\Billing\InvoiceLineType;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /** The line-type sets, spelled out: each one decides what a rebuild or a period reads. */
+#[CoversClass(InvoiceLineType::class)]
 final class InvoiceLineTypeSetsTest extends TestCase
 {
     public function test_the_system_generated_set_is_what_a_draft_rebuild_releases(): void

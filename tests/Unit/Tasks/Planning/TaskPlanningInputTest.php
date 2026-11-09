@@ -6,9 +6,11 @@ use App\Http\Requests\TaskPlanningInput;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\TestCase;
 
+#[CoversClass(TaskPlanningInput::class)]
 final class TaskPlanningInputTest extends TestCase
 {
     public function test_bounded_queries_are_operation_specific_and_do_not_accept_policy_or_path_selectors(): void

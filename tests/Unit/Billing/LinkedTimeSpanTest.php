@@ -3,8 +3,10 @@
 namespace Tests\Unit\Billing;
 
 use App\Support\Billing\LinkedTimeSpan;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(LinkedTimeSpan::class)]
 final class LinkedTimeSpanTest extends TestCase
 {
     public function test_it_totals_the_time_a_line_links_and_the_days_it_spans(): void

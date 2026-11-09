@@ -2,9 +2,12 @@
 
 namespace Tests\Unit\Mcp;
 
+use App\Providers\AppServiceProvider;
 use Bherila\McpLaravelBridge\Http\McpHttpPolicy;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AppServiceProvider::class)]
 final class McpHttpPolicyRegistrationTest extends TestCase
 {
     public function test_the_shared_http_policy_is_registered_from_application_configuration(): void

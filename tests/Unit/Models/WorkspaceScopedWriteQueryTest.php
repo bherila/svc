@@ -8,12 +8,16 @@ use App\Models\ClientExpense;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientTimeEntry;
+use App\Models\Concerns\BelongsToWorkspace;
+use App\Models\Concerns\ScopesPivotDeletesToWorkspace;
 use App\Models\Workspace;
 use App\Models\WorkspaceInvoiceCounter;
 use App\Models\WorkspaceMembership;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use Tests\TestCase;
 
 /**
@@ -33,6 +37,17 @@ use Tests\TestCase;
  * pure function from a model's attributes to a query, and a query knows its own
  * SQL without ever being run.
  */
+#[CoversClass(UnscopableWorkspaceWrite::class)]
+#[CoversClass(WorkspaceOwnershipImmutable::class)]
+#[CoversTrait(BelongsToWorkspace::class)]
+#[CoversTrait(ScopesPivotDeletesToWorkspace::class)]
+#[CoversClass(ClientExpense::class)]
+#[CoversClass(ClientProject::class)]
+#[CoversClass(ClientProjectMembership::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(WorkspaceInvoiceCounter::class)]
+#[CoversClass(WorkspaceMembership::class)]
 final class WorkspaceScopedWriteQueryTest extends TestCase
 {
     public function test_the_statement_carries_the_key_and_the_workspace(): void

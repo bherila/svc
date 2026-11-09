@@ -8,8 +8,12 @@ use App\Services\Billing\RetainerCalculator;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\FirstCycleProration;
 use Carbon\Carbon;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(RetainerCalculator::class)]
+#[CoversClass(BillingCycleResolver::class)]
+#[CoversClass(ClientAgreement::class)]
 class RetainerCalculatorTest extends TestCase
 {
     public function test_cycle_retainer_uses_period_terms_when_available(): void

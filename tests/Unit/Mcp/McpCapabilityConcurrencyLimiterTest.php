@@ -11,8 +11,13 @@ use App\Services\Mcp\McpCapabilityConcurrencyLimiter;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(McpCapabilityConcurrencyLimiter::class)]
+#[CoversClass(McpCapabilityConcurrencyFailure::class)]
+#[CoversClass(McpRequestContext::class)]
+#[CoversClass(McpPrincipal::class)]
 final class McpCapabilityConcurrencyLimiterTest extends TestCase
 {
     use RefreshDatabase;

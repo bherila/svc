@@ -2,8 +2,10 @@
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use Tests\TestCase;
 
+#[CoversNothing]
 final class MutationGateScriptTest extends TestCase
 {
     private function run_gate(string $fixture): array

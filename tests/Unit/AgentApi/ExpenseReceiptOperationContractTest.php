@@ -8,8 +8,12 @@ use App\Services\Mcp\AgentMcpWriteTools;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgentOperationCatalog::class)]
+#[CoversClass(AgentDeploymentFlags::class)]
+#[CoversClass(AgentApiResponseSchemaCatalog::class)]
 final class ExpenseReceiptOperationContractTest extends TestCase
 {
     public function test_upload_preparation_still_requires_manager_authority_and_the_expense_write_cutover(): void

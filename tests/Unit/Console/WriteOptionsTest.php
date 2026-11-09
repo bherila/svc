@@ -2,13 +2,20 @@
 
 namespace Tests\Unit\Console;
 
+use App\Console\Commands\Concerns\GuardsWrites;
 use App\Console\Commands\MutationCommand;
+use App\Console\Commands\SvcCommand;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use RuntimeException;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
+#[CoversClass(MutationCommand::class)]
+#[CoversClass(SvcCommand::class)]
+#[CoversTrait(GuardsWrites::class)]
 final class WriteOptionsTest extends TestCase
 {
     public function test_preview_rolls_back_and_apply_runs_the_same_operation_without_an_extra_transaction(): void

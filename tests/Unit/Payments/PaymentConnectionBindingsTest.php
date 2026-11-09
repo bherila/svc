@@ -2,15 +2,20 @@
 
 namespace Tests\Unit\Payments;
 
+use App\Providers\AppServiceProvider;
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\Payments\WorkspacePaymentConnections;
 use Closure;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
  * How the application wires payment connections. Nothing here touches the
  * database: the services are only resolved, and the probe only inspected.
  */
+#[CoversClass(WorkspacePaymentConnections::class)]
+#[CoversClass(AgentDeploymentFlags::class)]
+#[CoversClass(AppServiceProvider::class)]
 final class PaymentConnectionBindingsTest extends TestCase
 {
     public function test_connections_are_read_once_per_scope_and_fresh_in_the_next(): void

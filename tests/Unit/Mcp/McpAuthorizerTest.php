@@ -15,8 +15,20 @@ use App\Services\Mcp\Context\McpPrincipal;
 use App\Services\Mcp\Context\McpRequestContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(McpAuthorizer::class)]
+#[CoversClass(AgentOperationPolicy::class)]
+#[CoversClass(AgentOperationPrincipal::class)]
+#[CoversClass(AgentPrincipalResolver::class)]
+#[CoversClass(AgentOperationCatalog::class)]
+#[CoversClass(McpRequestContext::class)]
+#[CoversClass(McpPrincipal::class)]
+#[CoversClass(WorkspaceMembership::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(User::class)]
+#[CoversClass(AgentPrincipal::class)]
 final class McpAuthorizerTest extends TestCase
 {
     use RefreshDatabase;

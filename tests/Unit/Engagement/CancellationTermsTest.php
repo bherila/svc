@@ -9,6 +9,7 @@ use App\Support\Engagement\Cancellation\CancellationState;
 use App\Support\Engagement\Cancellation\CancellationTerms;
 use App\Support\Packages\CancellationMode;
 use Carbon\CarbonImmutable;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\Support\Requirement;
 use Tests\TestCase;
 
@@ -18,6 +19,10 @@ use Tests\TestCase;
  * told. The decisions over those terms (who may cancel, decide and undo, when
  * an end is due) need no application and live in {@see CancellationRulesTest}.
  */
+#[CoversClass(CancellationTerms::class)]
+#[CoversClass(CancellationState::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(AgreementScheduledTermination::class)]
 final class CancellationTermsTest extends TestCase
 {
     // ── CancellationTerms ───────────────────────────────────────────────────

@@ -7,8 +7,13 @@ use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgentApiVersion::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientTimeEntry::class)]
 final class AgentApiVersionTest extends TestCase
 {
     public function test_unrelated_models_keep_their_row_revision_token(): void

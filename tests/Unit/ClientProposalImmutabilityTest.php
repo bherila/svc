@@ -4,9 +4,11 @@ namespace Tests\Unit;
 
 use App\Models\ClientProposal;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use ReflectionMethod;
 use Tests\TestCase;
 
+#[CoversClass(ClientProposal::class)]
 final class ClientProposalImmutabilityTest extends TestCase
 {
     public function test_an_accepted_proposal_refuses_business_changes_without_persistence(): void

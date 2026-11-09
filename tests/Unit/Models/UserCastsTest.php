@@ -4,9 +4,11 @@ namespace Tests\Unit\Models;
 
 use App\Models\User;
 use App\Support\Time\DurationStyle;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /** The casts and defaults on `users` that the rest of the app reads as typed values. */
+#[CoversClass(User::class)]
 class UserCastsTest extends TestCase
 {
     public function test_email_verified_at_is_a_date(): void
