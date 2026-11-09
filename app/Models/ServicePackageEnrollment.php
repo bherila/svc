@@ -83,6 +83,12 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
         return $this->accepted_version_id ?? $this->service_package_version_id;
     }
 
+    /** @return BelongsTo<ServicePackageRequest, $this> the sign-up request it answers, if any */
+    public function packageRequest(): BelongsTo
+    {
+        return $this->belongsTo(ServicePackageRequest::class, 'service_package_request_id');
+    }
+
     /** @return BelongsTo<ClientCompany, $this> */
     public function clientCompany(): BelongsTo
     {
