@@ -58,7 +58,6 @@ function expense(overrides: Partial<ClientExpenseRow> = {}): ClientExpenseRow {
         description: 'Courier for the signed contract',
         status: 'draft',
         billing: null,
-        services: null,
         project: { id: 'project-1', name: 'Main project' },
         approved_by: null,
         approved_at: null,

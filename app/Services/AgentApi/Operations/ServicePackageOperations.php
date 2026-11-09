@@ -3,6 +3,9 @@
 namespace App\Services\AgentApi\Operations;
 
 use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Services\Packages\ClientServiceReadService;
+use App\Services\Packages\PackageEnrollmentReadService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageReadService;
@@ -29,13 +32,18 @@ use Stringable;
 /**
  * The service package operations (docs/service-packages.md, "MCP and REST
  * surface"): list, read, create, edit, publish and retire a workspace's
- * packages, and list, read, approve, decline and erase the sign-up requests
- * visitors make for them, as an owner or admin. Code-owned schemas,
+ * packages, list, read, approve, decline and erase the sign-up requests
+ * visitors make for them, and list, read and activate enrollments, as an owner
+ * or admin; and, for a client's portal contacts, read their own services
+ * (`client_services.*`, API-5). Accepting and adding a package are the
+ * portal's, never an agent's. Code-owned schemas,
  * regenerated into the public contract by scripts/generate-package-contract.php.
  *
  * Nothing here decides anything about a package or a request: the routes call
  * {@see ServicePackageWorkflow}, {@see PackageRequestWorkflow},
- * {@see ServicePackageReadService} and {@see PackageRequestReadService}, and
+ * {@see ServicePackageReadService}, {@see PackageRequestReadService},
+ * {@see PackageEnrollmentWorkflow}, {@see PackageEnrollmentReadService} and
+ * {@see ClientServiceReadService}, and
  * the request schemas are generated from {@see ServicePackageRules} and
  * {@see self::DECISION_RULES}, the rules those workflows validate with, so the
  * contract cannot accept what they refuse.

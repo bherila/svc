@@ -217,7 +217,7 @@ final class ClientServiceReadService
             ->whereNotNull('published_version_id')
             ->orderBy('id')
             ->get();
-        $versions = $this->versions($workspace, $packages->pluck('published_version_id')->filter()->all());
+        $versions = $this->versions($workspace, array_values(array_map(static fn (ServicePackage $package): ?int => $package->published_version_id, $packages->all())));
 
         $addable = [];
         foreach ($packages as $package) {
@@ -267,7 +267,7 @@ final class ClientServiceReadService
     }
 
     /**
-     * @param  list<int|string|null>  $ids
+     * @param  list<int|null>  $ids
      * @return Collection<int, ServicePackageVersion> keyed by id
      */
     private function versions(Workspace $workspace, array $ids): Collection

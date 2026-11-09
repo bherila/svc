@@ -34,7 +34,8 @@ use Illuminate\Support\Facades\Validator;
  * Submitting writes one request row and nothing else (PUB-4). Approving
  * (ADM-2) creates - or reuses - the client company, gives the subscription its
  * own project, writes a draft agreement from the package's currently
- * published version (EDGE-7), records an `offered` enrollment, and admits the
+ * published version (EDGE-7), records an `offered` enrollment - the offer
+ * PackageOffers makes, as for a portal addition - and admits the
  * contact: an address that already signs in here is given company-wide portal
  * access directly (ADM-3); any other is invited through PortalInvitations as
  * the approver.

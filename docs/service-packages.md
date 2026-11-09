@@ -393,6 +393,47 @@ requirement.
   (self-serve or by request) is never blocked by a balance. The amount still
   owed is shown on the confirmation and stays owed.
 
+### Decisions made during implementation
+
+Slice 3a (acceptance and activation without payment) settled these, which the
+spec above leaves open:
+
+- **Adding from the portal makes the offer.** "Review and add" is a POST that
+  creates the subscription's project, its draft agreement and an `offered`
+  enrollment; opening the Services page creates nothing. Adding a package
+  again while its offer is open returns that offer instead of a second one.
+- **Versions on the enrollment.** `service_package_version_id` stays the
+  version offered; `accepted_version_id` is the exact version signed and is
+  never changed (ACC-2). The agreement carries the signed version's terms. A
+  `version_changed` flag says the two differ (EDGE-7). The agreement itself
+  gains no package column in this slice: the enrollment, one per agreement,
+  records where it came from (PKG-7).
+- **A retired package's offer** is accepted on the version it was offered with,
+  not on the last version published (EDGE-8).
+- **Same signer** means the same user, name and title: a repeat is a no-op;
+  anyone or anything else is refused with `package_already_accepted`.
+- **No `accepted` status.** Acceptance moves an offer straight to
+  `awaiting_review` or `active` (and, in slice 3b, to `awaiting_payment`).
+  Every activation goes through `next()` in `EnrollmentStatus`.
+- **Start date.** The agreement starts on the day the service starts: the day
+  of acceptance for a package that starts automatically, the day an owner or
+  admin activates it for one they review. Dates are in the workspace's
+  timezone. The agreement is signed in the name the contact typed, as the
+  contact, when it is activated.
+- **An automatic start that cannot happen** (the agreement would overlap another
+  active one on its project) keeps the signature and leaves the enrollment
+  `awaiting_review` for an owner or admin; activating it then refuses with
+  `package_activation_conflict` until the overlap is resolved.
+- **Until slice 3b**, a version that charges at sign-up, requires autopay or
+  starts only once paid is refused when added and when accepted, with
+  `package_payment_not_available_yet`, so nothing half-works.
+- **Who sees what.** Staff previewing the portal see a company's services but
+  are offered no add or sign action. Withdrawn offers are not shown to clients.
+  `client_services.*` answers only a client's portal contacts; staff who are not
+  contacts see no services there and use `enrollments.*`.
+- **Activation email** goes to the client's billing address and portal
+  contacts, the recipients every client notice uses.
+
 ## Validation plan
 
 ### Tracing requirements to tests

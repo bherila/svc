@@ -192,7 +192,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->acceptedVersion?->name ?? $agreement->title).' to activate', $company['name'],
+                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->acceptedVersion->name ?? $agreement->title).' to activate', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->accepted_at?->toDateString());
             }

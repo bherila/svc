@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
@@ -17,6 +18,7 @@ use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\ClientOverviewQuery;
@@ -51,10 +53,6 @@ use App\Services\Tasks\WorkspaceTaskRepository;
 use App\Services\WorkspaceAuthorization;
 use App\Support\Access\PortalInvitationStatus;
 use App\Support\AgentApi\AgentApiVersion;
-use App\Support\Packages\EnrollmentStatus;
-use App\Http\Middleware\EnsureServicePackagesEnabled;
-use App\Models\ServicePackageEnrollment;
-use Illuminate\Support\Facades\Route;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentInvoicePresenter;
 use App\Support\AgentApi\Presenters\AgentPaymentPresenter;
@@ -75,6 +73,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
+use App\Support\Packages\EnrollmentStatus;
 use App\Support\Revenue\ClientRosterView;
 use App\Support\Revenue\RevenueQuery;
 use App\Support\Revenue\ServiceMonth;
@@ -83,6 +82,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
 
