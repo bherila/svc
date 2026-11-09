@@ -3,6 +3,7 @@ import {
     CheckIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
+    CircleSlashIcon,
     MessageSquareWarningIcon,
     PencilLineIcon,
     SendIcon,
@@ -47,6 +48,7 @@ const STATE_ICON = {
     submitted: SendIcon,
     approved: CheckIcon,
     disputed: MessageSquareWarningIcon,
+    written_off: CircleSlashIcon,
 } as const;
 
 /** The state, as an icon and words with its next step; never colour alone. */

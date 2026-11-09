@@ -6,6 +6,7 @@ use App\Queries\Submission\ApprovedTimesheet;
 use App\Queries\Submission\SubmissionsOverview;
 use App\Services\Submission\SubmissionService;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Submission\SubmissionState;
 
 /**
  * Submission operations (docs/ux-overhaul.md sections 7b and 7e, slice 11):
@@ -86,7 +87,7 @@ final class SubmissionOperations
         $project = ['name' => 'project_id', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'uuid']];
 
         $descriptions = [
-            'submissions.list' => 'The caller\'s own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved or disputed, and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more.',
+            'submissions.list' => 'The caller\'s own hours and expenses for one calendar month (period, default the current month), each with its state: draft, submitted, approved, disputed or written_off (a dispute the business settled by not billing the row), and whether it can be submitted or withdrawn now. Expenses are listed only to a token that also has expenses:read. Bounded to 500 rows of each kind; truncated says when there are more.',
             'submissions.submit' => 'Mark the caller\'s own draft hours and expenses as submitted for review, so a reviewer or the client sees them without anyone in the caller\'s workspace approving them. Name a calendar month (period) and every eligible row in it is submitted and the rest are left alone, or name rows (time_entry_ids, expense_ids) and each must be eligible or nothing changes. Submitting approves nothing and changes no status; a submitted row cannot be edited until it is withdrawn. Expenses are included only for a token that also has expenses:write while AGENT_API_EXPENSE_WRITES_ENABLED is on; naming an expense without it is a 403. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
             'submissions.withdraw' => 'Take back the caller\'s own submissions that nobody has approved yet, removing them from the reviewer\'s list. Named like submit: a month, or rows that must each be withdrawable. A row already approved, or already marked ready to bill, is refused. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
             'timesheets.approved' => 'The approved timesheet for one calendar month (period, default the current month): the hours a reviewer or the client\'s contact approved, with who worked each, who approved it and how, and the month\'s total. Draft, merely submitted, disputed and payment-implied rows are never included. An owner or admin reads the workspace\'s, any other member their own. Bounded to 1000 entries.',
@@ -124,7 +125,7 @@ final class SubmissionOperations
         $uuid = ['type' => 'string', 'format' => 'uuid'];
         $date = ['type' => 'string', 'format' => 'date'];
         $month = ['type' => 'string', 'pattern' => '^\d{4}-(0[1-9]|1[0-2])$'];
-        $state = ['type' => 'string', 'enum' => ['draft', 'submitted', 'approved', 'disputed']];
+        $state = ['type' => 'string', 'enum' => array_map(static fn (SubmissionState $state): string => $state->value, SubmissionState::cases())];
         $minutes = ['type' => 'integer', 'minimum' => 0];
         $row = static fn (array $fields): array => self::object([
             'id' => $uuid, 'state' => $state, 'project' => $nullableText, 'dispute_note' => $nullableText,
@@ -141,7 +142,7 @@ final class SubmissionOperations
                 'expenses' => ['type' => 'array', 'maxItems' => SubmissionsOverview::LIMIT, 'items' => $row([
                     'spent_on' => $date, 'description' => $text, 'amount' => $minutes, 'currency' => $text,
                 ])],
-                'totals' => self::object(['draft' => $minutes, 'submitted' => $minutes, 'approved' => $minutes, 'disputed' => $minutes]),
+                'totals' => self::object(array_fill_keys(array_map(static fn (SubmissionState $state): string => $state->value, SubmissionState::cases()), $minutes)),
                 'truncated' => ['type' => 'boolean'],
             ])]),
             'SubmissionResultResponse' => self::object(['data' => self::object([

@@ -365,12 +365,11 @@ final class InterimOverageGenerator
      * Only for a draft whose service period is complete and in order; anything
      * else is refused by `issue()`'s own period checks before the claims matter.
      *
-     * It also takes the current fingerprint of the time the claim's ledger will
-     * be built from, with a locking read - time entries rank after invoices and
-     * before the company - so {@see self::assertClaimIssuable()} can tell whether
-     * the snapshot it reads that ledger through is current.
+     * The time the claim's ledger is built from is fingerprinted separately, by
+     * {@see self::lockTimeFingerprint()}: time entries rank after the invoice's
+     * lines, which `issue()` locks between the two.
      *
-     * @return array{BillingCycle, Collection<int, ClientInvoice>, string}
+     * @return array{BillingCycle, Collection<int, ClientInvoice>}
      */
     public function lockCycleClaims(ClientInvoice $draft, ClientAgreement $agreement): array
     {
@@ -408,8 +407,20 @@ final class InterimOverageGenerator
         return [
             $cycle,
             $claims->filter(fn (ClientInvoice $claim): bool => in_array((string) $claim->status, InvoiceStatus::charged(), true))->values(),
-            $this->timeFingerprint($draft, $agreement, $cycle, locking: true),
         ];
+    }
+
+    /**
+     * The current fingerprint of the time the claim's ledger will be built
+     * from, read with a lock - time entries rank after the invoice and its
+     * lines and before the company - so {@see self::assertClaimIssuable()} can
+     * tell whether the snapshot it reads that ledger through is current.
+     */
+    public function lockTimeFingerprint(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle): string
+    {
+        BillingMaintenance::share($draft->workspace_id);
+
+        return $this->timeFingerprint($draft, $agreement, $cycle, locking: true);
     }
 
     /**
@@ -435,7 +446,7 @@ final class InterimOverageGenerator
      * uncharged interim drafts. The claim itself is never rewritten here.
      *
      * @param  Collection<int, ClientInvoice>  $claims  from {@see self::lockCycleClaims()}
-     * @param  string  $currentTime  the time fingerprint from {@see self::lockCycleClaims()}
+     * @param  string  $currentTime  the time fingerprint from {@see self::lockTimeFingerprint()}
      */
     public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims, string $currentTime): void
     {
@@ -569,6 +580,10 @@ final class InterimOverageGenerator
             ->select([
                 'id', 'client_project_id', 'client_task_id', 'worked_on', 'minutes', 'status', 'is_billable',
                 'is_deferred', 'split_from_time_entry_id', 'subcontractor_billing_mode', 'deleted_at',
+                // A dispute or its settlement moves a row in or out of the
+                // ledger (docs/ux-overhaul.md 7b″) without touching any column
+                // above; the version moves with every write to the row.
+                'client_disputed_at', 'client_dispute_settlement', 'lock_version',
             ]);
         if ($locking) {
             $query->tap(Locks::forUpdate());

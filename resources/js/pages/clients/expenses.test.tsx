@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseAmount } from '@/components/expenses/expense-dialog';
 import { apiRequest } from '@/lib/api';
 import ClientExpenses from '@/pages/clients/expenses';
+import { clientReviewFixture } from '@/test/client-review-fixture';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
@@ -64,6 +65,8 @@ function expense(overrides: Partial<ClientExpenseRow> = {}): ClientExpenseRow {
         can_approve: true,
         can_unapprove: false,
         can_discard: true,
+        client_review: clientReviewFixture(),
+        settle_dispute: null,
         urls: {
             update: '/api/v1/workspaces/w/expenses/expense-1',
             approve: '/api/v1/workspaces/w/expenses/expense-1/approve',
@@ -565,4 +568,55 @@ it('gives a corrected definitively refused expense a fresh request key', async (
             ],
         }),
     );
+});
+
+describe('a disputed expense', () => {
+    it('says what the client wrote and offers both outcomes the server allows', async () => {
+        const user = userEvent.setup();
+        render(
+            <ClientExpenses
+                {...props({
+                    expenses: [
+                        expense({
+                            status: 'approved',
+                            can_edit: false,
+                            can_approve: false,
+                            can_discard: false,
+                            client_review: clientReviewFixture({
+                                state: 'disputed',
+                                held: true,
+                                dispute_note:
+                                    'Synthetic: we never ordered a courier.',
+                            }),
+                            settle_dispute: {
+                                url: '/api/v1/workspaces/w/expenses/expense-1/dispute/settle',
+                                outcomes: ['answered', 'written_off'],
+                            },
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Disputed')).toBeVisible();
+        expect(screen.getByText(/we never ordered a courier/)).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: 'Respond' }));
+        await user.type(
+            screen.getByLabelText('Your reply'),
+            'Synthetic: our mistake, removed.',
+        );
+        await user.click(screen.getByRole('button', { name: 'Write off' }));
+
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
+            '/api/v1/workspaces/w/expenses/expense-1/dispute/settle',
+            {
+                expected_version: 'a'.repeat(64),
+                outcome: 'written_off',
+                reply: 'Synthetic: our mistake, removed.',
+                confirm: true,
+            },
+        );
+    });
 });

@@ -15,6 +15,7 @@ vi.mock('@/lib/api', () => ({
     apiRequest: vi.fn(() => new Promise(() => {})),
     newIdempotencyKey: () => crypto.randomUUID(),
 }));
+import { clientReviewFixture } from '@/test/client-review-fixture';
 import { horizontalOverflowRisks } from '@/test/horizontal-overflow';
 import { sharedPageProps } from '@/test/shared-page-props';
 import { workspaceNavigation } from '@/test/workspace-navigation';
@@ -72,6 +73,8 @@ function entry(overrides: Partial<TimeEntry> = {}): TimeEntry {
         minutes: 60,
         description: 'Review implementation',
         client_visible_description: null,
+        client_review: clientReviewFixture(),
+        settle_dispute: null,
         is_billable: true,
         is_deferred: false,
         is_visible_to_client: false,
@@ -449,6 +452,88 @@ describe('time sheet controls', () => {
         await user.click(unapprove);
 
         expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a client dispute, holds it, and answers it at the URL the server sent', async () => {
+        const user = userEvent.setup();
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            data: {},
+        });
+        render(
+            <TimeSheet
+                {...props({
+                    timeEntry: entry({
+                        status: 'approved',
+                        can_edit: false,
+                        can_approve: false,
+                        client_review: clientReviewFixture({
+                            state: 'disputed',
+                            state_label: 'Disputed by the client',
+                            held: true,
+                            dispute_note:
+                                'Synthetic: this was one hour, not two.',
+                        }),
+                        settle_dispute: {
+                            url: '/workspaces/workspace-1/time-entries/entry-1/dispute/settle',
+                            outcomes: ['answered'],
+                        },
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Disputed')).toBeVisible();
+        expect(
+            screen.getByText(/Synthetic: this was one hour, not two\./),
+        ).toBeVisible();
+        expect(screen.getByText(/held out of billing/)).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: 'Disputed (1)' }));
+        await user.click(
+            screen.getByRole('button', { name: 'Respond to dispute' }),
+        );
+        expect(
+            screen.queryByRole('button', { name: 'Write off' }),
+        ).not.toBeInTheDocument();
+        const send = screen.getByRole('button', { name: 'Send answer' });
+        expect(send).toBeDisabled();
+        await user.type(
+            screen.getByLabelText('Your reply'),
+            'Synthetic: corrected to one hour.',
+        );
+        await user.click(send);
+
+        expect(vi.mocked(apiRequest)).toHaveBeenCalledWith(
+            'POST',
+            '/workspaces/workspace-1/time-entries/entry-1/dispute/settle',
+            {
+                expected_version: 'version-1',
+                outcome: 'answered',
+                reply: 'Synthetic: corrected to one hour.',
+                confirm: true,
+            },
+        );
+    });
+
+    it('offers no response to a dispute the server gave no way to settle', () => {
+        render(
+            <TimeSheet
+                {...props({
+                    timeEntry: entry({
+                        client_review: clientReviewFixture({
+                            state: 'disputed',
+                        }),
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.getByText('Disputed')).toBeVisible();
+        expect(
+            screen.queryByRole('button', { name: 'Respond to dispute' }),
+        ).not.toBeInTheDocument();
     });
 
     it('offers no withdrawal the server did not send', () => {

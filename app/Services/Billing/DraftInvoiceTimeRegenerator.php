@@ -9,6 +9,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -56,31 +57,7 @@ final class DraftInvoiceTimeRegenerator
                 return;
             }
 
-            $companions = ClientInvoice::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $invoice->client_company_id)
-                ->whereNotNull('client_agreement_id')
-                ->where(fn (Builder $kind): Builder => $this->generatedDraftKinds($kind))
-                ->whereHas('agreement', fn (Builder $agreement): Builder => $agreement
-                    ->where('workspace_id', $workspace->id)
-                    ->where('client_company_id', $invoice->client_company_id)
-                    ->where(fn (Builder $scope): Builder => $scope
-                        ->whereNull('client_project_id')
-                        ->orWhere('client_project_id', $entry->client_project_id)))
-                ->where('status', 'draft')
-                ->whereKeyNot($invoice->id)
-                ->whereDate('service_period_start', '<=', $entry->worked_on->toDateString())
-                ->whereDate('service_period_end', '>=', $entry->worked_on->toDateString())
-                ->get();
-
-            // Interim first, cadence last. Cadence regeneration deliberately
-            // releases unissued interim claims before reconciling the closing
-            // cycle; reversing this order would let the interim reclaim time
-            // after the cadence invoice had already rebuilt.
-            $companions = $companions->sortBy(fn (ClientInvoice $candidate): array => [
-                $candidate->invoiceKindValue() === InvoiceKind::InterimOverage->value ? 0 : 1,
-                $candidate->id,
-            ]);
+            $companions = $this->generatedDraftsCovering($workspace, (int) $invoice->client_company_id, $entry, $invoice->id);
 
             foreach ($companions as $companion) {
                 $this->generated->regenerateDraftInvoice($companion);
@@ -92,6 +69,40 @@ final class DraftInvoiceTimeRegenerator
         } catch (DomainException|RuntimeException $exception) {
             abort(409, 'The time entry was not changed because its draft invoice could not be regenerated: '.$exception->getMessage());
         }
+    }
+
+    /**
+     * Generated drafts of the entry's company and project whose stated period
+     * holds its date, interim first and cadence last. Cadence regeneration
+     * deliberately releases unissued interim claims before reconciling the
+     * closing cycle; reversing this order would let the interim reclaim time
+     * after the cadence invoice had already rebuilt.
+     *
+     * @return Collection<int, ClientInvoice>
+     */
+    private function generatedDraftsCovering(Workspace $workspace, int $companyId, ClientTimeEntry $entry, ?int $exceptInvoiceId): Collection
+    {
+        return ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $companyId)
+            ->whereNotNull('client_agreement_id')
+            ->where(fn (Builder $kind): Builder => $this->generatedDraftKinds($kind))
+            ->whereHas('agreement', fn (Builder $agreement): Builder => $agreement
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $companyId)
+                ->where(fn (Builder $scope): Builder => $scope
+                    ->whereNull('client_project_id')
+                    ->orWhere('client_project_id', $entry->client_project_id)))
+            ->where('status', 'draft')
+            ->when($exceptInvoiceId !== null, fn (Builder $other): Builder => $other->whereKeyNot($exceptInvoiceId))
+            ->whereDate('service_period_start', '<=', $entry->worked_on->toDateString())
+            ->whereDate('service_period_end', '>=', $entry->worked_on->toDateString())
+            ->get()
+            ->sortBy(fn (ClientInvoice $candidate): array => [
+                $candidate->invoiceKindValue() === InvoiceKind::InterimOverage->value ? 0 : 1,
+                $candidate->id,
+            ])
+            ->values();
     }
 
     /**

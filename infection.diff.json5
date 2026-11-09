@@ -28,6 +28,16 @@
     timeoutsAsEscaped: true,
     mutators: {
         "@default": true,
+        // A local Eloquent scope is reached through `Builder::__call`, which
+        // calls it whatever its visibility, so `public` and `protected` answer
+        // the same and no test can tell them apart. Named per scope: the
+        // predicates inside each stay mutated.
+        PublicVisibility: {
+            ignore: [
+                "App\\Models\\ClientTimeEntry::scopeRetainerBillable",
+                "App\\Models\\ClientTimeEntry::scopeNotHeldForDispute",
+            ],
+        },
         // A positive whole-minute value and a binary float at that magnitude
         // differ by a multiple of its binary spacing. That difference cannot
         // equal the binary representation of decimal 0.00001, so > and >= are

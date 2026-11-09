@@ -324,6 +324,253 @@ Clients approve **expenses as well as hours** (decided 2026-11-06).
 - **Proforma.** An expense not yet ready to bill is listed on the proforma but
   left out of its total.
 
+### 7b″. A dispute holds the row out of billing (decided 2026-11-08)
+
+The help already promises this (`docs/help/time.md`, the glossary and the
+Disputed badge's next step: "it stays out of billing until the question is
+settled"). The code does not keep the promise. No billing path reads
+`client_disputed_at`:
+
+- `ConsultantTimeRelease::releases()` moves a disputed draft to `approved`
+  when a draft invoice is generated.
+- `SelectedTimeInvoiceTerms::forEntry()` prices a disputed approved entry, so
+  it can be put on an ad-hoc draft by hand.
+- Cadence generation, draft regeneration and the deferred backlog count it.
+- `ExpenseInvoiceAllocations` allocates a disputed approved expense.
+
+Only payment looks: `ClientApprovalByPayment` leaves disputed rows alone. So a
+disputed hour is invoiced, paid for, and stays disputed with nothing approving
+it.
+
+**Billing is still not gated on approval.** An hour the client has not decided
+on bills on schedule (7b, "Invoiced"). Only a dispute stops it.
+
+**Held, not deferred.** `is_deferred` is retainer work set aside for later.
+The cadence allocator bills it on its own, and termination or a buy-down
+collects it, so marking a disputed row deferred would bill it later anyway.
+Held is not stored. It is read from the dispute: a row with
+`client_disputed_at` set is held until someone settles the dispute.
+
+#### What a hold does
+
+| Where the row is when disputed | What happens |
+| --- | --- |
+| Not on any invoice | No draft takes it: release, hand-picked time, cadence generation, regeneration, the deferred backlog, buy-down and termination collection all skip it. An expense is not allocated. |
+| On a draft invoice | Once the dispute commits, the draft is rebuilt by the ordinary generators, in their own transaction and lock order (`DisputedDraftRebuilder`). The client's dispute must stand whatever happens to the draft. The hour is no longer charged; it is listed under the draft's *Still deferred* section with a **Disputed** tag, so the operator sees what was taken off and why. If the rebuild is refused (a buy-down settles the entry, say), the refusal is reported, the dispute still stands, and issuing is refused (422, code `disputed_on_draft`) with the count of rows. An ad-hoc draft drops every held selection in one rebuild, so two disputes on it never refuse each other's. |
+| On an issued invoice | Unchanged: the correction flow. The issued document is never edited, and paying it never approves the row. |
+
+The hold is one model scope, `ClientTimeEntry::notHeldForDispute()`, inside
+the three scopes every billing read derives from: `retainerBillable()`,
+`billableForInvoicing()` and `flatHourlySubcontractor()`. It is not a filter
+added to each query. The release rule and the hand-picked pricing rule
+(`ConsultantTimeRelease`, `SelectedTimeInvoiceTerms`) refuse disputed rows in
+their own pure, unit-tested code, and the pure statement of the hold is
+`DisputeHold`. Expense allocation skips disputed and written-off expenses.
+
+**A dispute racing the issue.** The issue reads the draft's time and expenses
+with row locks - after its lines, before the company - and holds them until it
+commits. A locking read sees the current row, not the caller's snapshot, so a
+dispute that committed first refuses the issue even inside an outer
+transaction; one that arrives later waits for the charge, and the charge
+stands as any charged row's does (`DisputeIssueRaceTest`, MariaDB). The
+interim claim's time fingerprint includes the dispute, settlement and version
+columns, so a dispute on time the claim does not link still refuses a claim
+priced from an older snapshot.
+
+**Disputed work a later draft does not link.** A held row leaves the ledger
+and an answered one comes back, so a draft's charges can depend on historical
+work it never links - an hour logged late into a reconciled month, say. Two
+things keep those charges current:
+
+- *The rebuild reaches every dependent draft.* A dispute, an answer or a
+  write-off rebuilds every generated draft of the row's company and agreement
+  scope whose period ends on or after the day worked, earliest first and
+  interim before cadence, not only the draft that carries the row.
+- *The issue checks what the draft was priced from.* A cadence draft records
+  its held-work basis when it is generated (`HeldWorkBasisRecorder`): its
+  project scope, the last day its ledger read, and a digest of the dispute,
+  settlement and allocation state of that scope's disputed and settled time
+  through that day, with the type and placement of every invoice line that
+  holds each row, and whether the row waits as deferred work - a late
+  answer moves only that, and a waiting row takes no capacity it took
+  before. The allocation is what makes a disputed row charged rather
+  than held, and its type and placement are what it does to capacity: a void
+  releases it without the dispute columns moving, and a later allocation of
+  another kind - a buy-down after the void, say - draws differently, so
+  either refuses the later draft. Only work the retainer ledger reads is
+  recorded; flat-hourly time is priced alone. A buy-down is refused on a
+  target whose basis has moved, until the target is regenerated, and renews
+  the basis of one that is current - from current, locking reads, as it
+  totals the lines: the caller's transaction may hold a snapshot older than
+  the state just checked, such as a dispute since answered, and writing that
+  back would make a later dispute match it again. Issuing re-reads
+  that state with row locks - after the lines, before the company - and
+  refuses a draft whose basis has moved (422, code `disputed_work_changed`);
+  regenerating it prices it from the current state. A draft generated before
+  the basis existed is issued as before. A draft with a basis is issued under
+  its agreement's lock, so two drafts of one agreement never wait on each
+  other's history.
+
+#### Settling a dispute
+
+Only the provider's side settles a dispute. A client contact or reviewer
+approves or disputes, as today. There are two outcomes, each with a reply the
+client reads:
+
+- **Answer.** Correct the row first, if it needs it, through the ordinary
+  edit. Then reply. The dispute is cleared, the reply is kept, and the row goes
+  back on the client's To approve as undecided. It bills on the next draft. If
+  the client disputes again, it is held again.
+- **Write off.** The row becomes non-billable (`is_billable = false`) and
+  leaves billing for good. A reply is required. The client still sees it,
+  read-only, in that month's To approve as *Written off*, with the reply.
+  The write-off is terminal: the shared billing scope, release and hand-picked
+  pricing all exclude it whatever its billable flag says, and an edit that
+  would make it billable again is refused.
+
+A subcontractor's resubmission keeps working as it does: it already clears the
+dispute (`SubmissionService`).
+
+**Who settles.**
+
+- **Answering:** for time, anyone who may edit the entry, the author
+  included. Answering is not approving: the client still decides.
+- **Writing off:** a commercial decision, so it needs the same permission as
+  approving time on that project (`ProjectAccess::canApproveTime`).
+- **Expenses:** whoever may approve expenses, for both outcomes.
+
+**Stored, on both `client_time_entries` and `client_expenses`.**
+
+- `client_dispute_reply`: text.
+- `client_dispute_settled_at`.
+- `client_dispute_settled_by_user_id`.
+- `client_dispute_settlement`: `answered` or `written_off`, matched
+  exhaustively.
+
+A new dispute clears the previous reply. Every settlement is a compare-and-set
+on the row's version, under its lock. After it commits, the drafts it affects
+are rebuilt, as after a dispute: an answered row goes back on the generated
+draft whose period covers it, and a written-off one comes off any draft.
+When the invoice reconciling its period was charged while it was held, that
+period can no longer bill it (decided 2026-11-09, `LateAnswer`):
+
+- Work the retainer ledger reads becomes **deferred work**. It joins the
+  deferred backlog and is listed under the draft's *Still deferred*. It is
+  drawn from a later draft's free capacity - on a quarterly or other cycle,
+  what the cycle's pool has left after its own work, measured afresh for
+  each period a bulk run generates - settled by a buy-down,
+  or - like
+  all deferred work - collected at the hourly rate when the agreement
+  terminates: the reconciliation of the last cycle, monthly or not, sells
+  nothing, so it collects what still waits - through the agreement's last
+  day, from the balance its ledger carries in that month, and dated there,
+  so a successor's deferred work is left to the successor. With no retainer there is no
+  free capacity, so a buy-down or termination collects it. Waiting, it takes no
+  capacity, so no later draft's charges depend on it until a line takes it,
+  and a dispute on it after that finds the draft that carries it.
+- A flat-hourly subcontractor hour, priced alone at its own date and rate, is
+  carried to the next cadence draft that can bill it.
+
+A row
+an issued invoice already charges can't be written off (409); answer it, and
+correct the invoice. Each settlement is written to the client history
+(`ClientActivityRecorder`, actions `dispute.answered` and
+`dispute.written_off`) with the client's note and the reply.
+
+The client's verdict gains a `WrittenOff` case, and every `match` over it was
+updated: it awaits nothing, approves nothing and is never on the approved
+timesheet. Submissions gain the matching `written_off` state.
+
+#### Screens
+
+- **Time sheet** (`pages/time.tsx`):
+  - A **Disputed** badge (destructive), which outranks Approved and Upcoming
+    in the status column.
+  - The client's note under the description, in the row's prose column.
+  - A **Respond to dispute** action that opens a dialog: the client's note,
+    the reply (required), and **Send answer** or **Write off**. Write off is
+    shown only when the server lists it among the row's outcomes. The hint
+    says to edit the row first to correct it.
+  - A **Disputed (n)** toggle at the top of the sheet that shows only disputed
+    rows.
+- **Expenses** (`pages/clients/expenses.tsx`): the same badge, note and
+  Respond.
+- **Draft invoice and PDF:** held hours appear in the *Still deferred* list
+  with a **Disputed** tag and are not in the total. The invoice document, the
+  proforma and the PDF share that section.
+- **Portal To approve** (7c): an answered row shows "Your provider replied: …"
+  with Approve and Dispute. A written-off row stays, read-only, as *Written
+  off* with the reply, for `PortalApprovalQueue::WRITTEN_OFF_DAYS` (30) after
+  it was settled.
+- **Client history:** both settlements show with the note and the reply.
+- **Help:** `docs/help/time.md` and the glossary say what held means and what
+  each outcome does.
+
+The server sends a finished `settle_dispute` per row, a URL and the outcomes
+this viewer may choose, or null; the browser interprets no flags. Statuses
+are printed through `statusLabel`.
+
+Not built yet, for a follow-up:
+
+- **Draft invoice banner:** a warning naming the rows still charged after a
+  refused rebuild. The issue refusal says so today, but the page shows no
+  banner.
+- **Action queue** (2c): "Disputed: 3.5 h and 1 expense", per client.
+
+#### REST and MCP
+
+- **Reads:** `time_entries.list` and `expenses.list` gain a `client_review`
+  object on each row:
+
+  ```json
+  {
+    "state": "undecided",
+    "state_label": "Waiting for the client",
+    "held": false,
+    "dispute_note": null,
+    "disputed_at": null,
+    "settlement": null,
+    "settlement_label": null,
+    "reply": null,
+    "settled_at": null
+  }
+  ```
+
+  `state` is `undecided`, `approved`, `approved_by_payment`, `disputed` or
+  `written_off`. `settlement` is `answered`, `written_off` or null. The object
+  comes from `ClientApprovalVerdict`, so the operator reads what the client's
+  screen reads. The time sheet and the expenses page read the same
+  presenters, so the web pages and the API agree. The schema is code-owned in
+  `DisputeContract` (`scripts/generate-dispute-contract.php`).
+- **Writes:**
+  - `time_entries.settle_dispute`: `POST
+    /workspaces/{workspace}/time-entries/{entry}/dispute/settle`, with
+    `{expected_version, outcome: answered|written_off, reply, confirm: true}`.
+    Idempotency key required, scope `time:write`.
+  - `expenses.settle_dispute`: the same shape under `expenses:write`.
+
+  Both outcomes require `confirm: true`, because the client reads the reply as
+  written. A stale version is a 409. A row that is not disputed, an empty
+  reply, or a missing confirmation is a 422.
+- **Invoices:** `invoices.issue` refuses a draft still charging a disputed or
+  written-off row with 422 and code `disputed_on_draft`. The draft's
+  deferred-work snapshot marks held hours `disputed`. Follow-ups, not built:
+  `held_for_dispute` and `can_issue` on `invoices.get`, `held_minutes` on
+  `invoices.preview_period`, and a `client_review=disputed` filter on the two
+  lists.
+- **MCP:** the two writes join the `time` and `expenses` toolsets, which are
+  derived from their scopes, so no toolset changes. The server instructions
+  gain one rule: obtain explicit user confirmation before either settlement,
+  send only the reply the user wrote, and never choose to write a row off for
+  the user.
+  `docs/mcp.md` gains a "Disputed time and expenses" section.
+
+#### Delivery (stacked commits)
+
+1. Hold: every billing path skips disputed rows, a dispute rebuilds its draft,
+   and issuing a draft that still charges one is refused.
+2. Settle: the migration, the service, REST, MCP, the screens, help and docs.
+
 ### 7c. Vetvet's "To approve" (hours and expenses)
 
 One queue in the portal for each client contact. It is built from **that

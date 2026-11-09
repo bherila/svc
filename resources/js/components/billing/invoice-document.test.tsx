@@ -54,6 +54,15 @@ describe('the invoice document', () => {
         expect(screen.getByText('1.5 h')).toBeVisible();
     });
 
+    it('tags work a client dispute holds out of billing in the deferred list', () => {
+        render(<InvoiceDocument document={documentFixture()} />);
+
+        const tags = screen.getAllByText('Disputed');
+        expect(tags).toHaveLength(1);
+        // On the row of the disputed entry, which has no client description.
+        expect(within(tags[0].closest('tr')!).getByText('—')).toBeVisible();
+    });
+
     it('leaves out the parts the invoice does not have', () => {
         render(
             <InvoiceDocument

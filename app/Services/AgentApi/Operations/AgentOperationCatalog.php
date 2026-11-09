@@ -66,6 +66,9 @@ final class AgentOperationCatalog
 {
     private const string ROUTE_PREFIX = 'agent-api.v1.';
 
+    /** What both dispute settlements say to an MCP client (docs/ux-overhaul.md 7b″). */
+    public const string SETTLE_DESCRIPTION = 'Only after the user explicitly confirms, and only with the reply the user wrote. Settle a client\'s dispute on one row (client_review.state disputed) using its current version: outcome answered clears the dispute and offers the row to the client again, so it bills on the next draft (correct the row first with its update if it needs it), and held consultant or retainer time whose own period was already invoiced becomes deferred work, billed from later free capacity, a buy-down or the agreement\'s termination collection; outcome written_off means it is never billed. The reply is shown to the client as written. A row an issued invoice already charges cannot be written off; correct the invoice instead.';
+
     /**
      * REST binding of each documented operation: route name (after the
      * agent-api.v1. prefix), path relative to /api/v1 with the controllers'
@@ -166,6 +169,7 @@ final class AgentOperationCatalog
         'expenses.receipts.upload' => ['expense-receipts.store', '/workspaces/{workspace}/expenses/{expense}/receipts', [201]],
         'expenses.receipts.upload_url' => ['expense-receipts.upload-url', '/workspaces/{workspace}/expenses/{expense}/receipts/upload-url', [200]],
         'expenses.unapprove' => ['expenses.unapprove', '/workspaces/{workspace}/expenses/{expense}/unapprove', [200]],
+        'expenses.settle_dispute' => ['expenses.settle_dispute', '/workspaces/{workspace}/expenses/{expense}/dispute/settle', [200]],
         'expenses.update' => ['expenses.update', '/workspaces/{workspace}/expenses/{expense}', [200]],
         'finance.invoice_payments.list' => ['invoice-payments.index', '/workspaces/{workspace}/invoice-payments', [200]],
         'finance.payouts.list' => ['payouts.index', '/workspaces/{workspace}/payouts', [200]],
@@ -250,6 +254,7 @@ final class AgentOperationCatalog
         'time_entries.list' => ['time-entries.index', '/workspaces/{workspace}/time-entries', [200]],
         'time_entries.log' => ['time-entries.store', '/workspaces/{workspace}/time-entries', [201]],
         'time_entries.unapprove' => ['time-entries.unapprove', '/workspaces/{workspace}/time-entries/{entry}/unapprove', [200]],
+        'time_entries.settle_dispute' => ['time-entries.settle_dispute', '/workspaces/{workspace}/time-entries/{entry}/dispute/settle', [200]],
         'time_entries.update' => ['time-entries.update', '/workspaces/{workspace}/time-entries/{entry}', [200]],
         'workspaces.create' => ['workspaces.store', '/workspaces', [201]],
     ];
@@ -692,6 +697,17 @@ final class AgentOperationCatalog
                 manager: true,
             ),
             $this->tool(
+                'expenses.settle_dispute',
+                'Settle a disputed expense',
+                self::SETTLE_DESCRIPTION.' Workspace owners and admins only.',
+                [AgentMcpWriteTools::class, 'expensesSettleDispute'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::EXPENSES],
+                manager: true,
+            ),
+            $this->tool(
                 'expense_schedules.create',
                 'Create expense schedule',
                 'Create a recurring draft expense schedule using the current client version.',
@@ -851,6 +867,16 @@ final class AgentOperationCatalog
                 'mcp.write',
                 cutovers: [AgentDeploymentFlags::WRITES, AgentDeploymentFlags::TIME_ENTRIES],
                 manager: true,
+            ),
+            $this->tool(
+                'time_entries.settle_dispute',
+                'Settle a disputed time entry',
+                self::SETTLE_DESCRIPTION.' Answering is open to the person who logged the time or a workspace owner or admin; writing off needs the permission to approve time on its project.',
+                [AgentMcpWriteTools::class, 'timeEntriesSettleDispute'],
+                Effect::LocalWrite,
+                true,
+                'mcp.write',
+                cutovers: [AgentDeploymentFlags::TIME_ENTRIES],
             ),
             $this->tool(
                 'time_entries.approve',

@@ -1,3 +1,4 @@
+import type { SettleDispute } from '@/components/disputes/settle-dispute-dialog';
 import type { ApiSchema } from '@/lib/api';
 
 export type TaskOption = {
@@ -46,6 +47,11 @@ export type TimeEntry = ApiSchema<'TimeEntry'> & {
      * viewer may not withdraw it or a client has been charged for the time.
      */
     unapprove_url: string | null;
+    /**
+     * How this viewer may settle the client's open dispute on the entry, or
+     * null when there is none or the viewer may not (docs/ux-overhaul.md 7b″).
+     */
+    settle_dispute: SettleDispute | null;
 };
 
 export type Capacity = {

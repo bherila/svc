@@ -24,6 +24,7 @@ use App\Support\AgentApi\Presenters\AgentProjectPresenter;
 use App\Support\AgentApi\Presenters\AgentTaskPresenter;
 use App\Support\AgentApi\Presenters\AgentTimeEntryPresenter;
 use App\Support\AgentApi\Presenters\AgentWorkspacePresenter;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Approval\SelfApproval;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceKind;
@@ -853,6 +854,20 @@ class TimeSheetController extends Controller
                 && $entry->status === 'approved'
                 && $editableInvoice
                 ? route('agent-api.v1.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
+                : null,
+            // A client's open dispute, and how this viewer may settle it
+            // (docs/ux-overhaul.md 7b″), on the terms DisputeSettlements
+            // enforces: the author or a manager answers; whoever may approve
+            // the project's time may also write off what no issued invoice
+            // charges yet.
+            'settle_dispute' => $entry->client_disputed_at !== null
+                && ($entry->user_id === $userId || $isManager)
+                ? [
+                    'url' => route('agent-api.v1.time-entries.settle_dispute', [$workspace, $entry->public_id], absolute: false),
+                    'outcomes' => ($permissions[$entry->client_project_id]['approve'] ?? false) && $editableInvoice
+                        ? [DisputeSettlement::Answered->value, DisputeSettlement::WrittenOff->value]
+                        : [DisputeSettlement::Answered->value],
+                ]
                 : null,
         ];
     }

@@ -18,6 +18,7 @@ final class TimesheetAndStateTest extends TestCase
         $this->assertFalse(TimesheetRules::includes(ClientApprovalVerdict::ApprovedByPayment));
         $this->assertFalse(TimesheetRules::includes(ClientApprovalVerdict::Pending));
         $this->assertFalse(TimesheetRules::includes(ClientApprovalVerdict::Disputed));
+        $this->assertFalse(TimesheetRules::includes(ClientApprovalVerdict::WrittenOff));
     }
 
     public function test_how_an_approval_was_given(): void
@@ -37,6 +38,7 @@ final class TimesheetAndStateTest extends TestCase
         $this->assertSame(SubmissionState::Approved, SubmissionState::of('draft', true, ClientApprovalVerdict::Approved));
         $this->assertSame(SubmissionState::Approved, SubmissionState::of('invoiced', false, ClientApprovalVerdict::ApprovedByPayment));
         $this->assertSame(SubmissionState::Disputed, SubmissionState::of('draft', true, ClientApprovalVerdict::Disputed));
+        $this->assertSame(SubmissionState::WrittenOff, SubmissionState::of('approved', false, ClientApprovalVerdict::WrittenOff));
     }
 
     public function test_the_edition(): void

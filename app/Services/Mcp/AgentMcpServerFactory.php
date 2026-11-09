@@ -517,6 +517,9 @@ final class AgentMcpServerFactory
         if (array_intersect(['companies.autopay.set', 'invoices.autopay.skip', 'invoices.autopay.resolve'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before turning autopay on or changing its limit (companies.autopay.set with enabled true) or skipping autopay for an invoice: turning it on authorizes SVC to charge the client\'s saved card on every due date up to the limit and emails the client, and needs the attestation the user gives of how the client agreed. Never infer the client\'s agreement, the limit or the attestation. Obtain explicit user confirmation before closing out a held autopay attempt (invoices.autopay.resolve): the user checks the Stripe dashboard and tells you whether the client was charged and, if so, the PaymentIntent id, or that nothing was charged and what they saw; never infer the outcome or the id, and it never sends a charge.';
         }
+        if (array_intersect(['time_entries.settle_dispute', 'expenses.settle_dispute'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before settling a client\'s dispute (time_entries.settle_dispute, expenses.settle_dispute), and send only the reply the user wrote: the client reads it as written. Writing a row off means it is never billed; never choose that outcome for the user.';
+        }
         if (isset($available['billing_schedules.generate'])) {
             $mode .= ' Obtain explicit user confirmation before billing_schedules.generate: it issues invoices and may schedule automatic client delivery.';
         }
