@@ -1279,7 +1279,6 @@ if (getenv('SVC_LAYOUT_PALETTE') === '1') {
     ];
 }
 
-
 // Service packages (--packages): a list, the editor, and the two public pages,
 // all with deliberately oversized names, summaries, link names, descriptions
 // and questions. One package is live and listed, one live and unlisted, one a
@@ -1294,7 +1293,7 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $oversized = [
         'name' => $word,
         'summary' => str_repeat('Unbroken', 30),
-        'body_markdown' => "- ".str_repeat('LongBulletWithoutSpaces', 8)."\n- Managed hosting, SSL and daily backups\n\nhttps://example.test/".str_repeat('very-long-path-segment-', 6)."\n\n".str_repeat('A paragraph that wraps normally. ', 6),
+        'body_markdown' => '- '.str_repeat('LongBulletWithoutSpaces', 8)."\n- Managed hosting, SSL and daily backups\n\nhttps://example.test/".str_repeat('very-long-path-segment-', 6)."\n\n".str_repeat('A paragraph that wraps normally. ', 6),
         'components' => [
             ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1, 'is_taxable' => false],
             ['kind' => 'recurring', 'description' => str_repeat('Unbroken', 50), 'cadence' => 'monthly', 'amount' => 12900, 'quantity' => 2, 'is_taxable' => true],
