@@ -11,6 +11,7 @@ use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageMigrationTarget;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
@@ -20,6 +21,7 @@ use App\Support\Billing\InvoiceStatus;
 use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -186,6 +188,7 @@ final class WorkspaceActionQueue
                 ->with([
                     'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
                     'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                    'currentVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
                 ])
                 ->orderBy('accepted_at')->orderBy('id')
                 ->limit(self::LIMIT)->get();
@@ -197,7 +200,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->acceptedVersion->name ?? $agreement->title).' to activate', $company['name'],
+                $rows[] = $this->row('enrollment-'.$enrollment->public_id, 'enrollment_review', ($enrollment->carriedVersion()?->name ?? $agreement->title).' to activate', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->accepted_at?->toDateString());
             }
@@ -230,7 +233,7 @@ final class WorkspaceActionQueue
                 ->where('status', EnrollmentStatus::Active->value)
                 ->whereExists(fn (QueryBuilder $version): QueryBuilder => $version->selectRaw('1')->from('service_package_versions')
                     ->whereColumn('service_package_versions.workspace_id', 'service_package_enrollments.workspace_id')
-                    ->whereColumn('service_package_versions.id', 'service_package_enrollments.accepted_version_id')
+                    ->whereRaw('service_package_versions.id = '.ServicePackageEnrollment::CARRIED_VERSION_SQL)
                     ->where('service_package_versions.require_autopay', true))
                 ->where(fn ($off) => $off
                     ->whereExists(fn (QueryBuilder $company): QueryBuilder => $company->selectRaw('1')->from('client_companies')
@@ -244,6 +247,7 @@ final class WorkspaceActionQueue
                 ->with([
                     'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
                     'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                    'currentVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
                 ])
                 ->orderBy('activated_at')->orderBy('id')
                 ->limit(self::LIMIT)->get();
@@ -258,6 +262,7 @@ final class WorkspaceActionQueue
                 ->with([
                     'agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id),
                     'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                    'currentVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
                 ])
                 ->orderBy('auto_invoice_period_start')->orderBy('id')
                 ->limit(self::LIMIT)->get();
@@ -282,7 +287,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->acceptedVersion->name ?? $agreement->title).': autopay required but off', $company['name'],
+                $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->carriedVersion()?->name ?? $agreement->title).': autopay required but off', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->activated_at?->toDateString());
             }
@@ -308,6 +313,55 @@ final class WorkspaceActionQueue
                     date: $request->requested_end_on->toDateString());
             }
 
+            // MIG-3: a subscriber due to move that waits on an owner (an
+            // invoice already sells the new period, or a request to leave
+            // before it is unanswered). Each run tries it again; the row goes
+            // once it moves or is skipped.
+            $held = ServicePackageMigrationTarget::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', MigrationTargetStatus::Scheduled->value)
+                ->whereNotNull('outcome_code')
+                ->with(['agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id)])
+                ->orderBy('effective_on')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            // MIG-4: a scheduled move whose new price is above the client's
+            // autopay limit, read against the limit as it stands now. SVC never
+            // raises it; the row goes once the client does, or the move is settled.
+            $belowLimit = ServicePackageMigrationTarget::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', MigrationTargetStatus::Scheduled->value)
+                ->whereExists(fn (QueryBuilder $company): QueryBuilder => $company->selectRaw('1')->from('client_companies')
+                    ->whereColumn('client_companies.workspace_id', 'service_package_migration_targets.workspace_id')
+                    ->whereColumn('client_companies.id', 'service_package_migration_targets.client_company_id')
+                    ->whereNotNull('client_companies.autopay_enabled_at')
+                    ->whereColumn('client_companies.autopay_limit_amount', '<', 'service_package_migration_targets.new_price_amount'))
+                ->with(['agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id)])
+                ->orderBy('effective_on')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            $moveNames = $this->companyNames($workspace, array_merge($held->pluck('client_company_id')->all(), $belowLimit->pluck('client_company_id')->all()));
+            foreach ($held as $target) {
+                $company = $this->company($moveNames, $target->client_company_id);
+                $agreement = $target->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('package-move-held-'.$target->public_id, 'package_move_held', $agreement->title.': move to new terms held', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    date: $target->effective_on->toDateString());
+            }
+            foreach ($belowLimit as $target) {
+                $company = $this->company($moveNames, $target->client_company_id);
+                $agreement = $target->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('package-move-autopay-'.$target->public_id, 'package_move_autopay', $agreement->title.': autopay limit below the new price', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    amount: $target->new_price_amount, currency: $target->new_price_currency, date: $target->effective_on->toDateString());
+            }
+
             foreach ($autoRefused as $enrollment) {
                 $company = $this->company($names, $enrollment->client_company_id);
                 $agreement = $enrollment->agreement;
@@ -315,7 +369,7 @@ final class WorkspaceActionQueue
                     continue;
                 }
 
-                $rows[] = $this->row('enrollment-auto-invoice-'.$enrollment->public_id, 'enrollment_auto_invoice_refused', ($enrollment->acceptedVersion->name ?? $agreement->title).': invoice not issued automatically', $company['name'],
+                $rows[] = $this->row('enrollment-auto-invoice-'.$enrollment->public_id, 'enrollment_auto_invoice_refused', ($enrollment->carriedVersion()?->name ?? $agreement->title).': invoice not issued automatically', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->auto_invoice_period_start?->toDateString());
             }

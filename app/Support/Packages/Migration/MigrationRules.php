@@ -46,6 +46,24 @@ final class MigrationRules
         };
     }
 
+    /**
+     * Why one subscriber cannot be part of a move on `$chosen`, or null when
+     * it can (MIG-1): it must be an active service on the version moved from,
+     * in no other scheduled move, with the date among those its notice and
+     * its invoices allow. Without a date, only whether it could be moved at all.
+     */
+    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen): ?MigrationRefusal
+    {
+        return match (true) {
+            ! $activeOnFromVersion => MigrationRefusal::NotASubscriber,
+            $alreadyScheduled => MigrationRefusal::AlreadyScheduled,
+            $dates === null => MigrationRefusal::NotRecurring,
+            $dates->offered === [] => MigrationRefusal::EndsFirst,
+            $chosen !== null && ! $dates->offers($chosen) => MigrationRefusal::DateNotOffered,
+            default => null,
+        };
+    }
+
     /** Whether a subscriber's move is due on the workspace's today: from its effective date on, while scheduled. */
     public static function isDue(MigrationTargetStatus $status, CarbonInterface $effectiveOn, CarbonInterface $today): bool
     {

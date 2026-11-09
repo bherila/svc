@@ -209,11 +209,12 @@ final class ClientServiceReadService
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->whereIn('status', [EnrollmentStatus::AwaitingPayment->value, EnrollmentStatus::AwaitingReview->value, EnrollmentStatus::Active->value])
-            ->with(['version' => fn ($version) => $version->where('workspace_id', $workspace->id), 'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id)])
+            ->with(['version' => fn ($version) => $version->where('workspace_id', $workspace->id), 'acceptedVersion' => fn ($version) => $version->where('workspace_id', $workspace->id),
+                'currentVersion' => fn ($version) => $version->where('workspace_id', $workspace->id)])
             ->orderBy('id')
             ->limit(25)
             ->get() as $enrollment) {
-            $carried = $enrollment->accepted_version_id === null ? $enrollment->version : $enrollment->acceptedVersion;
+            $carried = $enrollment->carriedVersion();
             if ($carried instanceof ServicePackageVersion && $carried->require_autopay) {
                 $names[] = $carried->name;
             }

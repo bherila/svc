@@ -10,6 +10,7 @@ namespace App\Support\Packages\Migration;
 enum MigrationRefusal: string
 {
     case NotNewer = 'package_migration_not_newer';
+    case NotRecurring = 'package_migration_not_recurring';
     case NoSubscribers = 'package_migration_no_subscribers';
     case NotASubscriber = 'package_migration_not_a_subscriber';
     case AlreadyScheduled = 'package_migration_already_scheduled';
@@ -23,6 +24,7 @@ enum MigrationRefusal: string
     {
         return match ($this) {
             self::NotNewer => 'Subscribers can only move to the package\'s published version, from an older version of the same package.',
+            self::NotRecurring => 'This package does not bill in periods, so there is no period start for a move to take effect at.',
             self::NoSubscribers => 'Choose at least one subscriber to move.',
             self::NotASubscriber => 'A chosen subscriber is not an active service on the version being moved from.',
             self::AlreadyScheduled => 'A chosen subscriber is already part of another scheduled move. Cancel that move first.',

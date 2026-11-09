@@ -89,8 +89,10 @@ final class PackageEnrollmentReadService
             'clientCompany' => $scoped, 'project' => $scoped, 'package' => $scoped,
             // With its pending cancellation request and scheduled end (CAN-4, EDGE-9).
             'agreement' => static fn ($agreement) => $agreement->where('workspace_id', $workspace->id)->with(CancellationRecords::openRelations($workspace->id)),
-            'version' => $withComponents, 'acceptedVersion' => $withComponents, 'packageRequest' => $scoped,
+            'version' => $withComponents, 'acceptedVersion' => $withComponents, 'currentVersion' => $withComponents, 'packageRequest' => $scoped,
             'signupInvoice' => $scoped, 'autoInvoice' => $scoped,
+            // The move to a new version it is part of, if any (MIG-1, MIG-2).
+            ...PackageMigrationReadService::scheduledRelation($workspace->id),
         ]);
     }
 

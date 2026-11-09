@@ -60,6 +60,12 @@ enum LockResource: string
     // PortalInvitations' workspace lock).
     case ServicePackageRequest = 'service_package_requests';
     case ServicePackageEnrollment = 'service_package_enrollments';
+    // A move to a new version (MIG-1 to MIG-5): its subscribers are locked
+    // after their enrollments - automatic invoicing asks under the
+    // enrollment's lock whether a move is due - then the move, then each
+    // subscriber's target, before the agreement it ends and the one it starts.
+    case ServicePackageMigration = 'service_package_migrations';
+    case ServicePackageMigrationTarget = 'service_package_migration_targets';
 
     // Engagement, which is upstream of everything it produces.
     case ClientProposal = 'client_proposals';

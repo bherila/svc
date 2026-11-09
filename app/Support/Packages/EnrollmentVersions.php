@@ -28,7 +28,8 @@ final class EnrollmentVersions
     /** The version whose terms a client is shown for this enrollment. */
     public static function shown(ServicePackage $package, ServicePackageEnrollment $enrollment): int
     {
-        return $enrollment->accepted_version_id
+        return $enrollment->current_version_id
+            ?? $enrollment->accepted_version_id
             ?? ($enrollment->enrollmentStatus() === EnrollmentStatus::Offered ? self::toAccept($package, $enrollment) : null)
             ?? $enrollment->service_package_version_id;
     }

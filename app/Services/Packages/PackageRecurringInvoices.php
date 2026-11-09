@@ -7,6 +7,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTimeEntry;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageMigrationTarget;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Billing\Balances\BillingCycle;
@@ -25,6 +26,7 @@ use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\AutoInvoiceRefusal;
 use App\Support\Packages\AutoInvoiceResult;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
@@ -114,7 +116,7 @@ final class PackageRecurringInvoices
             ->where('status', EnrollmentStatus::Active->value)
             ->whereExists(self::automaticVersion(...))
             ->orderBy('id')
-            ->get(['id', 'public_id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'status', 'accepted_version_id', 'auto_invoice_outcome', 'auto_invoice_period_start']) as $enrollment) {
+            ->get(['id', 'public_id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'status', 'accepted_version_id', 'current_version_id', 'auto_invoice_outcome', 'auto_invoice_period_start']) as $enrollment) {
             $enrollments[$enrollment->client_agreement_id] = $enrollment;
         }
 
@@ -264,6 +266,21 @@ final class PackageRecurringInvoices
         if (! $locked instanceof ServicePackageEnrollment || $locked->enrollmentStatus() !== EnrollmentStatus::Active || $locked->client_agreement_id !== $agreement->id) {
             return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
         }
+        // MIG-3: a move to a new version taking effect by this period's start
+        // has not applied yet. The period is the new terms' to bill, once the
+        // move has started the agreement that carries them; invoiced now, the
+        // old agreement would sell it on the old terms. Asked with a locking
+        // read after the enrollment's lock, as the move itself is decided.
+        $moveDue = ServicePackageMigrationTarget::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('service_package_enrollment_id', $locked->id)
+            ->where('status', MigrationTargetStatus::Scheduled->value)
+            ->whereDate('effective_on', '<=', $periodStart)
+            ->tap(Locks::forShare())
+            ->exists();
+        if ($moveDue) {
+            return AutoInvoiceResult::skipped(AutoInvoiceResult::WAITS_FOR_MOVE);
+        }
 
         // A company-wide agreement on a cadence reaches this project's work
         // too, so its invoices and this one refuse each other over the same
@@ -281,7 +298,7 @@ final class PackageRecurringInvoices
         if ($record->id !== $locked->client_agreement_id) {
             throw new LogicException('The agreement locked is not the enrollment\'s.');
         }
-        $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($locked->accepted_version_id)->first(['id', 'invoice_issuing']);
+        $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($locked->carriedVersionId())->first(['id', 'invoice_issuing']);
         if (! $version instanceof ServicePackageVersion || PackageInvoiceIssuing::from($version->invoice_issuing) !== PackageInvoiceIssuing::Automatic) {
             return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
         }
@@ -417,12 +434,16 @@ final class PackageRecurringInvoices
         $locked->forceFill($values + ['auto_invoice_recorded_at' => $this->clock->now($workspace)->utc()])->save();
     }
 
-    /** The enrollment's signed version issues automatically, in the enrollment's workspace. */
+    /**
+     * The version the enrollment's agreement carries issues automatically, in
+     * the enrollment's workspace: the version a move put it on (MIG-3), or the
+     * one signed.
+     */
     private static function automaticVersion(QueryBuilder $version): QueryBuilder
     {
         return $version->selectRaw('1')->from('service_package_versions')
             ->whereColumn('service_package_versions.workspace_id', 'service_package_enrollments.workspace_id')
-            ->whereColumn('service_package_versions.id', 'service_package_enrollments.accepted_version_id')
+            ->whereRaw('service_package_versions.id = '.ServicePackageEnrollment::CARRIED_VERSION_SQL)
             ->where('service_package_versions.invoice_issuing', PackageInvoiceIssuing::Automatic->value);
     }
 }

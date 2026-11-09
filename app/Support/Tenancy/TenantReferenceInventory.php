@@ -125,6 +125,19 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('service_package_enrollments', 'accepted_version_id', 'service_package_versions', 'svpke_ws_accepted_version_fk'),
             TenantReference::enforcedBy('service_package_enrollments', 'signup_invoice_id', 'client_invoices', 'svpke_ws_signup_invoice_fk'),
             TenantReference::enforcedBy('service_package_enrollments', 'auto_invoice_id', 'client_invoices', 'svpke_ws_auto_invoice_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'current_version_id', 'service_package_versions', 'svpke_ws_current_version_fk'),
+
+            // Moving subscribers to a new version (MIG-1 to MIG-5): a move, its
+            // versions and every subscriber's enrollment, company and agreements
+            // stay inside the package's workspace.
+            TenantReference::enforcedBy('service_package_migrations', 'service_package_id', 'service_packages', 'svpkm_ws_package_fk'),
+            TenantReference::enforcedBy('service_package_migrations', 'from_version_id', 'service_package_versions', 'svpkm_ws_from_version_fk'),
+            TenantReference::enforcedBy('service_package_migrations', 'to_version_id', 'service_package_versions', 'svpkm_ws_to_version_fk'),
+            TenantReference::enforcedBy('service_package_migration_targets', 'service_package_migration_id', 'service_package_migrations', 'svpkt_ws_migration_fk'),
+            TenantReference::enforcedBy('service_package_migration_targets', 'service_package_enrollment_id', 'service_package_enrollments', 'svpkt_ws_enrollment_fk'),
+            TenantReference::enforcedBy('service_package_migration_targets', 'client_company_id', 'client_companies', 'svpkt_ws_company_fk'),
+            TenantReference::enforcedBy('service_package_migration_targets', 'client_agreement_id', 'client_agreements', 'svpkt_ws_agreement_fk'),
+            TenantReference::enforcedBy('service_package_migration_targets', 'successor_agreement_id', 'client_agreements', 'svpkt_ws_successor_fk'),
 
             // Cancellation (CAN-3, CAN-4, EDGE-9): a request and a scheduled
             // end stay inside their agreement's workspace.

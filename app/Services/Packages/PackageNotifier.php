@@ -7,6 +7,7 @@ use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InvoiceEmailService;
+use App\Support\Billing\Autopay\AutopayWording;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -178,6 +179,48 @@ final class PackageNotifier
             "{$agreementTitle} will continue",
             'Cancellation undone',
             ["The cancellation of {$agreementTitle} for {$company->name} on ".self::day($undoneEnd)." was undone. {$continues}"],
+            $portalUrl,
+            'View in the client portal',
+        ));
+    }
+
+    /**
+     * A move to new terms was scheduled (MIG-2): the date, what changes from
+     * what to what, the owner's message, and - when the client's autopay
+     * limit is below the new price - that SVC will not raise it (MIG-4).
+     *
+     * @param  list<array{term: string, label: string, from: string, to: string}>  $changes
+     */
+    public function moveScheduled(Workspace $workspace, ClientCompany $company, string $serviceName, CarbonInterface $effectiveOn, array $changes, ?string $message, ?int $autopayLimitBelowPrice, int $newPrice, string $currency, string $portalUrl): void
+    {
+        $paragraphs = ["{$workspace->name} is updating the terms of {$serviceName} for {$company->name}. The new terms apply from ".self::day($effectiveOn).'.'];
+        foreach ($changes as $change) {
+            $paragraphs[] = "{$change['label']}: {$change['from']} → {$change['to']}";
+        }
+        if ($message !== null && $message !== '') {
+            $paragraphs[] = "{$workspace->name}'s note: {$message}";
+        }
+        if ($autopayLimitBelowPrice !== null) {
+            $paragraphs[] = 'Your autopay limit is '.AutopayWording::money($autopayLimitBelowPrice, $currency).', below the new price of '.AutopayWording::money($newPrice, $currency)
+                .'. It will not be raised for you: an invoice above it is not charged automatically. You can change the limit in the client portal\'s billing page.';
+        }
+        $paragraphs[] = 'If you would rather not continue, you can cancel before then under your current terms.';
+        $this->send($this->clientAddresses($company), new ServicePackageNoticeMail(
+            "{$serviceName}: new terms from ".self::day($effectiveOn),
+            'Your service terms are changing',
+            $paragraphs,
+            $portalUrl,
+            'View in the client portal',
+        ));
+    }
+
+    /** A scheduled move was cancelled before its date (MIG-5): the terms stay as they are. */
+    public function moveCancelled(Workspace $workspace, ClientCompany $company, string $agreementTitle, string $newServiceName, CarbonInterface $effectiveOn, string $portalUrl): void
+    {
+        $this->send($this->clientAddresses($company), new ServicePackageNoticeMail(
+            "{$agreementTitle}: the change of terms is cancelled",
+            'Your terms stay as they are',
+            ["{$workspace->name} cancelled the move of {$agreementTitle} for {$company->name} to {$newServiceName} from ".self::day($effectiveOn).'. Your current terms continue unchanged.'],
             $portalUrl,
             'View in the client portal',
         ));
