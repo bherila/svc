@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-up requests · Herila Consulting</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
+input,textarea,select{background:#0b1120;color:#e5e7eb;font-family:inherit}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+.app{font-family:Inter,system-ui,sans-serif;color:#e5e7eb;background:#0b1120;min-height:100vh}
+.bar{background:#111827;border-bottom:1px solid #1f2937}
+.bar-in{max-width:1440px;margin:0 auto;padding:0 16px;height:56px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nav{display:flex;gap:4px;font-size:14px;flex:1;min-width:0;overflow-x:auto}
+.nav a{padding:8px 12px;border-radius:6px;color:#cbd5e1;text-decoration:none;white-space:nowrap}
+.nav a.on{background:#172554;color:#93c5fd;font-weight:600}
+.sub{display:flex;gap:4px;font-size:14px;border-bottom:1px solid #1f2937;margin:-4px 0 4px;overflow-x:auto}
+.sub a{padding:10px 12px;color:#cbd5e1;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
+.sub a.on{color:#e5e7eb;font-weight:600;border-bottom-color:#93c5fd}
+.avatar{width:32px;height:32px;border-radius:16px;background:#cbd5e1;color:#111827;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none}
+.iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f2937;background:#111827;border-radius:8px;padding:6px 10px;font-size:13px;color:#e5e7eb;min-height:36px;box-sizing:border-box}
+main{max-width:1440px;margin:0 auto;box-sizing:border-box;padding:24px 16px 48px;display:flex;flex-direction:column;gap:20px}
+h1{margin:0;font-size:24px;font-weight:600}
+h2{margin:0 0 12px;font-size:16px;font-weight:600}
+h3{margin:0 0 8px;font-size:14px;font-weight:600;color:#cbd5e1}
+.card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:20px;min-width:0}
+.muted{color:#9ca3af;font-size:13px}
+.soft{color:#cbd5e1}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.between{justify-content:space-between}
+.grid1{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch}
+.main-side{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,var(--side,380px));gap:20px;align-items:start}
+@media (max-width:980px){.main-side{grid-template-columns:minmax(0,1fr)}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #374151;background:#111827;color:#e5e7eb;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:500;min-height:40px;box-sizing:border-box;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.primary{background:#e5e7eb;color:#111827;border-color:#e5e7eb;font-weight:600}
+.btn.danger{border-color:#7f1d1d;color:#fca5a5}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.badge{display:inline-block;font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.b-green{background:#052e16;color:#86efac}.b-blue{background:#172f5e;color:#93c5fd}
+.b-amber{background:#3a2a0a;color:#fcd34d}.b-gray{background:#1f2937;color:#cbd5e1}.b-red{background:#3b0d0d;color:#fca5a5}
+.tw{overflow-x:auto;min-width:0;max-width:100%}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:#9ca3af;font-size:13px;padding:8px 12px;border-bottom:1px solid #1f2937;white-space:nowrap}
+td{padding:11px 12px;border-top:1px solid #1a2332;white-space:nowrap;vertical-align:top}
+td.prose{max-width:0;white-space:normal;overflow-wrap:anywhere;min-width:220px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.field{display:flex;flex-direction:column;gap:6px;font-size:14px;min-width:0}
+.field label{font-weight:500}
+.input{border:1px solid #374151;border-radius:8px;padding:9px 11px;font-size:14px;min-height:40px;box-sizing:border-box;width:100%}
+textarea.input{min-height:96px;resize:vertical}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.check input{margin-top:3px}
+.radio-card{border:1px solid #374151;border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.radio-card.on{border-color:#93c5fd;background:#0f1a33}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 16px;font-size:14px}
+.kv dt{color:#9ca3af}.kv dd{margin:0;overflow-wrap:anywhere}
+.steps{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px;color:#9ca3af}
+.steps .cur{color:#e5e7eb;font-weight:600}
+.steps .done{color:#86efac}
+.tip{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:9px;border:1px solid #374151;font-size:11px;color:#9ca3af;vertical-align:middle;margin-left:6px}
+.note{border-left:3px solid #93c5fd;background:#0f172a;padding:10px 14px;border-radius:6px;font-size:14px}
+.note.warn{border-left-color:#fcd34d}
+.divider{border-top:1px solid #1a2332;margin:14px 0}
+.list{display:flex;flex-direction:column}
+.list > div{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid #1a2332;font-size:14px}
+.list > div:first-child{border-top:0}
+.price{font-size:30px;font-weight:600;letter-spacing:-0.02em}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.trunc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cardbox{border:1px dashed #374151;border-radius:8px;padding:12px;font-size:14px;color:#9ca3af}
+.annot{border:1px dashed #a78bfa;color:#ddd6fe;background:#1e1533;border-radius:8px;padding:10px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<!-- Service packages mockup (1440 px). Static reference, not code to ship. Every name, amount and address is made up. -->
+<div class="app">
+<header class="bar"><div class="bar-in">
+  <div class="brand"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" aria-hidden="true"><path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path></svg> Herila Consulting</div>
+  <nav class="nav" aria-label="Workspace"><a href="#" class="">Dashboard</a><a href="#" class="on">Clients</a><a href="#" class="">Invoices</a><a href="#" class="">Time</a><a href="#" class="">Finance</a></nav>
+  <div class="row" style="gap:8px;flex-wrap:nowrap"><span class="iconbtn" aria-label="Search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></span><span class="iconbtn">? Help</span><span class="avatar">BH</span></div>
+</div></header>
+<main>
+  <nav class="sub" aria-label="Clients"><a href="#" class="">All clients</a><a href="PackagesAdmin.dc.html" class="">Packages</a><a href="PackageRequests.dc.html" class="on">Sign-up requests · 2</a></nav>
+  <h1>Sign-up requests</h1>
+  <div class="main-side" style="--side:520px">
+    <section class="card" aria-label="Requests">
+      <div class="tw"><table>
+        <thead><tr><th style="min-width:200px">From</th><th>Package</th><th>Received</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr style="background:#0f1a33"><td class="prose"><a href="#">Lakeside Bakery</a><div class="muted trunc">Morgan Ortiz · morgan.lakeside@example.com</div></td><td>Hosting + Care plan</td><td>Today 9:14</td><td><span class="badge b-blue">New</span></td></tr>
+          <tr><td class="prose"><a href="#">Pine Street Dental</a><div class="muted trunc">existing client · Sam Lee</div></td><td>Web hosting · Essentials</td><td>Yesterday</td><td><span class="badge b-blue">New</span></td></tr>
+          <tr><td class="prose"><span class="soft">Harbor Yoga</span><div class="muted trunc">Ana Ruiz · ana.harbor@example.org</div></td><td>Web hosting · Essentials</td><td>Nov 4</td><td><span class="badge b-amber">Invited</span></td></tr>
+          <tr><td class="prose"><span class="soft">Quick Loans 4U</span><div class="muted trunc">no-reply@example.net</div></td><td>Site health audit</td><td>Nov 2</td><td><span class="badge b-gray">Declined</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="card" aria-label="Request from Lakeside Bakery">
+      <div class="row between"><h2 style="margin:0">Lakeside Bakery</h2><span class="badge b-blue">New</span></div>
+      <div class="muted" style="margin:4px 0 14px">Hosting + Care plan · v2 · received today 9:14</div>
+      <dl class="kv">
+        <dt>Contact</dt><dd>Morgan Ortiz</dd>
+        <dt>Email</dt><dd>morgan.lakeside@example.com <span class="muted">· no account here yet</span></dd>
+        <dt>Phone</dt><dd class="muted">—</dd>
+        <dt>Domain</dt><dd>lakeside.example.com</dd>
+        <dt>Hosted now</dt><dd>Shared host, renews in January</dd>
+        <dt>First hours</dt><dd>Online ordering page is slow on phones.</dd>
+      </dl>
+      <div class="divider"></div>
+      <h3>Approving will</h3>
+      <ul style="margin:0 0 14px;padding-left:18px;font-size:14px;line-height:1.7;color:#cbd5e1">
+        <li>Create the client <strong>Lakeside Bakery</strong> and its project <strong>Hosting + Care plan</strong></li>
+        <li>Invite morgan.lakeside@example.com to the portal with company-wide access</li>
+        <li>Offer the package for acceptance and payment ($895 due at sign-up)</li>
+      </ul>
+      <div class="field"><label>Client</label><select class="input"><option>Create new: Lakeside Bakery</option><option>Pine Street Dental (existing)</option></select></div>
+      <div class="row" style="margin-top:16px;justify-content:flex-end;gap:8px"><a href="#">Decline…</a><button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg> Approve and invite</button></div>
+    </section>
+  </div>
+
+  <section class="card" aria-label="Dashboard Needs you (excerpt)" style="max-width:860px">
+    <h2>Needs you <span class="muted" style="font-weight:400">· dashboard excerpt</span></h2>
+    <div class="list">
+      <div><span>2 sign-up requests to review</span><a href="#">Review</a></div>
+      <div><span>Activate Pine Street Dental · Web hosting · Essentials (paid Nov 8)</span><a href="#">Review</a></div>
+      <div><span>Cancellation request · Corner Florist · Hosting + Care plan, ends Jan 31</span><a href="AdminAgreementCancellation.dc.html">Review</a></div>
+    </div>
+  </section>
+  <div class="annot"><strong>Design note.</strong> Approval can attach the request to an existing client instead of creating one, so a returning contact doesn't produce a duplicate company. Declining asks for an optional reason and emails the visitor. An approved request whose invitation is still pending shows 'Invited', with Resend and Withdraw.</div>
+</main>
+</div>
+</body>
+</html>

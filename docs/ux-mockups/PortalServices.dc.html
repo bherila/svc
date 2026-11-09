@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Services · Lakeside Bakery</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark}
+:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;border-radius:6px}
+input,textarea,select{background:#0b1120;color:#e5e7eb;font-family:inherit}
+body{margin:0;background:#0b1120}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+button{font-family:inherit}
+.app{font-family:Inter,system-ui,sans-serif;color:#e5e7eb;background:#0b1120;min-height:100vh}
+.bar{background:#111827;border-bottom:1px solid #1f2937}
+.bar-in{max-width:1440px;margin:0 auto;padding:0 16px;height:56px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nav{display:flex;gap:4px;font-size:14px;flex:1;min-width:0;overflow-x:auto}
+.nav a{padding:8px 12px;border-radius:6px;color:#cbd5e1;text-decoration:none;white-space:nowrap}
+.nav a.on{background:#172554;color:#93c5fd;font-weight:600}
+.sub{display:flex;gap:4px;font-size:14px;border-bottom:1px solid #1f2937;margin:-4px 0 4px;overflow-x:auto}
+.sub a{padding:10px 12px;color:#cbd5e1;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap}
+.sub a.on{color:#e5e7eb;font-weight:600;border-bottom-color:#93c5fd}
+.avatar{width:32px;height:32px;border-radius:16px;background:#cbd5e1;color:#111827;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex:none}
+.iconbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f2937;background:#111827;border-radius:8px;padding:6px 10px;font-size:13px;color:#e5e7eb;min-height:36px;box-sizing:border-box}
+main{max-width:1440px;margin:0 auto;box-sizing:border-box;padding:24px 16px 48px;display:flex;flex-direction:column;gap:20px}
+h1{margin:0;font-size:24px;font-weight:600}
+h2{margin:0 0 12px;font-size:16px;font-weight:600}
+h3{margin:0 0 8px;font-size:14px;font-weight:600;color:#cbd5e1}
+.card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:20px;min-width:0}
+.muted{color:#9ca3af;font-size:13px}
+.soft{color:#cbd5e1}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.between{justify-content:space-between}
+.grid1{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px;align-items:stretch}
+.main-side{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,var(--side,380px));gap:20px;align-items:start}
+@media (max-width:980px){.main-side{grid-template-columns:minmax(0,1fr)}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #374151;background:#111827;color:#e5e7eb;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:500;min-height:40px;box-sizing:border-box;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.primary{background:#e5e7eb;color:#111827;border-color:#e5e7eb;font-weight:600}
+.btn.danger{border-color:#7f1d1d;color:#fca5a5}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.badge{display:inline-block;font-size:12px;font-weight:600;border-radius:6px;padding:3px 8px;white-space:nowrap}
+.b-green{background:#052e16;color:#86efac}.b-blue{background:#172f5e;color:#93c5fd}
+.b-amber{background:#3a2a0a;color:#fcd34d}.b-gray{background:#1f2937;color:#cbd5e1}.b-red{background:#3b0d0d;color:#fca5a5}
+.tw{overflow-x:auto;min-width:0;max-width:100%}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:#9ca3af;font-size:13px;padding:8px 12px;border-bottom:1px solid #1f2937;white-space:nowrap}
+td{padding:11px 12px;border-top:1px solid #1a2332;white-space:nowrap;vertical-align:top}
+td.prose{max-width:0;white-space:normal;overflow-wrap:anywhere;min-width:220px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.field{display:flex;flex-direction:column;gap:6px;font-size:14px;min-width:0}
+.field label{font-weight:500}
+.input{border:1px solid #374151;border-radius:8px;padding:9px 11px;font-size:14px;min-height:40px;box-sizing:border-box;width:100%}
+textarea.input{min-height:96px;resize:vertical}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.check input{margin-top:3px}
+.radio-card{border:1px solid #374151;border-radius:10px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.radio-card.on{border-color:#93c5fd;background:#0f1a33}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 16px;font-size:14px}
+.kv dt{color:#9ca3af}.kv dd{margin:0;overflow-wrap:anywhere}
+.steps{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px;color:#9ca3af}
+.steps .cur{color:#e5e7eb;font-weight:600}
+.steps .done{color:#86efac}
+.tip{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:9px;border:1px solid #374151;font-size:11px;color:#9ca3af;vertical-align:middle;margin-left:6px}
+.note{border-left:3px solid #93c5fd;background:#0f172a;padding:10px 14px;border-radius:6px;font-size:14px}
+.note.warn{border-left-color:#fcd34d}
+.divider{border-top:1px solid #1a2332;margin:14px 0}
+.list{display:flex;flex-direction:column}
+.list > div{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid #1a2332;font-size:14px}
+.list > div:first-child{border-top:0}
+.price{font-size:30px;font-weight:600;letter-spacing:-0.02em}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.trunc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cardbox{border:1px dashed #374151;border-radius:8px;padding:12px;font-size:14px;color:#9ca3af}
+.annot{border:1px dashed #a78bfa;color:#ddd6fe;background:#1e1533;border-radius:8px;padding:10px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<!-- Service packages mockup (1440 px). Static reference, not code to ship. Every name, amount and address is made up. -->
+<div class="app">
+<header class="bar"><div class="bar-in">
+  <div class="brand">Lakeside Bakery</div>
+  <nav class="nav" aria-label="Portal"><a href="#" class="">Overview</a><a href="#" class="">Invoices</a><a href="#" class="">Hours</a><a href="#" class="">Tasks</a><a href="#" class="on">Services</a></nav>
+  <div class="row" style="gap:8px;flex-wrap:nowrap"><span class="iconbtn">? Help</span><span class="avatar" style="background:#14b8a6">MO</span></div>
+</div></header>
+<main>
+  <h1>Services</h1>
+  <section class="card" aria-label="Your services">
+    <h2>Your services</h2>
+    <div class="tw"><table>
+      <thead><tr><th style="min-width:220px">Service</th><th>Price</th><th>Since</th><th>Status</th><th>Can end from</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="prose">Hosting + Care plan<div class="muted">5 h a month · 2.5 h used in November</div></td><td>$645 / month</td><td>Nov 9</td><td><span class="badge b-green">Active</span></td><td>May 31 <span class="tip" title="6-month minimum term, then 30 days' notice. Ends at the close of a billing month.">?</span></td><td class="num"><a href="PortalCancel.dc.html">Request cancellation…</a></td></tr>
+        <tr><td class="prose">Site health audit<div class="muted">One-time</div></td><td>$900 once</td><td>Nov 9</td><td><span class="badge b-amber">Waiting for review</span></td><td class="muted">—</td><td class="num"><a href="#">View</a></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-label="Add a service" class="grid1" style="gap:12px">
+    <h2 style="font-size:18px;margin:0">Add a service</h2>
+    <div class="grid3">
+      <section class="card" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0">Web hosting · Essentials</h2><div><span class="price" style="font-size:24px">$45</span> <span class="muted">per month · setup $150</span></div><div class="muted">Managed hosting, SSL, backups</div><a href="PortalCheckout.dc.html" style="margin-top:auto">Review and add…</a></section>
+      <section class="card" style="display:flex;flex-direction:column;gap:8px"><h2 style="margin:0">Web hosting · Pro</h2><div><span class="price" style="font-size:24px">$95</span> <span class="muted">per month</span></div><div class="muted">Staging site, priority support</div><a href="PortalCheckout.dc.html" style="margin-top:auto">Review and add…</a></section>
+    </div>
+  </section>
+  <div class="annot"><strong>Design note.</strong> Shown only to contacts with company-wide access; project-limited contacts see their services without the add and cancel links. 'Can end from' is computed by the server from the agreement's own notice period and minimum term, the same rule the cancellation dialog uses. An existing client adding a package skips the request step: they go straight to review, sign and pay, and the package's own activation rule applies.</div>
+</main>
+</div>
+</body>
+</html>

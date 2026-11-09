@@ -1,0 +1,353 @@
+# Service packages: self-serve sign-up, add-ons and cancellation
+
+Status: **design, not built.** Decisions below were settled with the owner on
+2026-11-09. Mockups live in [`ux-mockups/`](ux-mockups/README.md) under
+"Service packages". Every name, amount and address in them is made up.
+
+## What it is
+
+An owner or admin defines **packages**: fixed bundles of agreement terms, such
+as "Web hosting · Essentials" or "Hosting + Care plan" (hosting plus a
+retainer). Each package has its own public page and link, and can also be
+listed on a workspace catalog page.
+
+- **New clients** request a package from its page. An owner or admin approves
+  the request, which creates the client and invites the contact. The contact
+  then signs in, accepts the agreement and pays.
+- **Existing clients** add packages from the portal's new **Services** tab,
+  and request or schedule cancellation there.
+- **Owners and admins** can move a package's subscribers to a new version of
+  its terms, after notice.
+
+## Settled decisions
+
+| Area | Decision |
+| --- | --- |
+| Shape | Fixed bundles; no client-selectable add-ons. "Hosting" and "Hosting + retainer" are two packages. |
+| Components | Recurring items (e.g. hosting), an optional hourly rate, an optional retainer (amount, minutes, rollover), and an optional one-time setup fee. All use the agreement and recurring-item fields that exist today. |
+| Admission of a new person | **Request, then invite.** The public form records a request only. An owner or admin approves it, which creates the client company and the project and sends the existing portal invitation (`PortalInvitations`) as the approver. Nothing is admitted automatically, so the provider's per-actor invitation limits are never exposed to the public. |
+| What approval covers | **The client, not the agreement.** After sign-in the client accepts and pays; the agreement then follows the package's own activation rule. |
+| Existing clients | Add a package from the portal with no request step: review, sign, pay, then the package's activation rule. |
+| Who at the client may add or cancel | Portal contacts with **company-wide** access, the same people who manage cards and autopay today. Project-limited contacts see their services, read-only. |
+| Projects | Every subscription gets **its own client project**, with its agreement attached to that project. This satisfies today's one-active-agreement-per-company-and-project rule without changing it, and gives labor packages a project to log time against. |
+| Activation | Per package: **start automatically** or **I review first**. |
+| Up-front payment | Per package, any combination of: a **setup fee**, the **first period in advance**, a **saved card with autopay** (at a limit the package sets and the client authorizes as worded today), and **start only once paid**. Stripe only. |
+| Payment processor | **Stripe only.** SVC only reads Square (`SquareEndpoint` allows GETs and searches), so a package that takes money requires a Stripe connection to publish. |
+| Recurring invoices | Per package: **issue and charge automatically** (a new scheduled job) or **draft for review**. Auto-issue is allowed only for fixed-price packages. A package with an hourly rate or retainer overage always drafts. |
+| Intake | Contact details (company, name, email, optional phone) plus **questions defined per package** (short text or paragraph, optionally required). |
+| Anti-spam | Hidden honeypot field, a minimum fill time, per-IP and per-package throttles, and a per-address cap on open requests. No third-party script. |
+| Public pages | A per-package link, plus a **catalog** page for packages marked listed. The pages show the workspace name and an uploaded logo, served by SVC. |
+| Cancellation terms | Every **agreement** can carry them (packages pre-fill them): a notice period, an optional minimum term in months, and portal mode **none**, **request** (owner/admin approves) or **self-serve** (ends automatically). |
+| End date | The **close of the billing period** in which the notice period runs out, and never before the minimum term ends. Paid periods are never cut short. The server offers only legal end dates. |
+| Editing a package | Publishing creates a new **version**. Each agreement records the version it came from and keeps its own copy of the terms. |
+| Moving subscribers | **Notice, then automatic.** The owner/admin picks subscribers and an effective date at the start of a billing period, after every selected client's notice period. Clients get an email and a portal notice, and the new terms apply on that date unless they cancel first. |
+| Email | Owners/admins: a new request; a cancellation requested or scheduled. Clients: service activated; cancellation accepted (with its end date); request declined (to the visitor). |
+
+### Defaults the owner accepted
+
+- **Already signed in:** a visitor with an account still submits a request.
+  Approval grants access directly, with no provider invitation.
+- **Lapsing:** an accepted package that requires payment and stays unpaid
+  lapses after 14 days (set per package). Its setup invoice is voided, and an
+  owner/admin can offer the package again.
+- **Tax:** recurring items keep their existing taxable flag.
+- **Feature flag:** `SVC_SERVICE_PACKAGES_ENABLED`, off by default. Public
+  requests from new people also need `SVC_PORTAL_INVITATIONS_ENABLED`.
+- **Bug fix:** `AgreementWorkflow::terminate()` will write `terminated_at`.
+  The screens and revenue projection already read it, but nothing has ever
+  written it.
+
+## Flows
+
+### New client
+
+    public page ── request ──▶ Needs you ── approve ──▶ company + project + draft agreement
+                                         └─ decline ──▶ email to visitor
+    portal invitation ──▶ sign-in ──▶ review & sign ──▶ pay (if required)
+        ──▶ activate automatically, or Needs you ── activate
+        └─ unpaid past the lapse date ──▶ lapsed; setup invoice voided
+
+The agreement is created as `draft` when the request is approved. It is
+signed at acceptance, and activated through the existing
+`AgreementWorkflow::activate()`. That call is made either by the payment
+webhook, by the acceptance itself, or by the owner/admin, according to the
+package's activation and payment rules. No new agreement status is needed: an
+**enrollment** row records why a draft is waiting (see the data model below).
+
+### Existing client adds a package
+
+Portal Services ▸ Review and add… ▸ sign ▸ pay ▸ the same activation rule.
+SVC creates the project and the draft agreement when the client accepts, not
+when they open the page.
+
+### Cancellation
+
+The client picks an end date from the dates the server offers. In
+**self-serve** mode, `terminate()` runs with that date straight away and the
+client sees "Ends Dec 31". In **request** mode, a cancellation request sits in
+Needs you. The owner/admin approves it (which runs `terminate()` with the
+date chosen) or declines it. The client can withdraw a pending request.
+Billing then follows today's termination rules: the final month is prorated,
+deferred work is collected, and rollover is forfeited the month after.
+
+### Moving subscribers to a new version
+
+The owner/admin selects subscribers, sets an effective date and adds a
+message. Each client gets an email and a portal notice. On the effective date,
+a scheduled step applies the new terms through an audited, versioned update of
+the agreement and its recurring items, skipping any client that has cancelled.
+An autopay limit below the new price is flagged and never raised.
+
+## Data model sketch
+
+All tables are tenant-owned. Each needs: `workspace_id`, `public_id`,
+composite tenant keys, a `TenantReferenceInventory` entry, `LockResource`
+placement, and isolation tests (see
+[tenant foreign keys](client-management/tenant-foreign-keys.md) and
+[concurrency](client-management/concurrency.md)).
+
+- `service_packages`: link name, status (`draft`, `published`, `retired`),
+  `is_listed`, `portal_addable`, the current published version.
+- `service_package_versions`: immutable once published. Name, short
+  description, Markdown body, agreement text, currency, cadence, hourly rate,
+  retainer terms, setup fee, payment rules (first period in advance, autopay
+  required and its limit, pay before activation, lapse days), activation mode,
+  invoice issuing mode, cancellation terms, and intake questions.
+- `service_package_components`: per version. Description, kind (recurring,
+  setup fee), cadence, amount, quantity, taxable, order.
+- `service_package_requests`: version, company name, contact name, email,
+  phone, answers, status (`new`, `approved`, `declined`, `withdrawn`), the
+  resulting company and portal invitation, who decided, a reason, and a
+  hashed client fingerprint for throttling.
+- `service_package_enrollments`: company, project, agreement, version, status
+  (`offered`, `accepted`, `awaiting_payment`, `awaiting_review`, `active`,
+  `lapsed`, `declined`), signer, acceptance time, setup invoice, and autopay
+  consent.
+- `client_agreements` gains: `service_package_version_id`, `notice_days`,
+  `minimum_term_months`, `cancellation_mode` (`none`, `request`,
+  `self_serve`). `terminated_at` is now written.
+- `agreement_cancellation_requests`: requested by, requested end date, reason,
+  status (`pending`, `approved`, `declined`, `withdrawn`), who decided, the
+  decided end date, a note.
+- `service_package_migrations` and their targets: from/to version, effective
+  date, message, status, and per-agreement outcome.
+- Workspace public profile: the catalog token and the logo, as a private
+  attachment served by SVC.
+
+## Requirements
+
+Each requirement is meant to be checked against the code and its tests once
+the feature is built. "Owner/admin" means a workspace membership with the
+`manage` ability. "Company contact" means a portal member of the client
+company with `access_scope = company`.
+
+### Packages (PKG)
+
+- **PKG-1** Only owners/admins can create, edit, publish, retire or list a
+  workspace's packages. Every package read and write is scoped to the
+  workspace and covered by an isolation test.
+- **PKG-2** A package has a draft version until it is published. Publishing
+  freezes that version. Any later edit makes a new draft version, and
+  published versions are never changed.
+- **PKG-3** A version holds every term listed in the data model sketch.
+  Amounts are integer minor units in an ISO 4217 currency; durations are
+  integer minutes, days or months.
+- **PKG-4** Publishing is refused when the version requires any payment (a
+  setup fee, the first period, autopay or pay-before-activation) and the
+  workspace has no active Stripe connection.
+- **PKG-5** Publishing is refused when the version is set to issue invoices
+  automatically and has an hourly rate, a retainer, or anything else that
+  bills by usage.
+- **PKG-6** A retired package accepts no new requests or portal additions.
+  Its existing agreements are untouched.
+- **PKG-7** An agreement made from a package records the version it came
+  from. Every term it uses is copied onto the agreement and its recurring
+  items at acceptance, and nothing reads package terms back at billing time.
+
+### Public pages and requests (PUB)
+
+- **PUB-1** The public package page and the catalog need no sign-in, and
+  appear only while the feature flag is on and the package is published.
+  A retired, draft or unknown package returns a 404 that does not reveal
+  which.
+- **PUB-2** Public URLs contain no workspace or package database ID or UUID.
+  The catalog is addressed by an unguessable per-workspace token; a package by
+  that token plus its link name.
+- **PUB-3** The catalog lists only published packages marked listed. An
+  unlisted package is reachable only by its own link.
+- **PUB-4** Submitting the request form writes one request row and nothing
+  else: no company, user, invitation, agreement or invoice.
+- **PUB-5** The form refuses a filled honeypot or a submission faster than
+  the minimum fill time, without saying which. It is throttled per IP and per
+  package, and capped at a set number of open requests per email address.
+- **PUB-6** Visitor-supplied text is stored as written, rendered escaped, and
+  marked untrusted wherever an agent can read it.
+- **PUB-7** Public pages load no third-party script, font or image, and the
+  logo is served by SVC. The page satisfies the enforcing CSP.
+- **PUB-8** Each new request emails the workspace's owners/admins, and the
+  request appears in the dashboard's Needs you list.
+
+### Approval and admission (ADM)
+
+- **ADM-1** Only an owner/admin can approve or decline a request. The decision
+  is recorded with who made it and when, and is applied under a row lock so
+  that two decisions on the same request cannot both succeed.
+- **ADM-2** Approving creates (or, if the owner/admin chooses, reuses) the
+  client company, a project for the subscription, and a draft agreement
+  carrying the version's terms. It then invites the contact through
+  `PortalInvitations` with company-wide access, acting as the approver. If the
+  provider refuses the invitation, nothing is created.
+- **ADM-3** A visitor who already has an account here is given portal access
+  directly on approval; no provider invitation is sent.
+- **ADM-4** Declining emails the visitor, with the optional reason, and
+  creates nothing.
+- **ADM-5** The provider's invitation link is never shown on a public page or
+  returned to an agent.
+
+### Acceptance, payment and activation (ACC)
+
+- **ACC-1** Only a company contact of the subscribing company can accept a
+  package, whether it was offered after approval or added from the portal.
+- **ACC-2** Accepting records the signer's name, optional title, the user,
+  the time and the exact version accepted, all of which are immutable. It
+  signs the draft agreement and is idempotent for the same signer.
+- **ACC-3** When the version charges a setup fee or the first period, one
+  invoice for those amounts is issued at acceptance and paid through the
+  existing Stripe PaymentIntent flow. A setup fee appears either on that
+  invoice or as an agreement recurring item, never both.
+- **ACC-4** When the version requires autopay, acceptance saves a card, and
+  the client's consent is recorded through `AutopayConsentService` as client
+  consent, using the existing wording with the version's limit.
+- **ACC-5** Activation runs `AgreementWorkflow::activate()`, and only once
+  three things hold: acceptance is recorded, any required payment has
+  succeeded (as confirmed by the Stripe webhook), and the version starts
+  automatically or an owner/admin has activated it.
+- **ACC-6** An enrollment still unpaid at its lapse date is marked lapsed, its
+  unpaid setup invoice is voided, and its draft agreement is never activated.
+- **ACC-7** Activation emails the client. Activation awaiting review appears
+  in Needs you.
+- **ACC-8** A company contact can add a portal-addable package without a
+  request. Project-limited contacts and staff previewing the portal cannot.
+
+### Recurring invoices (INV)
+
+- **INV-1** A package agreement set to issue automatically has each billing
+  period's invoice generated and issued by a scheduled command. The run is
+  idempotent per agreement and period, and follows the existing cadence
+  guards and automatic delivery.
+- **INV-2** A package agreement set to draft gets drafts only. Nothing issues
+  them without an owner/admin.
+- **INV-3** No path issues an invoice for an agreement that Square collects.
+
+### Cancellation (CAN)
+
+- **CAN-1** Any agreement can carry a notice period in days, a minimum term
+  in months and a portal cancellation mode (`none`, `request` or
+  `self_serve`). Package agreements copy these from their version; other
+  agreements default to `none`.
+- **CAN-2** The earliest end date is the close of the billing period in which
+  (today + notice) falls, and no earlier than the end of the minimum term.
+  The server offers that date and later period closes; any other date is
+  refused.
+- **CAN-3** In `self_serve` mode, a company contact's cancellation terminates
+  the agreement on the chosen date immediately. In `request` mode it creates a
+  pending request. In `none` mode the portal offers no cancellation.
+- **CAN-4** A company contact can withdraw a pending request. An owner/admin
+  can approve it (on the requested or another date, including waiving notice)
+  or decline it, with a note.
+- **CAN-5** Termination writes `status`, `ends_on` and `terminated_at`, and
+  records activity. Billing after it follows the existing termination rules.
+- **CAN-6** A scheduled or requested cancellation emails owners/admins; an
+  accepted cancellation emails the client with the end date.
+
+### Version migration (MIG)
+
+- **MIG-1** An owner/admin can schedule a move from one version to another
+  for selected agreements. The effective date is the start of a billing
+  period, and no earlier than each selected agreement's notice period allows.
+- **MIG-2** Scheduling emails each affected client and shows a portal notice
+  with the old and new terms and the date.
+- **MIG-3** On the effective date, each still-active agreement's terms and
+  recurring items are updated through an audited, versioned update, and the
+  agreement records the new version. Agreements that have been terminated are
+  skipped and the skip is recorded.
+- **MIG-4** SVC never raises an autopay limit. A limit below the new price is
+  flagged to the owner/admin before scheduling.
+- **MIG-5** A scheduled move can be cancelled before its effective date, which
+  notifies the clients again.
+
+### Cross-cutting (X)
+
+- **X-1** Everything sits behind `SVC_SERVICE_PACKAGES_ENABLED`, which is off
+  by default. While it is off, no route, nav item, tool or scheduled command
+  of this feature is reachable.
+- **X-2** Money moves only through Stripe adapters. Nothing writes to Square.
+- **X-3** Every enum this feature adds to billing paths is matched
+  exhaustively, with no `default` arm.
+- **X-4** Every new screen renders through `WorkspaceShell` (or the portal and
+  public shells) and passes the 390/820/1440/1920 layout checks in
+  [docs/ui.md](ui.md).
+- **X-5** No work depends on a queue worker. Emails and provider calls that
+  must happen after a commit are deferred to commit explicitly.
+
+## Decision log (2026-11-09 interview)
+
+| Question | Answer |
+| --- | --- |
+| Activation on sign-up | Per-package setting |
+| Payment at sign-up | Per package: initial payment and recurring billing through the payment integration |
+| Add-ons | Fixed bundles |
+| Cancellation | The agreement or package specifies the notice period, and whether a request terminates automatically |
+| Admitting a new person | Request, then invite |
+| Recurring invoices | Per-package toggle; automatic issuing for fixed-price packages only |
+| Up-front options | Setup fee, first period in advance, card and autopay on file, activate only once paid (all available) |
+| Second package for a client | A project per subscription |
+| What approval covers | The client, not the agreement |
+| Intake | Questions per package |
+| Anti-spam | Honeypot and rate limits |
+| Public pages | Per-package links plus an optional catalog, with a logo |
+| End date | End of the billing period after notice |
+| Minimum term | Optional, per package |
+| Package edits | Offer a migration |
+| Email | New request (admins); cancellation (admins); activation and cancellation confirmations (client); request declined (visitor) |
+| Who can add or cancel | Company-wide contacts |
+| Scope of cancellation terms | Any agreement |
+| Migration consent | Notice, then automatic |
+| Autopay limit | Set by the package |
+| The defaults listed above | Accepted |
+
+## Open items for the next round
+
+- MCP and REST surface: see the draft below, to be settled in discussion.
+- Wording of the client emails and the "Approving will" summary.
+- Whether "first period in advance" covers the whole first cycle or the
+  prorated part only. The mockup assumes **prorated**, matching
+  `first_cycle_proration`.
+
+## MCP and REST surface (draft for discussion)
+
+The conventions are the ones every existing operation follows. Each operation
+is declared once in `AgentOperationCatalog`, with REST and MCP generated from
+the same declaration. Writes take an idempotency key, versioned writes an
+opaque `expected_version`, and irreversible or client-facing acts
+`confirm: true`. A new scope group becomes a toolset automatically, and its
+writes sit behind a deployment switch that is off by default. Public pages
+are not part of the agent API.
+
+| Operation | Scope | Notes |
+| --- | --- | --- |
+| `packages.list`, `packages.get` | `packages:read` | Includes versions, subscriber counts and the public URL |
+| `packages.create`, `packages.update` | `packages:write` | Edits the draft version only |
+| `packages.publish`, `packages.retire` | `packages:write` | `confirm` |
+| `package_requests.list`, `package_requests.get` | `packages:read` | Request text is visitor-supplied and marked untrusted |
+| `package_requests.approve`, `package_requests.decline` | `packages:write` | `confirm`; approve sends the invitation, decline emails |
+| `enrollments.list`, `enrollments.get` | `packages:read` | |
+| `enrollments.activate` | `packages:write` | `confirm`; same rule as `agreements.activate` |
+| `cancellation_requests.list`, `cancellation_requests.get` | `billing:read` | |
+| `cancellation_requests.approve`, `cancellation_requests.decline` | `clients:write` | `confirm` |
+| `agreements.update` | `clients:write` | Gains `notice_days`, `minimum_term_months`, `cancellation_mode` |
+| `package_migrations.preview`, `package_migrations.schedule`, `package_migrations.cancel` | `packages:write` | `schedule` and `cancel` take `confirm`, since they email clients |
+
+Deliberately not exposed: acceptance and payment (they need the client's own
+browser and Stripe), the invitation link (a bearer secret, as today), and any
+write by a client agent beyond what the portal allows.
