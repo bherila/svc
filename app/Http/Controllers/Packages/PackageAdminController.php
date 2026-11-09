@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Packages;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClientCompany;
 use App\Models\ServicePackage;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\Billing\ChargeCadence;
@@ -17,6 +19,7 @@ use App\Support\Packages\PackageActivationMode;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\Packages\PackagePublicUrls;
+use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use Illuminate\Http\Request;
@@ -38,6 +41,7 @@ final class PackageAdminController extends Controller
         private readonly AgentAccess $access,
         private readonly PaymentConnectionResolver $payments,
         private readonly ProjectAccess $roles,
+        private readonly PackageRequestReadService $requestReads,
     ) {}
 
     public function index(Request $request, Workspace $workspace): Response
@@ -95,6 +99,32 @@ final class PackageAdminController extends Controller
         ]);
     }
 
+    /** The sign-up request queue (ADM-1), with every decision as a finished URL. */
+    public function requests(Request $request, Workspace $workspace): Response
+    {
+        $user = $this->manager($request, $workspace);
+
+        return Inertia::render('packages/requests', [
+            ...$this->workspaceProps($workspace),
+            'requests' => array_map(function (array $packageRequest) use ($workspace): array {
+                $parameters = ['workspace' => $workspace, 'request' => $packageRequest['id']];
+                $open = $packageRequest['status'] === PackageRequestStatus::New->value;
+
+                return [
+                    ...$packageRequest,
+                    'urls' => [
+                        'approve' => $open ? route('agent-api.v1.package-requests.approve', $parameters, absolute: false) : null,
+                        'decline' => $open ? route('agent-api.v1.package-requests.decline', $parameters, absolute: false) : null,
+                        'erase' => ! $open && $packageRequest['erased_at'] === null ? route('agent-api.v1.package-requests.erase', $parameters, absolute: false) : null,
+                    ],
+                ];
+            }, $this->requestReads->list($user, $workspace, limit: 100)['data']),
+            // Existing clients a request may be attached to instead of creating one (EDGE-4).
+            'clients' => ClientCompany::query()->where('workspace_id', $workspace->id)->orderBy('name')->get(['public_id', 'name'])
+                ->map(static fn (ClientCompany $company): array => ['id' => $company->public_id, 'name' => $company->name])->values()->all(),
+        ]);
+    }
+
     private function manager(Request $request, Workspace $workspace): User
     {
         $user = $request->user();
@@ -112,6 +142,8 @@ final class PackageAdminController extends Controller
         return [
             'catalog_url' => PackagePublicUrls::catalog($workspace),
             'stripe_connected' => $this->payments->stripe($workspace) !== null,
+            'requests_url' => route('packages.requests.index', $workspace, absolute: false),
+            'open_requests_count' => $this->requestReads->openCount($workspace),
         ];
     }
 
@@ -123,15 +155,13 @@ final class PackageAdminController extends Controller
      */
     private function vocabularies(): array
     {
-        $values = static fn (array $cases): array => array_map(static fn (\BackedEnum $case): string|int => $case->value, $cases);
-
         return ['options' => [
-            'billing_cadences' => $values(ChargeCadence::cases()),
-            'component_kinds' => $values(PackageComponentKind::cases()),
-            'activation_modes' => $values(PackageActivationMode::cases()),
-            'invoice_issuing' => $values(PackageInvoiceIssuing::cases()),
-            'cancellation_modes' => $values(CancellationMode::cases()),
-            'question_kinds' => $values(IntakeQuestionKind::cases()),
+            'billing_cadences' => array_map(static fn (ChargeCadence $case): string => $case->value, ChargeCadence::cases()),
+            'component_kinds' => array_map(static fn (PackageComponentKind $case): string => $case->value, PackageComponentKind::cases()),
+            'activation_modes' => array_map(static fn (PackageActivationMode $case): string => $case->value, PackageActivationMode::cases()),
+            'invoice_issuing' => array_map(static fn (PackageInvoiceIssuing $case): string => $case->value, PackageInvoiceIssuing::cases()),
+            'cancellation_modes' => array_map(static fn (CancellationMode $case): string => $case->value, CancellationMode::cases()),
+            'question_kinds' => array_map(static fn (IntakeQuestionKind $case): string => $case->value, IntakeQuestionKind::cases()),
         ]];
     }
 }

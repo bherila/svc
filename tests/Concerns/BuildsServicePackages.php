@@ -3,8 +3,10 @@
 namespace Tests\Concerns;
 
 use App\Models\ServicePackage;
+use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 
 /**
@@ -30,6 +32,36 @@ trait BuildsServicePackages
         $workspace->memberships()->create(['user_id' => $user->id, 'role' => $role]);
 
         return $user;
+    }
+
+    /**
+     * A workspace and its owner, who signs in through the identity provider and so may invite.
+     *
+     * @return array{0: Workspace, 1: User}
+     */
+    protected function boundPackageWorkspace(string $subject = '4100'): array
+    {
+        config(['bherila-auth.oauth_client.provider' => 'test-provider']);
+        [$workspace, $owner] = $this->packageWorkspace();
+        $owner->forceFill(['oauth_provider' => 'test-provider', 'oauth_subject' => $subject])->save();
+
+        return [$workspace, $owner];
+    }
+
+    /**
+     * A visitor's request, recorded through the workflow.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function packageRequest(Workspace $workspace, ServicePackage $package, array $overrides = []): ServicePackageRequest
+    {
+        return app(PackageRequestWorkflow::class)->submit($workspace, $package, [
+            'company_name' => 'Lakeside Synthetic Bakery',
+            'contact_name' => 'Morgan Synthetic',
+            'email' => 'morgan.lakeside@example.com',
+            'answers' => ['website_address' => 'lakeside.example.com'],
+            ...$overrides,
+        ], null, null);
     }
 
     /** Makes the deployment's Stripe key serve workspaces that never connected their own. */

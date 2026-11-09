@@ -113,6 +113,15 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('service_package_versions', 'service_package_id', 'service_packages', 'svpkv_ws_package_fk'),
             TenantReference::enforcedBy('service_package_components', 'service_package_version_id', 'service_package_versions', 'svpkc_ws_version_fk'),
             TenantReference::enforcedBy('service_packages', 'published_version_id', 'service_package_versions', 'svpkg_ws_published_version_fk'),
+            TenantReference::enforcedBy('service_package_requests', 'service_package_id', 'service_packages', 'svpkr_ws_package_fk'),
+            TenantReference::enforcedBy('service_package_requests', 'service_package_version_id', 'service_package_versions', 'svpkr_ws_version_fk'),
+            TenantReference::enforcedBy('service_package_requests', 'client_company_id', 'client_companies', 'svpkr_ws_company_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'service_package_id', 'service_packages', 'svpke_ws_package_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'service_package_version_id', 'service_package_versions', 'svpke_ws_version_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'client_company_id', 'client_companies', 'svpke_ws_company_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'client_project_id', 'client_projects', 'svpke_ws_project_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'client_agreement_id', 'client_agreements', 'svpke_ws_agreement_fk'),
+            TenantReference::enforcedBy('service_package_enrollments', 'service_package_request_id', 'service_package_requests', 'svpke_ws_request_fk'),
 
             // Projects.
             TenantReference::enforcedBy('client_task_graph_states', 'client_project_id', 'client_projects', 'task_graph_ws_project_fk'),

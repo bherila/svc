@@ -51,7 +51,7 @@ final class PublicPackagePagesTest extends TestCase
                 ->where('package.hourly_rate_amount', 14000)
                 ->where('package.signup.setup_fee_amount', null)
                 ->where('package.notice_days', 30)
-                ->where('request', null));
+                ->where('request.submit_url', "/s/{$token}/web-hosting/requests"));
     }
 
     #[Requirement('PUB-1')]
