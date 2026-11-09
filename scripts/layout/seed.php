@@ -45,6 +45,7 @@ use App\Services\Mcp\McpCredentialSettings;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Review\ReviewerGrants;
 use App\Services\SharedProjects\SharedProjectParticipations;
@@ -1394,6 +1395,47 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $packages->publish($owner, $workspace, $autoPackage);
     $started = $enrollments->addFromPortal($squarePortalContact, $company, $autoPackage->refresh());
     $enrollments->accept($squarePortalContact, $company, $started, $signer);
+
+    // Slice 3b: the sign-up checkout card on the review page. One package charges a setup fee and
+    // the first period and requires autopay; one offer is still an estimate, one accepted service
+    // waits for payment (the invoice's own lines). The checkout asks for payment, so the
+    // workspace needs a Stripe connection, written locally: no seed here asks Stripe. A version
+    // that takes money is published by writing the publish the workflow would, because the
+    // workflow asks Stripe which currencies the account can charge before it publishes. A
+    // dedicated company keeps the first period clear of every other invoice the seed writes.
+    if (app(PaymentConnectionResolver::class)->stripe($workspace) === null) {
+        app(WorkspacePaymentConnections::class)->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_synthetic_packages', 'display_name' => 'Synthetic', 'environment' => 'test',
+            'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0003', 'webhook_secret' => 'whsec_synthetic',
+            'publishable_key' => 'pk_test_layout_synthetic',
+        ]);
+    }
+    $checkoutCompany = ClientCompany::query()->create([
+        'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticCheckoutClient', 5), 'slug' => 'layout-checkout',
+        'billing_email' => 'billing@checkout.example.test', 'currency' => 'USD',
+    ]);
+    $checkoutContact = User::factory()->create([
+        'name' => str_repeat('SyntheticCheckoutContact', 5), 'email' => 'layout-checkout@client.example.test',
+        'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-checkout-contact',
+    ]);
+    app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $checkoutCompany, $checkoutContact, PortalAccessScope::Company, []);
+    $checkoutPackage = $packages->create($owner, $workspace, [
+        ...$oversized, 'name' => 'Checkout '.$word, 'link_name' => 'checkout-'.str_repeat('checkoutname', 4), 'is_listed' => false,
+        'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
+        'charge_setup_fee_at_signup' => true, 'charge_first_period' => true, 'require_autopay' => true,
+        'autopay_limit_amount' => 150_000, 'pay_before_activation' => true,
+        'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting '.str_repeat('RecurringLineWithoutBreaks', 4), 'cadence' => 'monthly', 'amount' => 54_500, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => 'Setup '.str_repeat('SetupFeeLineWithoutBreaks', 4), 'cadence' => 'one_time', 'amount' => 25_000, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => str_repeat('SecondSetupFeeWithoutBreaks', 6), 'cadence' => 'one_time', 'amount' => 12_500, 'quantity' => 1, 'is_taxable' => false],
+        ],
+    ]);
+    $checkoutVersion = $checkoutPackage->refresh()->versions()->where('draft_marker', 1)->firstOrFail();
+    $checkoutVersion->forceFill(['draft_marker' => null, 'published_at' => now(), 'published_by_user_id' => $owner->id])->save();
+    $checkoutPackage->forceFill(['status' => 'published', 'published_version_id' => $checkoutVersion->id])->save();
+    $checkoutOffered = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage->refresh());
+    $checkoutAccepted = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage->refresh());
+    $checkoutAccepted = $enrollments->accept($checkoutContact, $checkoutCompany, $checkoutAccepted, $signer);
     $workspace->refresh();
     $waitingAgreement = $waiting->refresh()->agreement;
 
@@ -1411,8 +1453,12 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'packages_portal_services' => route('portal.services', $company, absolute: false),
         'packages_portal_review' => route('portal.services.show', [$company, $offered->public_id], absolute: false),
         'packages_operator_agreement' => route('clients.agreement', [$workspace, $company, $waitingAgreement], absolute: false),
+        'packages_portal_checkout_estimate' => route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false),
+        'packages_portal_checkout_invoice' => route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false),
         // Read as the company's contact rather than the owner.
         'package_viewers' => [
+            route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false) => $checkoutContact->id,
+            route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false) => $checkoutContact->id,
             route('portal.services', $company, absolute: false) => $squarePortalContact->id,
             route('portal.services.show', [$company, $offered->public_id], absolute: false) => $squarePortalContact->id,
         ],

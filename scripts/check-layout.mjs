@@ -1475,6 +1475,30 @@ try {
             await capture(screen, 'filled', width, false);
         }
 
+        if (
+            screen === 'packages_portal_checkout_estimate' ||
+            screen === 'packages_portal_checkout_invoice'
+        ) {
+            // The checkout card: what sign-up charges, line by line, and autopay consent.
+            const card = page.getByLabel('Due now', { exact: true });
+            await expect(card).toBeVisible();
+            await expect(card.getByText('Autopay required')).toBeVisible();
+            await expect(card.getByRole('button', { name: 'Save a card' })).toBeVisible();
+
+            if (screen === 'packages_portal_checkout_estimate') {
+                await expect(card.getByText('Due now (estimate)')).toBeVisible();
+            } else {
+                await expect(card.getByText('Due now (estimate)')).toHaveCount(0);
+                await expect(card.getByRole('link', { name: 'Open the invoice to pay' })).toBeVisible();
+            }
+
+            for (const forbidden of ['awaiting_payment', 'Awaiting_payment', 'setup_fee', 'first_period']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
         if (screen === 'packages_operator_agreement') {
             await page.getByRole('button', { name: 'Activate service…' }).click();
             await expect(page.getByRole('alertdialog')).toBeVisible();
@@ -2436,6 +2460,8 @@ try {
                   'packages_public_short',
                   'packages_portal_services',
                   'packages_portal_review',
+                  'packages_portal_checkout_estimate',
+                  'packages_portal_checkout_invoice',
                   'packages_operator_agreement',
               ]
             : paletteOnly
