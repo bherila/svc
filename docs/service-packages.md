@@ -713,6 +713,18 @@ Slice 5 (cancellation) settled these:
   cancelled agreement invoices exactly as one ended on the same date by hand -
   including the engine's existing settlement invoice for the period after an
   ended agreement - and an undone one exactly as one never cancelled.
+- **Recurring items end with the agreement.** One engine change after all: the
+  closing invoice of any ended agreement used to sell the next cycle's
+  incidences of a recurring item with no `expires_on` (a monthly hosting fee
+  for the month after a 30 June end; a whole quarter of it on a quarterly
+  agreement), on `main` before packages too. `RecurringItemBiller` now clamps
+  every range to the agreement's `ends_on`, the same rule as the retainer, on
+  both cadence paths, so a cancellation, a manual or backdated termination and
+  a version move are all covered without touching the items.
+  `BillingHistoryInvariantTest` gains the history (monthly and
+  quarterly, at a period close and mid-period) and its own-segment invariant
+  refuses a live retainer or recurring-item line dated after the segment ends
+  (docs/client-management/cadence-billing.md).
 - **Emails (CAN-6)**, through `PackageNotifier` after commit: owners and admins
   on a request and on a client's self-serve end; the client, with the end date,
   on any accepted cancellation (self-serve, approved or scheduled by an owner);
