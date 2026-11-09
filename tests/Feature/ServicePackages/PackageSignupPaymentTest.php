@@ -269,6 +269,46 @@ final class PackageSignupPaymentTest extends TestCase
         $this->assertSame([], array_values(array_filter($this->packageStripeCalls, static fn (array $call): bool => str_starts_with($call['path'], '/v1/refunds'))));
     }
 
+    /** Before acceptance the page shows the engine's estimate of what is due now, and only a company contact is given anything to use. */
+    #[Requirement('ACC-3', 'ACC-4')]
+    public function test_the_review_page_shows_what_is_due_now_and_finished_urls_only_to_a_company_contact(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world([
+            'charge_first_period' => true, 'charge_setup_fee_at_signup' => true, 'require_autopay' => true, 'autopay_limit_amount' => 120000,
+        ]);
+        $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
+        $page = "/portal/{$company->public_id}/services/{$offer->public_id}";
+
+        $this->actingAs($contact)->get($page)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('service.payment.state', 'not_invoiced')
+            ->where('service.payment.signup_invoice', null)
+            ->where('checkout.due_now', [
+                'currency' => 'USD',
+                'lines' => [
+                    ['kind' => 'setup_fee', 'description' => 'Setup', 'amount' => 15000, 'period_start' => null, 'period_end' => null],
+                    ['kind' => 'first_period', 'description' => 'Web hosting · Essentials', 'amount' => 4500, 'period_start' => '2026-11-15', 'period_end' => '2026-11-30'],
+                ],
+                'total' => 19500,
+                'estimate' => true,
+            ])
+            ->where('checkout.pay_url', null)
+            ->where('checkout.card_setup.confirm_url', "/portal/{$company->public_id}/payment-methods/confirm")
+            ->where('checkout.autopay.limit_label', '$1,200.00')
+            // Autopay is turned on once the offer is accepted.
+            ->where('checkout.autopay.enable_url', null)
+            ->where('accept_url', "/portal/{$company->public_id}/services/{$offer->public_id}/accept"));
+
+        // Staff previewing the portal read the same figures and are offered nothing to use.
+        $this->actingAs($owner)->get($page)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('checkout.due_now.total', 19500)
+            ->where('checkout.pay_url', null)
+            ->where('checkout.payment_options', null)
+            ->where('checkout.card_setup', null)
+            ->where('checkout.autopay.enable_url', null)
+            ->where('accept_url', null));
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count(), 'opening the page bills nothing');
+    }
+
     /** X-5: a payment that rolls back starts nothing and tells nobody; the one that commits does. */
     #[Requirement('X-5', 'ACC-5')]
     public function test_a_rolled_back_payment_starts_nothing_and_sends_no_activation_email(): void
