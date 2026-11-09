@@ -999,6 +999,40 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertSame(['2026-01-01', '2026-04-01'], $billed($support), 'The quarterly item bills each incidence up to the end, once, and none after it.');
     }
 
+    public function test_a_backdated_termination_refreshes_non_monthly_drafts_after_its_end(): void
+    {
+        Carbon::setTestNow('2026-11-09 12:00:00');
+        CarbonImmutable::setTestNow('2026-11-09 12:00:00');
+        [$workspace, $company] = $this->world('backdated-termination');
+        $agreement = $this->agreement($workspace, $company, [
+            'billing_cadence' => 'quarterly',
+            'bill_overage_interim' => false,
+            'retainer_minutes' => 600,
+            'rollover_months' => 3,
+        ]);
+
+        app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+
+        app(AgreementWorkflow::class)->terminate($agreement->fresh() ?? $agreement, '2026-09-30');
+
+        app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+        $this->assertInvariants($company, 'regenerated after backdated termination');
+
+        $q1Draft = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $agreement->id)
+            ->whereDate('cycle_start', '2027-01-01')
+            ->first();
+        $this->assertNotNull($q1Draft);
+        $this->assertSame(0, (int) $q1Draft->total_amount);
+        $this->assertSame(0, $q1Draft->lines()->where('type', InvoiceLineType::Retainer->value)->count());
+
+        Carbon::setTestNow('2027-01-02 12:00:00');
+        CarbonImmutable::setTestNow('2027-01-02 12:00:00');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+    }
+
     // ---- the invariants ----
 
     /**
@@ -1108,7 +1142,11 @@ final class BillingHistoryInvariantTest extends TestCase
                 ->where('invoice.client_agreement_id', $agreement->id)
                 ->where('invoice.status', '!=', InvoiceStatus::Void->value)
                 ->whereIn('line.type', [InvoiceLineType::Retainer->value, InvoiceLineType::RecurringItem->value])
-                ->whereDate('line.line_date', '>', $segmentEnd)
+                ->where(fn ($query) => $query
+                    ->whereDate('line.line_date', '>', $segmentEnd)
+                    ->orWhere(fn ($q) => $q
+                        ->whereNotNull('invoice.cycle_start')
+                        ->whereDate('invoice.cycle_start', '>', $segmentEnd)))
                 ->get(['line.type', 'line.line_date'])
                 ->map(fn (object $line): string => $line->type.' '.Carbon::parse((string) $line->line_date)->toDateString())->all();
             $this->assertSame([], $sold, "After {$step}, agreement {$agreement->id} sells a cycle or incidence dated after its segment ends on {$segmentEnd}.");
