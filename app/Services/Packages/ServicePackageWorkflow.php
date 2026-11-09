@@ -278,5 +278,10 @@ final class ServicePackageWorkflow
             ->whereKey($workspace->id)
             ->whereNull('package_catalog_token')
             ->update(['package_catalog_token' => Str::lower(Str::random(24))]);
+
+        // Whichever publish minted it, the caller's workspace carries the
+        // token from here on, so the answer it builds names the public URL.
+        $workspace->setAttribute('package_catalog_token', Workspace::query()->whereKey($workspace->id)->value('package_catalog_token'));
+        $workspace->syncOriginalAttribute('package_catalog_token');
     }
 }

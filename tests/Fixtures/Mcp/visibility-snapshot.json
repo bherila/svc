@@ -27795,7 +27795,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -27816,6 +27817,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -28231,7 +28236,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -28252,6 +28258,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -28708,7 +28718,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -28729,6 +28740,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -29161,7 +29176,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -29182,6 +29198,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -29614,7 +29634,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -29635,6 +29656,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -30315,7 +30340,8 @@
                                     "number",
                                     "published_at",
                                     "terms",
-                                    "setup_fee_total"
+                                    "setup_fee_total",
+                                    "cycle_amount"
                                 ],
                                 "properties": {
                                     "id": {
@@ -30336,6 +30362,10 @@
                                         "$ref": "#/$defs/ServicePackageTerms"
                                     },
                                     "setup_fee_total": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "cycle_amount": {
                                         "type": "integer",
                                         "minimum": 0
                                     }
@@ -48211,12 +48241,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -49633,8 +49663,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -50716,12 +50746,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -50997,12 +51027,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -52361,12 +52391,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -52642,12 +52672,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -55712,8 +55742,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -55987,8 +56017,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -57331,8 +57361,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -57610,8 +57640,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -58939,12 +58969,12 @@
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "invoices.square_reconcile": "b6e9cfc66b90e62d",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -59219,12 +59249,12 @@
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "invoices.square_reconcile": "b6e9cfc66b90e62d",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -60638,8 +60668,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -60913,8 +60943,8 @@
                 "invoices.square_candidates": "09693c77227c6c63",
                 "invoices.square_covered_payments": "bc1c21cc6ad38e8b",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.list": "a911cc9b30a4c54a",
                 "projects.get": "b237fb1fb2939447",
                 "projects.list": "d0bd45da44dae87d",
@@ -62217,12 +62247,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -62496,12 +62526,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -63874,12 +63904,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -64149,12 +64179,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -66861,12 +66891,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -67142,12 +67172,12 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.create": "2d3821da717f76fa",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
-                "packages.publish": "f2a6e97c9f1d2893",
-                "packages.retire": "e5a9b42958d0955f",
-                "packages.update": "8844dcd7a852bce6",
+                "packages.create": "a9d4d3128c32117e",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
+                "packages.publish": "7b5066f9e1ddf4b2",
+                "packages.retire": "26a82f8a4ef89896",
+                "packages.update": "5ed20a76c1156572",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -68525,8 +68555,8 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",
@@ -68806,8 +68836,8 @@
                 "invoices.update_draft": "86b5037fc0f233e7",
                 "invoices.void": "954403448877c5db",
                 "operations.summary": "08d142f6e474e32c",
-                "packages.get": "e61744ba1f505e9c",
-                "packages.list": "c184038d7949bdf6",
+                "packages.get": "3f91996831cd3cbc",
+                "packages.list": "95f12052061494ce",
                 "payments.correct": "f23dd37fdcc72186",
                 "payments.list": "a911cc9b30a4c54a",
                 "payments.record": "4ea011b8f22ee3de",

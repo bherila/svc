@@ -45,22 +45,13 @@ final class AgentPackageMutationAction
             $terms = array_diff_key($payload, array_flip(['expected_version', 'confirm']));
             $package = $packageId === null ? null : $this->reads->find($actor, $workspace, $packageId);
 
-            $result = match ($operation) {
+            return [(match ($operation) {
                 'packages.create' => $this->workflow->create($actor, $workspace, $terms),
                 'packages.update' => $this->workflow->update($actor, $workspace, $package ?? abort(404), $terms, $version),
                 'packages.publish' => $this->workflow->publish($actor, $workspace, $package ?? abort(404), $version),
                 'packages.retire' => $this->workflow->retire($actor, $workspace, $package ?? abort(404), $version),
                 default => throw new InvalidArgumentException("Unsupported package mutation [{$operation}]."),
-            };
-
-            if ($operation === 'packages.publish') {
-                // A first publish mints the workspace's catalog token with a
-                // conditional update; read it back so the answer carries the
-                // public URL it just opened.
-                $workspace->refresh();
-            }
-
-            return [$result->public_id];
+            })->public_id];
         }, function (array $ids) use ($actor, $workspace): void {
             // A replay is answered only to someone who may still manage it.
             $this->reads->find($actor, $workspace, (string) ($ids[0] ?? ''));

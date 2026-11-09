@@ -2100,7 +2100,7 @@ still answers 404 and offers no tool.
 They are workspace owner/admin operations. Anyone else, a portal contact included,
 and any other workspace's package, is answered 404 as if no package existed, and
 the tools are not offered to them. A package answers with its published version
-and its draft (each with every term and its `setup_fee_total`), its `public_url`
+and its draft (each with every term, its `setup_fee_total` and its `cycle_amount`, what one billing period of the recurring terms costs), its `public_url`
 once published, its opaque `version`, and `publish_refusals`: the coded reasons
 (`package_payment_needs_stripe`, `package_auto_issue_needs_fixed_price` and the
 others in `ServicePackagePresenter`) publishing the draft would be refused now.

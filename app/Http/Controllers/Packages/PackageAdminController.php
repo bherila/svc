@@ -7,6 +7,7 @@ use App\Models\ServicePackage;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Authorization\ProjectAccess;
 use App\Services\Packages\ServicePackageReadService;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\Billing\ChargeCadence;
@@ -27,8 +28,8 @@ use Inertia\Response;
  *
  * Pages only. Every change posts to the agent REST endpoints the server names
  * here, which run ServicePackageWorkflow, so the website and agents share one
- * write path (API-1). A stranger gets the binding's 404; a member who does not
- * manage the workspace gets 403.
+ * write path (API-1). A stranger gets a 404; a member who does not manage the
+ * workspace gets 403.
  */
 final class PackageAdminController extends Controller
 {
@@ -36,6 +37,7 @@ final class PackageAdminController extends Controller
         private readonly ServicePackageReadService $reads,
         private readonly AgentAccess $access,
         private readonly PaymentConnectionResolver $payments,
+        private readonly ProjectAccess $roles,
     ) {}
 
     public function index(Request $request, Workspace $workspace): Response
@@ -97,6 +99,8 @@ final class PackageAdminController extends Controller
     {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
+        // A stranger learns nothing; a member who does not manage is refused.
+        abort_if($this->roles->workspaceRole($user, $workspace) === null, 404);
         abort_unless($this->access->isWorkspaceManager($user, $workspace), 403);
 
         return $user;

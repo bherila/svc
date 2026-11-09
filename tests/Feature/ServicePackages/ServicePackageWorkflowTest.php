@@ -6,6 +6,7 @@ use App\Exceptions\ServicePackageRefused;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageComponent;
 use App\Models\ServicePackageVersion;
+use App\Models\Workspace;
 use App\Services\Packages\ServicePackageReadService;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
@@ -191,10 +192,11 @@ final class ServicePackageWorkflowTest extends TestCase
     {
         [$workspace, $owner] = $this->packageWorkspace();
         $this->publishedPackage($workspace, $owner);
-        $token = $workspace->refresh()->package_catalog_token;
+        $token = Workspace::query()->whereKey($workspace->id)->value('package_catalog_token');
         $this->publishedPackage($workspace, $owner, ['link_name' => 'second']);
 
         $this->assertMatchesRegularExpression('/^[a-z0-9]{24}$/', (string) $token);
+        $this->assertSame($token, $workspace->package_catalog_token, 'the caller\'s workspace carries the token it just opened');
         $this->assertSame($token, $workspace->refresh()->package_catalog_token);
         $presented = app(ServicePackageReadService::class)->list($owner, $workspace)['data'][0];
         $this->assertSame(rtrim((string) config('app.url'), '/').'/s/'.$token.'/web-hosting', $presented['public_url']);
