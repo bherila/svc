@@ -39,8 +39,53 @@ catalog to hundreds of tests. Infection adds their recorded execution times and
 can skip a mutant before running it when that estimate exceeds the timeout.
 Inspect the coverage XML and JUnit timings before treating skips as hung tests;
 keep direct catalog contracts covered by fast registry tests. Do not remove
-assertions or use `CoversNothing` to conceal application behavior. The hosted
-lane preserves its summary, mutation log, coverage XML and timings for seven days.
+assertions or use `CoversNothing` to conceal application behavior.
+
+Every mutant runs in a fresh PHP process, so whatever a selected test pays
+before its first assertion is paid again per mutant. A test that extends
+`Tests\TestCase` boots the application and generates an OAuth signing key in
+each new process (about 1.5 seconds locally, before PCOV); a plain PHPUnit test
+of the same pure decision costs about 0.15 seconds. Write pure decisions -
+enums, dates, rules over value objects - as plain PHPUnit tests, as
+`RecurringItemBillerTest`, `CancellationDatesTest` and `CancellationRulesTest`
+do, and keep Laravel-backed Unit tests for behavior that needs the container.
+
+## Diagnostics
+
+`scripts/run-mutation-diff.sh` runs the lane in two steps, so its evidence
+survives both a finished and a cancelled run:
+
+1. **Baseline.** The Unit suite runs once with PCOV and writes its coverage map
+   and JUnit timings to `storage/framework/cache/infection-diff/diagnostics/baseline/`.
+   It must pass before any mutant runs: under `--skip-initial-tests`, an
+   ordinary failing test would otherwise read as a killed mutant.
+2. **Mutants.** Infection reads that baseline (`--coverage`,
+   `--skip-initial-tests`) and streams one TeamCity record per finished mutant
+   to `diagnostics/mutants.teamcity.log`: mutator, id, location, outcome, diff
+   and process runtime.
+
+Infection appends `infection/` to its configured tmpDir and deletes that
+directory when a run finishes (unless `--debug`), which is why nothing the lane
+needs afterwards is kept there. `diagnostics/run.txt` records the base, head,
+changed-file count, CPU count and the duration of each step.
+
+`scripts/mutation-timings.php` summarizes the per-mutant log: outcome counts, the
+slowest mutants with their source line, and the mutants still running when the
+log ends, which is what a run cut off by the job deadline needs. The hosted job
+writes that report to its summary and uploads `summary.json`, `mutations.log`
+and `diagnostics/` as the `mutation-diagnostics` artifact for seven days.
+Infection's per-mutant duration is approximate (infection/infection#2900): use it
+to rank mutants, not to budget them.
+
+### Measuring a merged change
+
+A follow-up that changes only tests or tooling has no changed application lines
+against `main`, so the pull-request lane correctly reports it as not applicable.
+To measure the application change it follows up, dispatch the `tests` workflow
+on the follow-up branch with `mutation_base` set to the original pull request's
+base commit. The lane then mutates every application line changed between that
+base and the dispatched commit; if later application changes landed in between,
+they are in scope too and should be named in the result.
 
 The per-mutant timeout is 120 seconds: about three times the idle cost of
 booting the Unit suite for a service-provider mutant, so a loaded hosted runner

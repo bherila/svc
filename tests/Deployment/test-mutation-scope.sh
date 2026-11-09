@@ -10,6 +10,7 @@ real_git=$(command -v git)
 cat >"$fixture/bin/php" <<'MOCK'
 #!/usr/bin/env bash
 case "$*" in
+    *vendor/bin/phpunit*) echo baseline >>"$FIXTURE_PHP_LOG"; exit "${FIXTURE_BASELINE_STATUS:-0}" ;;
     *vendor/bin/infection*) echo infection >>"$FIXTURE_PHP_LOG"; exit "${FIXTURE_INFECTION_STATUS:-73}" ;;
     *scripts/mutation-gate.php*) echo gate >>"$FIXTURE_PHP_LOG"; exit "${FIXTURE_GATE_STATUS:-0}" ;;
     *) exit 99 ;;
@@ -66,7 +67,7 @@ expect_application_scope() {
     local status=0
     run_scope || status=$?
     test "$status" -eq 73 || fail 'an applicable change skipped Infection or hid its failure'
-    printf 'infection\ngate\n' | cmp -s - "$fixture/php.log" || fail 'applicable scope did not run both gates'
+    printf 'baseline\ninfection\ngate\n' | cmp -s - "$fixture/php.log" || fail 'applicable scope did not run both gates'
     run_hosted || fail 'hosted applicable detection failed'
     grep -Fxq 'required=true' "$fixture/github-output" || fail 'hosted detector skipped applicable source'
     grep -Fxq "merge_base=$base" "$fixture/github-output" || fail 'hosted detector changed the merge base'
@@ -134,7 +135,14 @@ expect_application_scope
 status=0
 FIXTURE_INFECTION_STATUS=0 FIXTURE_GATE_STATUS=76 run_scope || status=$?
 test "$status" -eq 76 || fail 'measurement failure was hidden'
-printf 'infection\ngate\n' | cmp -s - "$fixture/php.log" || fail 'measurement gate did not execute'
+printf 'baseline\ninfection\ngate\n' | cmp -s - "$fixture/php.log" || fail 'measurement gate did not execute'
+# A failing baseline stops before any mutant: with --skip-initial-tests an
+# ordinary failing test would otherwise count as a killed mutant.
+status=0
+FIXTURE_BASELINE_STATUS=77 run_scope || status=$?
+test "$status" -eq 77 || fail 'a failing baseline was hidden'
+printf 'baseline\n' | cmp -s - "$fixture/php.log" || fail 'mutants ran after a failing baseline'
+grep -Fq 'The Unit baseline failed' "$fixture/output" || fail 'a failing baseline was not explained'
 reset_fixture
 for failure in invalid-base invalid-head merge-base diff malformed; do
     status=0
