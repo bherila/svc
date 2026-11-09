@@ -25,8 +25,9 @@ use Illuminate\Support\Facades\DB;
  * it. It becomes deferred work instead, as an hour answered late does
  * ({@see LateAnswer}), and draws on later free capacity.
  *
- * Only this agreement's own charged invoices make a row late: a period nobody has
- * charged yet still bills its own work.
+ * Only this agreement's own charged invoices make a row late, and only a row that
+ * was logged or approved after that invoice was issued: a period nobody has charged
+ * yet still bills its own work, and imported history is not billed twice.
  */
 final class LateWork
 {
@@ -46,20 +47,39 @@ final class LateWork
             ->where(fn (Builder $kind): Builder => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
             ->whereNotNull('service_period_start')
             ->whereNotNull('service_period_end')
-            ->get(['service_period_start', 'service_period_end']);
+            ->whereNotNull('issued_at')
+            // Imported history has no links to time, so an unlinked row in its
+            // period says nothing about whether that row was billed.
+            ->whereExists(fn ($linked) => $linked->selectRaw('1')
+                ->from('client_invoice_lines')
+                ->join('client_invoice_line_time_entries', 'client_invoice_line_time_entries.client_invoice_line_id', '=', 'client_invoice_lines.id')
+                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id'))
+            ->get(['service_period_start', 'service_period_end', 'issued_at']);
 
         if ($charged->isEmpty()) {
             return [];
         }
 
         return array_values($work->whereDate('worked_on', '<', $before->toDateString())
-            ->get(['id', 'worked_on'])
+            ->get(['id', 'worked_on', 'created_at', 'approved_at'])
             ->filter(fn (ClientTimeEntry $entry): bool => $charged->contains(
-                fn (ClientInvoice $invoice): bool => $entry->worked_on->toDateString() >= $invoice->service_period_start?->toDateString()
-                    && $entry->worked_on->toDateString() <= $invoice->service_period_end?->toDateString(),
+                fn (ClientInvoice $invoice): bool => $this->arrivedAfter($entry, $invoice),
             ))
             ->map(static fn (ClientTimeEntry $entry): int => (int) $entry->id)
             ->all());
+    }
+
+    /** Did the invoice cover this row's date, and charge before the row could be billed? */
+    private function arrivedAfter(ClientTimeEntry $entry, ClientInvoice $invoice): bool
+    {
+        $day = $entry->worked_on->toDateString();
+        $issued = $invoice->issued_at;
+
+        return $issued !== null
+            && $day >= $invoice->service_period_start?->toDateString()
+            && $day <= $invoice->service_period_end?->toDateString()
+            && (($entry->created_at !== null && $entry->created_at->gt($issued))
+                || ($entry->approved_at !== null && $entry->approved_at->gt($issued)));
     }
 
     /**

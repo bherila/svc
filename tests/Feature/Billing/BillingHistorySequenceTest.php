@@ -334,6 +334,10 @@ final class BillingHistorySequenceTest extends TestCase
     private function issue(ClientInvoice $draft): string
     {
         app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $this->workspace);
+        // Whatever is logged next arrives after this was issued.
+        $later = CarbonImmutable::now()->addMinute();
+        Carbon::setTestNow($later);
+        CarbonImmutable::setTestNow($later);
 
         return "#{$draft->id}";
     }

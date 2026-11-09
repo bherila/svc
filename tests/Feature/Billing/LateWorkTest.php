@@ -227,6 +227,54 @@ final class LateWorkTest extends TestCase
         $this->assertFalse((bool) $held->fresh()?->is_deferred, 'Only its answer decides how it waits.');
     }
 
+    /** Logged before the invoice was issued and simply left off it: not this rule's to move. */
+    public function test_an_hour_already_there_when_the_invoice_issued_is_not_late(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $invoice = $this->generate($agreement, '2026-02-01');
+        $earlier = $this->hours('2026-01-15', 30);
+        $this->tick();
+        $this->issue($invoice);
+        $this->hours('2026-02-10', 60);
+
+        $this->generate($agreement, '2026-03-01');
+
+        $this->assertSame([], $this->invoicesCarrying($earlier));
+    }
+
+    public function test_an_hour_approved_after_the_invoice_issued_is_late(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $invoice = $this->generate($agreement, '2026-02-01');
+        $approvedLater = $this->hours('2026-01-15', 30, ['status' => 'submitted']);
+        $this->tick();
+        $this->issue($invoice);
+        ClientTimeEntry::query()->whereKey($approvedLater->id)->update(['status' => 'approved', 'approved_at' => CarbonImmutable::now()]);
+        $this->hours('2026-02-10', 60);
+
+        $draft = $this->generate($agreement, '2026-03-01');
+
+        $this->assertSame([$draft->id], $this->invoicesCarrying($approvedLater));
+    }
+
+    /** Imported history links no time, so its unlinked rows must not be billed again. */
+    public function test_a_charged_invoice_with_no_linked_time_makes_nothing_late(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'HIST-JAN', 'status' => 'paid', 'invoice_kind' => 'cadence_period', 'service_period_start' => '2026-01-01',
+            'service_period_end' => '2026-01-31', 'issued_at' => '2026-02-01 09:00:00', 'currency' => 'USD',
+        ]);
+        $imported = $this->hours('2026-01-15', 30);
+        $work = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->unbilled();
+
+        $this->assertSame([], app(LateWork::class)->ids($work, $agreement, Carbon::parse('2026-03-01')));
+        $this->assertSame([], $this->invoicesCarrying($imported));
+    }
+
     public function test_another_agreements_charged_period_makes_nothing_late(): void
     {
         $other = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic other project']);
@@ -295,6 +343,15 @@ final class LateWorkTest extends TestCase
     private function issue(ClientInvoice $draft): void
     {
         app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $this->workspace);
+        $this->tick();
+    }
+
+    /** Whatever is logged next arrives strictly after what just happened. */
+    private function tick(): void
+    {
+        $later = CarbonImmutable::now()->addMinute();
+        Carbon::setTestNow($later);
+        CarbonImmutable::setTestNow($later);
     }
 
     /** @return list<int> */

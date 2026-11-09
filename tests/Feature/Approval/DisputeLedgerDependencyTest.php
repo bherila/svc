@@ -151,7 +151,7 @@ final class DisputeLedgerDependencyTest extends TestCase
         [$workspace, $company, $project, $agreement, $owner] = $this->world('backstop', 600);
         $this->hours($workspace, $company, $project, $owner, '2026-01-10', 60);
         app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
-        // Logged after January was reconciled: March takes it as deferred work.
+        // Logged at the moment January was reconciled: unlinked, and in the ledger.
         $late = $this->hours($workspace, $company, $project, $owner, '2026-01-25', 900);
         $this->hours($workspace, $company, $project, $owner, '2026-02-10', 600);
         $march = $this->period($company, $agreement, '2026-03-01');
