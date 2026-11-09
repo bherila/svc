@@ -53,6 +53,20 @@ final class MutationTimingsScriptTest extends TestCase
         $this->assertStringContainsString("Still running when the log ends:\n\n- Infection\\Mutator\\Arithmetic\\Plus (ccc) `/absent/app/Slow.php@7`", $report);
     }
 
+    public function test_a_mutator_wrapped_by_a_global_ignore_is_reported_by_its_own_name(): void
+    {
+        $wrapped = 'Infection\\Mutator\\IgnoreMutator (ddd)';
+        $log = implode('', [
+            $this->write(MessageName::TEST_STARTED, ['name' => $wrapped, 'nodeId' => 'n1', 'parentNodeId' => 's1', 'locationHint' => 'infection:///absent/app/A.php::1-2']),
+            $this->write(MessageName::TEST_FAILED, ['name' => $wrapped, 'nodeId' => 'n1', 'message' => "Mutator: ArrayItem\nMutation ID: ddd\nMutation result: escaped", 'duration' => 100]),
+        ]);
+
+        $report = mutation_timings_report($log);
+
+        $this->assertStringContainsString('| 0.1 | escaped | ArrayItem (ddd) |', $report);
+        $this->assertStringNotContainsString('IgnoreMutator', $report);
+    }
+
     public function test_an_empty_log_reports_nothing_measured_and_an_unreadable_one_is_unusable(): void
     {
         $this->assertStringContainsString('0 mutants finished, 0 still running', mutation_timings_report(''));
