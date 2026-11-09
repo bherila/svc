@@ -81,6 +81,8 @@ if ($file !== false && str_starts_with($file, $public.'/build/') && is_file($fil
 
 $app = require __DIR__.'/bootstrap.php';
 Auth::onceUsingId(match (true) {
+    // Service packages (--packages): the client's Services pages are read as its contact.
+    isset($fixture['package_viewers'][$requestPath]) => $fixture['package_viewers'][$requestPath],
     // The command palette (--palette): a page is read as the person it belongs to,
     // and the palette's own requests as whoever the page that opened it belongs to.
     isset($fixture['palette_viewers'][$requestPath]) => $fixture['palette_viewers'][$requestPath],

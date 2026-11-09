@@ -58,6 +58,8 @@ export type AgreementTerms = CompanyAgreement & {
 export type AgreementActions = {
     update: string | null;
     deferred_buydown?: { preview: string; create: string } | null;
+    /** A service package the client signed that waits for an owner or admin (ACC-5): the endpoint and the version to send. */
+    activate_enrollment?: { href: string; version: string } | null;
 };
 
 /** One file stored against the agreement. */

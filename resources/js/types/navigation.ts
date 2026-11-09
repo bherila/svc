@@ -26,6 +26,7 @@ export type ClientModule =
     | 'files'
     | 'settings'
     | 'billing'
+    | 'services'
     | 'expenses'
     | 'notes'
     | 'discussions';

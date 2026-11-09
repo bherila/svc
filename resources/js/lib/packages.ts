@@ -79,3 +79,34 @@ export function textBlocks(markdown: string | null): TextBlock[] {
 
     return blocks;
 }
+
+/** The server's term keys as words, for "Updated since you were offered: ...". */
+const TERM_LABELS: Record<string, string> = {
+    name: 'Name',
+    summary: 'Summary',
+    body_markdown: 'Description',
+    agreement_text: 'Agreement text',
+    currency: 'Currency',
+    billing_cadence: 'Billing cadence',
+    hourly_rate_amount: 'Extra-hours rate',
+    retainer_amount: 'Retainer',
+    retainer_minutes: 'Included hours',
+    rollover_months: 'Rollover',
+    first_cycle_proration: 'First-month proration',
+    charge_setup_fee_at_signup: 'Setup fee at sign-up',
+    charge_first_period: 'First period at sign-up',
+    require_autopay: 'Autopay',
+    autopay_limit_amount: 'Autopay limit',
+    pay_before_activation: 'Payment before start',
+    payment_lapse_days: 'Payment deadline',
+    activation_mode: 'How it starts',
+    invoice_issuing: 'Invoicing',
+    notice_days: 'Notice period',
+    minimum_term_months: 'Minimum term',
+    cancellation_mode: 'Cancellation',
+    components: 'Prices',
+};
+
+export function termLabel(key: string): string {
+    return TERM_LABELS[key] ?? statusLabel(key);
+}

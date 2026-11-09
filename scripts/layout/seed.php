@@ -42,6 +42,7 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Mcp\McpCredentialSettings;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\Payments\WorkspacePaymentConnections;
@@ -1358,6 +1359,44 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $requests->decline($owner, $workspace, $erased->refresh());
     $requests->erase($owner, $workspace, $erased->refresh());
 
+    // Slice 3a: the client's Services tab and review-and-sign page, read as the company
+    // contact, and the operator's agreement page for a signed service waiting for review.
+    // One offer was made and then a new version published (EDGE-7), one signed service waits
+    // for review, one signed and started on its own; every name is oversized.
+    $enrollments = app(PackageEnrollmentWorkflow::class);
+    $signer = ['signer_name' => str_repeat('Signer', 20), 'signer_title' => str_repeat('Title', 20), 'accepted_terms' => true];
+    $portalPackage = $packages->create($owner, $workspace, [
+        ...$oversized, 'name' => 'Offered '.$word, 'link_name' => 'offered-care', 'is_listed' => false,
+        'billing_cadence' => 'monthly', 'activation_mode' => 'review',
+    ]);
+    $packages->publish($owner, $workspace, $portalPackage);
+    $offered = $enrollments->addFromPortal($squarePortalContact, $company, $portalPackage->refresh());
+    $packages->update($owner, $workspace, $portalPackage->refresh(), [
+        'notice_days' => 45, 'rollover_months' => 3,
+        'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 5500, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => 'Setup and migration', 'cadence' => 'one_time', 'amount' => 25000, 'quantity' => 1, 'is_taxable' => false],
+        ],
+    ]);
+    $packages->publish($owner, $workspace, $portalPackage->refresh());
+    $reviewPackage = $packages->create($owner, $workspace, [
+        'name' => 'Review '.$word, 'link_name' => 'review-care', 'is_listed' => false, 'activation_mode' => 'review',
+        'agreement_text' => str_repeat('This agreement covers the services described above. ', 30),
+        'components' => [['kind' => 'recurring', 'description' => 'Care plan', 'cadence' => 'monthly', 'amount' => 64500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $reviewPackage);
+    $waiting = $enrollments->addFromPortal($squarePortalContact, $company, $reviewPackage->refresh());
+    $waiting = $enrollments->accept($squarePortalContact, $company, $waiting, $signer);
+    $autoPackage = $packages->create($owner, $workspace, [
+        'name' => 'Automatic '.$word, 'link_name' => 'automatic-care', 'is_listed' => false, 'activation_mode' => 'automatic',
+        'components' => [['kind' => 'recurring', 'description' => 'Hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $autoPackage);
+    $started = $enrollments->addFromPortal($squarePortalContact, $company, $autoPackage->refresh());
+    $enrollments->accept($squarePortalContact, $company, $started, $signer);
+    $workspace->refresh();
+    $waitingAgreement = $waiting->refresh()->agreement;
+
     $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
     $packagePages = [
         'packages_list' => route('packages.index', $workspace, absolute: false),
@@ -1369,6 +1408,14 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'packages_catalog' => route('packages.public.catalog', $workspace->package_catalog_token, absolute: false),
         'packages_public' => route('packages.public.show', [$workspace->package_catalog_token, $live->link_name], absolute: false),
         'packages_public_short' => route('packages.public.show', [$workspace->package_catalog_token, $unlisted->link_name], absolute: false),
+        'packages_portal_services' => route('portal.services', $company, absolute: false),
+        'packages_portal_review' => route('portal.services.show', [$company, $offered->public_id], absolute: false),
+        'packages_operator_agreement' => route('clients.agreement', [$workspace, $company, $waitingAgreement], absolute: false),
+        // Read as the company's contact rather than the owner.
+        'package_viewers' => [
+            route('portal.services', $company, absolute: false) => $squarePortalContact->id,
+            route('portal.services.show', [$company, $offered->public_id], absolute: false) => $squarePortalContact->id,
+        ],
     ];
 }
 
