@@ -530,7 +530,7 @@ final class PackageRecurringInvoicesTest extends TestCase
     {
         $workflow = app(PackageEnrollmentWorkflow::class);
 
-        return $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        return $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer))->refresh();
     }
 
     private function invoiceFor(ServicePackageEnrollment $enrollment, string $cycleStart): ClientInvoice

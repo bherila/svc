@@ -376,7 +376,7 @@ final class LockOrderConformanceTest extends TestCase
         $enrollments->lapse($this->workspace, $unpaid);
         $this->travelBack();
 
-        $this->driveTheAutomaticPackageInvoices($contact, $signature);
+        $this->driveTheAutomaticPackageInvoices($contact);
     }
 
     /**
@@ -388,7 +388,7 @@ final class LockOrderConformanceTest extends TestCase
      *
      * @param  array{signer_name: string, accepted_terms: bool}  $signature
      */
-    private function driveTheAutomaticPackageInvoices(User $contact, array $signature): void
+    private function driveTheAutomaticPackageInvoices(User $contact): void
     {
         [$company] = $this->secondaryCompany('auto-invoice');
         ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
@@ -398,8 +398,8 @@ final class LockOrderConformanceTest extends TestCase
             'name' => 'Locks automatic invoices', 'currency' => 'USD', 'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
             'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]],
         ];
-        $issued = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-issued', ...$terms]))), $signature);
-        $square = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-square', ...$terms]))), $signature);
+        $issued = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-issued', ...$terms]))), $this->signatureFor($offer, 'Synthetic Signer'));
+        $square = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-square', ...$terms]))), $this->signatureFor($offer, 'Synthetic Signer'));
         ClientAgreement::query()->whereKey($square->client_agreement_id)->update(['square_series_key' => '000902']);
 
         $recurring = app(PackageRecurringInvoices::class);
