@@ -2281,7 +2281,10 @@ length would claim work periods already invoiced) or
 reshapes it) or `package_migration_off_cycle_component` (the current or new
 version has a recurring charge off the service's cadence, such as an annual
 licence in a monthly service or a one-time charge, which a new agreement would
-charge again). A setup fee on the new version is never charged to a subscriber
+charge again) or `package_migration_ambiguous_recurrence` (the agreement's
+recurring charges, edited by hand, no longer follow one schedule for the new
+agreement to continue). The new agreement's recurring items continue the old
+charge schedule, so a move never adds or skips a charge. A setup fee on the new version is never charged to a subscriber
 who moves. Each client is emailed the date, the changes
 and the message, and sees the notice in the portal; a client whose autopay limit
 is below the new price is told SVC will not raise it, and Needs you lists it.
@@ -2298,7 +2301,7 @@ whose agreement has ended, or ends first, is `skipped` with its reason in
 asked to leave before the date, whose last old period still has something to
 invoice, or whose agreement changed cadence, came to carry an off-cycle
 recurring charge or came to be collected by Square since scheduling
-(`cadence_changed`, `off_cycle_component`, `square_collected`) waits
+(`cadence_changed`, `off_cycle_component`, `ambiguous_recurrence`, `square_collected`) waits
 `scheduled` with the reason in `outcome` and is retried every hour. A move still
 waiting when its first period on the new terms has ended is never started in the
 past: it waits with `effective_date_passed` until it is cancelled (schedule a new

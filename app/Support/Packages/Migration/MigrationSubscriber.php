@@ -33,6 +33,12 @@ final readonly class MigrationSubscriber
         public ?CarbonImmutable $pendingEndOn,
         /** The end a scheduled cancellation set, if any. */
         public ?CarbonImmutable $scheduledEndOn,
+        /**
+         * Its agreement's open recurring items that set its charge schedule.
+         *
+         * @var list<array{cadence: string, effective_on: CarbonInterface|null, anchor_day: int|null, anchor_month: int|null}>
+         */
+        public array $scheduleItems = [],
     ) {}
 
     /** Why it cannot move on `$chosen` to a version billing on `$toCadence`, or null. */
@@ -42,6 +48,7 @@ final readonly class MigrationSubscriber
 
         return MigrationRules::eligibility($this->activeOnFromVersion, $this->alreadyScheduled, $this->dates, $chosen, MigrationRules::billsByUsage(
             $agreement->hourly_rate_amount, $agreement->retainer_amount, $agreement->retainer_minutes, $agreement->period_retainer_amount, $agreement->period_retainer_minutes,
-        ), squareCollected: $agreement->square_series_key !== null, changesCadence: $agreement->effectiveBillingCadence()->value !== $toCadence->value);
+        ), squareCollected: $agreement->square_series_key !== null, changesCadence: $agreement->effectiveBillingCadence()->value !== $toCadence->value,
+            recurrenceAmbiguous: $this->dates !== null && ContinuedRecurrence::fromItems($agreement->effectiveBillingCadence(), $agreement->starts_on, $chosen ?? $this->dates->earliest, $this->scheduleItems) === null);
     }
 }

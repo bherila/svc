@@ -734,6 +734,55 @@ final class PackageMigrationTest extends TestCase
         $this->assertSame([['2027-02-01', 'issued']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun()['outcomes']));
     }
 
+    #[Requirement('MIG-3')]
+    public function test_a_continuing_charge_keeps_its_schedule_across_a_move(): void
+    {
+        // A quarterly service started Nov 9: its $120 charges fall on Nov 9,
+        // Feb 1, May 1. Moved on Feb 9, the next charge is still May 1 - never
+        // a fresh one on Feb 9 as well.
+        $quarterly = ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'quarterly', 'amount' => 12000];
+        [$workspace, $owner, $package, $from] = $this->world(['billing_cadence' => 'quarterly', 'components' => [$quarterly]],
+            ['billing_cadence' => 'quarterly', 'summary' => 'Revised synthetic summary', 'components' => [$quarterly]]);
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        $this->issueRun();
+        $this->schedule($owner, $workspace, $package, $from, '2027-02-09');
+        $this->travelTo(CarbonImmutable::parse('2027-02-09 00:30:00', 'UTC'));
+        $this->assertSame(['applied'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame(['issued'], array_column($this->issueRun()['outcomes'], 'outcome'));
+
+        $successor = $enrollment->refresh()->client_agreement_id;
+        $first = ClientInvoice::query()->where('client_agreement_id', $successor)->sole();
+        $this->assertSame([['2027-05-01', 12000]], $first->lines->where('total_amount', '>', 0)
+            ->map(fn ($line): array => [$line->line_date?->toDateString(), $line->total_amount])->values()->all());
+        $item = ClientAgreementRecurringItem::query()->where('client_agreement_id', $successor)->sole();
+        $this->assertSame(['2026-11-09', 1, 11], [$item->start_date?->toDateString(), $item->anchor_day, $item->anchor_month]);
+    }
+
+    #[Requirement('MIG-1', 'MIG-3')]
+    public function test_recurring_charges_off_one_schedule_are_refused_and_held(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world();
+        $enrollment = $this->subscriber($workspace, $package, 'Edited');
+        $agreement = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
+        $addOn = fn (): ClientAgreementRecurringItem => $agreement->recurringItems()->create([
+            'workspace_id' => $workspace->id, 'description' => 'Synthetic add-on', 'cadence' => 'monthly', 'amount' => 1000, 'quantity' => '1', 'anchor_day' => 15,
+            'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 5,
+        ]);
+        // An item charging on the 15th beside one on the 1st: no one schedule to continue.
+        $added = $addOn();
+        $this->assertSame(MigrationRefusal::AmbiguousRecurrence->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->expectRefusal(MigrationRefusal::AmbiguousRecurrence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
+
+        // Added after scheduling, it holds the move on its date.
+        $added->delete();
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        $addOn();
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame('ambiguous_recurrence', ServicePackageMigrationTarget::query()->sole()->outcome_code);
+        $this->assertSame('active', $agreement->refresh()->status);
+    }
+
     #[Requirement('MIG-1', 'MIG-3')]
     public function test_a_move_where_a_recurring_charge_bills_off_the_service_cycle_is_refused(): void
     {

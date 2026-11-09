@@ -46,6 +46,8 @@ enum MigrationHold: string
     case OwedPeriodUnbilled = 'owed_period_unbilled';
     /** The agreement now has a recurring item on another cadence than its billing (an annual licence on a monthly service), whose billing anchor a new agreement would restart. */
     case OffCycleComponent = 'off_cycle_component';
+    /** The agreement's recurring items no longer follow one charge schedule, which the new agreement would continue. */
+    case AmbiguousRecurrence = 'ambiguous_recurrence';
     /** The agreement was linked to a Square series after the move was scheduled; SVC never reshapes what Square collects. */
     case SquareCollected = 'square_collected';
     /** Something unexpected; the error was reported. */
@@ -63,6 +65,7 @@ enum MigrationHold: string
             self::EffectiveDatePassed => 'The first billing period on the new terms ended before the move could apply, so the client stays on the current terms, which keep invoicing every period, including that one. Cancel this move for the client and schedule a new one.',
             self::OwedPeriodUnbilled => 'An earlier billing period that waited for a move is still not invoiced (its invoice was refused; Needs you shows why). Resolve that so it is invoiced on the current terms; the move then applies on the next run.',
             self::OffCycleComponent => 'The agreement now has a recurring charge on another cadence than its billing (an annual licence on a monthly service, or a one-time charge), which a new agreement would charge again from its own start. Remove it, or cancel the move for this subscriber.',
+            self::AmbiguousRecurrence => 'The agreement\'s recurring charges no longer follow one schedule (an item was added or re-anchored by hand, or starts later), so the new agreement could not continue it without charging a period again or skipping one. Align the items, or cancel the move for this subscriber.',
             self::SquareCollected => 'Square now collects this agreement\'s invoices, and SVC never reshapes what Square collects. Cancel the move for this subscriber.',
             self::Failed => 'The move could not be applied. It is tried again every hour.',
         };

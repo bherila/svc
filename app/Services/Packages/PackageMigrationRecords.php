@@ -5,23 +5,27 @@ namespace App\Services\Packages;
 use App\Models\AgreementCancellationRequest;
 use App\Models\AgreementScheduledTermination;
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageMigrationTarget;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
+use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Engagement\Cancellation\ScheduledTerminationStatus;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\ContinuedRecurrence;
 use App\Support\Packages\Migration\MigrationDates;
 use App\Support\Packages\Migration\MigrationSubscriber;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * The tenant-scoped persistence boundary of a move (MIG-1, MIG-4): a
@@ -85,12 +89,23 @@ final class PackageMigrationRecords
             ->keyBy('id');
         $invoicedThrough = $this->invoicedThrough($workspace, $agreementIds, $locking);
         [$pending, $scheduled] = $locking ? [[], []] : $this->openCancellations($workspace, $agreementIds);
+        $today = $this->clock->today($workspace);
+        // The open recurring items whose schedule a move would continue
+        // (ContinuedRecurrence). Never locked anywhere, so an ordinary read.
+        $items = ClientAgreementRecurringItem::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_agreement_id', $agreementIds)
+            ->where('is_active', true)
+            ->where('cadence', '!=', ChargeCadence::OneTime->value)
+            ->where(fn ($open) => $open->whereNull('expires_on')->orWhereDate('expires_on', '>=', $today->toDateString()))
+            ->orderBy('id')
+            ->get(['id', 'client_agreement_id', 'cadence', 'effective_on', 'anchor_day', 'anchor_month'])
+            ->groupBy('client_agreement_id');
         $companies = ClientCompany::query()
             ->where('workspace_id', $workspace->id)
             ->whereIn('id', array_values(array_unique($enrollments->pluck('client_company_id')->all())))
             ->get(['id', 'public_id', 'workspace_id', 'name', 'currency', 'autopay_enabled_at', 'autopay_limit_amount'])
             ->keyBy('id');
-        $today = $this->clock->today($workspace);
 
         $subscribers = [];
         foreach ($enrollments as $enrollment) {
@@ -119,6 +134,7 @@ final class PackageMigrationRecords
                 autopayLimit: $company->autopay_enabled_at !== null && $company->autopay_limit_amount !== null ? (int) $company->autopay_limit_amount : null,
                 pendingEndOn: $pending[$agreement->id] ?? null,
                 scheduledEndOn: $scheduled[$agreement->id] ?? null,
+                scheduleItems: self::scheduleFacts($items->get($agreement->id, new Collection)),
             );
         }
 
@@ -155,6 +171,23 @@ final class PackageMigrationRecords
         }
 
         return $through;
+    }
+
+    /**
+     * The facts of recurring items that set a charge schedule, as
+     * {@see ContinuedRecurrence::fromItems()} reads them.
+     *
+     * @param  iterable<ClientAgreementRecurringItem>  $items
+     * @return list<array{cadence: string, effective_on: CarbonImmutable|null, anchor_day: int|null, anchor_month: int|null}>
+     */
+    public static function scheduleFacts(iterable $items): array
+    {
+        $facts = [];
+        foreach ($items as $item) {
+            $facts[] = ['cadence' => (string) $item->cadence, 'effective_on' => $item->start_date, 'anchor_day' => $item->anchor_day, 'anchor_month' => $item->anchor_month];
+        }
+
+        return $facts;
     }
 
     /**

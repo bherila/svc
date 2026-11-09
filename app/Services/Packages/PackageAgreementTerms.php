@@ -11,6 +11,7 @@ use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Support\Billing\BillingCadence;
+use App\Support\Packages\Migration\ContinuedRecurrence;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageComponentTerms;
 use App\Support\Packages\PackageTerms;
@@ -32,7 +33,9 @@ use DomainException;
  * therefore never also a recurring item; one billed with the first cycle is a
  * one-time recurring item (ACC-3). An agreement that continues a service -
  * a move to a new version (MIG-3) - takes no setup fee at all: the client
- * set up when they signed, and a move never charges it again.
+ * set up when they signed, and a move never charges it again. Its recurring
+ * items continue the charge schedule of the agreement it follows
+ * ({@see ContinuedRecurrence}), so none restarts it with a first charge.
  */
 final class PackageAgreementTerms
 {
@@ -40,9 +43,10 @@ final class PackageAgreementTerms
 
     /**
      * `$continuing`: the agreement carries on a service the client already
-     * has (a move), so the version's setup fee is not on it.
+     * has (a move) on that schedule, so the version's setup fee is not on it
+     * and each recurring item charges on the dates the old ones would have.
      */
-    public function createDraft(Workspace $workspace, ClientCompany $company, ClientProject $project, ServicePackageVersion $version, CarbonImmutable $startsOn, bool $continuing = false): ClientAgreement
+    public function createDraft(Workspace $workspace, ClientCompany $company, ClientProject $project, ServicePackageVersion $version, CarbonImmutable $startsOn, ?ContinuedRecurrence $continuing = null): ClientAgreement
     {
         $terms = PackageTerms::fromVersion($version);
         $agreement = $this->agreements->create($workspace, $company, $project, null, [
@@ -66,7 +70,7 @@ final class PackageAgreementTerms
      * caller; null only while the offer that creates both is being made.
      * `$continuing` as for {@see createDraft()}.
      */
-    public function apply(Workspace $workspace, ClientAgreement $agreement, ServicePackageVersion $version, ?ServicePackageEnrollment $enrollment = null, bool $continuing = false): ClientAgreement
+    public function apply(Workspace $workspace, ClientAgreement $agreement, ServicePackageVersion $version, ?ServicePackageEnrollment $enrollment = null, ?ContinuedRecurrence $continuing = null): ClientAgreement
     {
         if ($agreement->status !== 'draft') {
             throw new DomainException('Only a draft agreement takes a package version\'s terms.');
@@ -78,9 +82,10 @@ final class PackageAgreementTerms
             ->where('workspace_id', $workspace->id)
             ->where('client_agreement_id', $updated->id)
             ->delete();
-        foreach (self::recurringItems($terms, $continuing) as $index => $item) {
+        foreach (self::recurringItems($terms, $continuing !== null) as $index => $item) {
             $updated->recurringItems()->create([
                 ...$item,
+                ...($continuing?->itemColumns() ?? []),
                 'workspace_id' => $workspace->id,
                 'currency' => $terms->currency,
                 'sort_order' => $index,

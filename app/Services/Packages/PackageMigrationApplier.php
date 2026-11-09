@@ -26,6 +26,7 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\ContinuedRecurrence;
 use App\Support\Packages\Migration\MigrationDecision;
 use App\Support\Packages\Migration\MigrationHold;
 use App\Support\Packages\Migration\MigrationRules;
@@ -85,6 +86,14 @@ use Throwable;
  * change after scheduling - a Square link, an operator's edit of the cadence
  * or the recurring items - so all three are asked again here and hold the
  * move.
+ *
+ * ## The charge schedule continues
+ *
+ * The successor's recurring items carry the old items' anchors and start
+ * when they did ({@see ContinuedRecurrence}), so each charges on the dates
+ * the old agreement's would have and none restarts the schedule with a
+ * first charge on the effective date. Items that follow no one schedule
+ * hold the move (`ambiguous_recurrence`; scheduling refuses them).
  *
  * ## Never backdated past a period
  *
@@ -213,16 +222,18 @@ final class PackageMigrationApplier
         // begin in the past with that period never invoiced: automatic
         // invoicing sells only the period containing today.
         $firstPeriod = $this->cycles->cycleContaining($old, Carbon::parse($effective->toDateString()));
-        $offCycleItems = ClientAgreementRecurringItem::query()
+        // The old agreement's open recurring items: the ones off its cycle
+        // hold the move; the rest set the schedule the successor continues.
+        $openItems = ClientAgreementRecurringItem::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_agreement_id', $old->id)
             ->where('is_active', true)
             ->where('cadence', '!=', ChargeCadence::OneTime->value)
             ->where(fn ($open) => $open->whereNull('expires_on')->orWhereDate('expires_on', '>=', $effective->toDateString()))
             ->orderBy('id')
-            ->pluck('cadence')
-            ->map(static fn (mixed $cadence): string => (string) $cadence)
-            ->all();
+            ->get(['id', 'cadence', 'effective_on', 'anchor_day', 'anchor_month']);
+        $offCycleItems = $openItems->map(static fn (ClientAgreementRecurringItem $item): string => (string) $item->cadence)->all();
+        $recurrence = ContinuedRecurrence::fromItems($old->effectiveBillingCadence(), $old->starts_on, $effective, PackageMigrationRecords::scheduleFacts($openItems));
         $decision = MigrationRules::decide(
             enrollmentActive: $enrollment->enrollmentStatus() === EnrollmentStatus::Active,
             carriesFromVersion: $enrollment->carriedVersionId() === $migration->from_version_id && $enrollment->client_agreement_id === $old->id,
@@ -236,6 +247,7 @@ final class PackageMigrationApplier
             firstPeriodEnded: $firstPeriod->end->toDateString() < $today->toDateString(),
             offCycleComponent: PackageMigrationPlanner::chargesOffCycle($toTerms) || MigrationRules::hasOffCycleCharge($old->effectiveBillingCadence()->value, array_values($offCycleItems)),
             owedPeriodUnbilled: $owed !== [],
+            recurrenceAmbiguous: $recurrence === null,
         );
         if ($decision->hold === MigrationHold::OwedPeriodUnbilled) {
             throw new MigrationHeld($decision->hold, 'Owed: the period from '.implode(', ', $owed).'.');
@@ -251,7 +263,7 @@ final class PackageMigrationApplier
             return MigrationRunOutcome::Skipped;
         }
 
-        $successor = $this->succeed($workspace, $company, $enrollment, $old, $version, $effective);
+        $successor = $this->succeed($workspace, $company, $enrollment, $old, $version, $effective, $recurrence ?? throw new DomainException('A move continues a known charge schedule.'));
         if ($pending !== null) {
             $pending->forceFill(['client_agreement_id' => $successor->id])->save();
         }
@@ -386,12 +398,13 @@ final class PackageMigrationApplier
      * as a draft on the same project, with what is the client's own carried
      * over from the agreement it follows.
      */
-    private function succeed(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, ClientAgreement $old, ServicePackageVersion $version, CarbonImmutable $effective): ClientAgreement
+    private function succeed(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, ClientAgreement $old, ServicePackageVersion $version, CarbonImmutable $effective, ContinuedRecurrence $recurrence): ClientAgreement
     {
         $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($enrollment->client_project_id)->firstOrFail();
         // A move continues the service: the client set up when they signed, so
-        // the version's setup fee is not charged again.
-        $successor = $this->terms->createDraft($workspace, $company, $project, $version, $effective, continuing: true);
+        // the version's setup fee is not charged again, and each recurring
+        // item charges on the old agreement's schedule.
+        $successor = $this->terms->createDraft($workspace, $company, $project, $version, $effective, continuing: $recurrence);
 
         $successor = $this->agreements->update($workspace, $successor, [
             'ends_on' => $old->ends_on?->toDateString(),

@@ -851,11 +851,36 @@ Slice 6 (moving subscribers to a new version) settled these:
   current or new version has any recurring component off the service's cadence,
   a one-time one included, is refused whole. A setup fee is not one (the
   successor never carries it, above).
+- **The charge schedule continues** (`ContinuedRecurrence`). The engine places
+  a recurring item's charges by its anchor day and month - unset, the 1st and
+  the month the item starts - and in the item's first cycle falls back to a
+  charge on its start date when the anchor has passed. A successor's items
+  started fresh on the effective date restarted that schedule: a quarterly
+  service started Nov 9 charges Nov 9, Feb 1, May 1; moved on Feb 9, it was
+  charged Feb 9 and May 1 in its first new quarter, where the never-moved
+  service is charged May 1 alone (Codex P1 on #674 - every non-monthly cadence
+  started on a day other than the 1st did the same). So the successor's items
+  carry the old items' anchors explicitly and start when the old items did
+  (`PackageAgreementTerms::createDraft(..., continuing: $recurrence)`): before
+  the successor itself, whose cycles bound every charge, so no first-charge
+  fallback applies and each item charges on the dates the old ones would have,
+  a new component included. The schedule is read from the old agreement's open
+  items on its cadence; when they follow no one schedule (different anchor
+  days, a different place in the cycle, an item starting later - only an
+  operator's edit makes these), the subscriber is refused
+  (`package_migration_ambiguous_recurrence`) and, if it happens after
+  scheduling, the move holds (`ambiguous_recurrence`). With no such item, the
+  schedule an item started with the agreement would have. A property in
+  `BillingHistoryInvariantTest` proves it: for identical terms a moved twin
+  and a never-moved twin bill the same total for every period, each once, on
+  every cadence, for services started on the 1st, 9th and 31st, moved on each
+  of the first two dates a move may take (a full cycle apart), with one or two
+  components or a setup fee billed with the first cycle.
 - **Asked again on the date.** The version is fixed at scheduling, but an
   operator can change an active agreement's cadence or recurring items, and a
   Square series can be linked to it, after scheduling, so the applier reads
   them under the agreement's lock and holds the move (`cadence_changed`,
-  `off_cycle_component`, `square_collected`) rather than apply it, retried
+  `off_cycle_component`, `ambiguous_recurrence`, `square_collected`) rather than apply it, retried
   every run and shown in Needs you until the agreement is restored or the move
   cancelled for that subscriber.
 - **Never started in the past** (`effective_date_passed`). A move held on its

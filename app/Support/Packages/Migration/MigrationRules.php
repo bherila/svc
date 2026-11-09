@@ -45,6 +45,7 @@ final class MigrationRules
         bool $firstPeriodEnded,
         bool $offCycleComponent,
         bool $owedPeriodUnbilled,
+        bool $recurrenceAmbiguous,
     ): MigrationDecision {
         $effective = $effectiveOn->toDateString();
 
@@ -58,6 +59,7 @@ final class MigrationRules
             $squareCollected => MigrationDecision::hold(MigrationHold::SquareCollected),
             $cadenceChanged => MigrationDecision::hold(MigrationHold::CadenceChanged),
             $offCycleComponent => MigrationDecision::hold(MigrationHold::OffCycleComponent),
+            $recurrenceAmbiguous => MigrationDecision::hold(MigrationHold::AmbiguousRecurrence),
             $pendingEndOn !== null && $pendingEndOn->toDateString() < $effective => MigrationDecision::hold(MigrationHold::CancellationPending),
             $periodInvoiced => MigrationDecision::hold(MigrationHold::PeriodInvoiced),
             default => MigrationDecision::apply(),
@@ -78,7 +80,7 @@ final class MigrationRules
      * work period Oct-Dec, which the old agreement's issued invoices on the
      * same project already claim, so it is refused and never invoiced.
      */
-    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen, bool $billsByUsage = false, bool $squareCollected = false, bool $changesCadence = false): ?MigrationRefusal
+    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen, bool $billsByUsage = false, bool $squareCollected = false, bool $changesCadence = false, bool $recurrenceAmbiguous = false): ?MigrationRefusal
     {
         return match (true) {
             ! $activeOnFromVersion => MigrationRefusal::NotASubscriber,
@@ -87,6 +89,7 @@ final class MigrationRules
             $billsByUsage => MigrationRefusal::BillsByUsage,
             $dates === null => MigrationRefusal::NotRecurring,
             $changesCadence => MigrationRefusal::ChangesCadence,
+            $recurrenceAmbiguous => MigrationRefusal::AmbiguousRecurrence,
             $dates->offered === [] => MigrationRefusal::EndsFirst,
             $chosen !== null && ! $dates->offers($chosen) => MigrationRefusal::DateNotOffered,
             default => null,
