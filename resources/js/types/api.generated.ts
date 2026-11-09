@@ -71,6 +71,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/agreements/{agreement}/scheduled-end': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, schedule an active agreement's end on end_date, in any portal cancellation mode: one of the agreement's cancellation.offered_end_dates (agreements.get), or of offered_end_dates_without_notice with waive_notice true; the minimum term always holds. The agreement stays active with that end date and is terminated on the date; until then agreements.undo_scheduled_end undoes it. The client is emailed the end date. Refused with cancellation_request_pending while a client's request waits (decide it instead), cancellation_already_scheduled, cancellation_agreement_not_active, cancellation_not_recurring, or cancellation_date_not_offered. Use agreements.terminate to end an agreement today or on a date that is not a period close. The agreement's current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. */
+        post: operations['agreements.schedule_end'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/agreements/{agreement}/square-series': {
         parameters: {
             query?: never;
@@ -100,6 +117,23 @@ export interface paths {
         put?: never;
         /** @description Workspace managers only. Requires both AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. Versioned writes also require the corresponding read scope. Enabling automatic delivery requires a delay and a valid billing email or client portal recipient. Existing records require their current opaque expected_version; agreement creation uses the parent client version. Activation and termination require confirm: true. */
         post: operations['agreements.terminate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/agreements/{agreement}/scheduled-end/undo': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, undo an agreement's scheduled end before its date, in any mode: the end date it had before is restored, and the workspace's owners and admins and the client are emailed. Refused with cancellation_not_scheduled when nothing is scheduled (or it has already been carried out) and cancellation_end_reached once the date has passed. The agreement's current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. */
+        post: operations['agreements.undo_scheduled_end'];
         delete?: never;
         options?: never;
         head?: never;
@@ -398,6 +432,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/cancellation-requests/{cancellation}/approve': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, approve a pending cancellation request: schedule the agreement's end on end_date (by default the date the client asked for), which must be one of offered_end_dates, or of offered_end_dates_without_notice with waive_notice true. The agreement stays active with that end date until the date, when it is terminated; until then agreements.undo_scheduled_end undoes it. The client is emailed the end date and the optional note. A balance owed is untouched and stays owed. Refused with cancellation_request_not_pending once decided or withdrawn, cancellation_date_not_offered for any other date, and cancellation_agreement_not_active, cancellation_not_recurring or cancellation_already_scheduled when the agreement cannot take an end now. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. */
+        post: operations['cancellation_requests.approve'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/cancellation-requests/{cancellation}/decline': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, decline a pending cancellation request with an optional note, which the client reads in an email. The agreement is unchanged. Refused with cancellation_request_not_pending once decided or withdrawn. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED. */
+        post: operations['cancellation_requests.decline'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/cancellation-requests/{cancellation}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read one cancellation request with its client, agreement, dates, reason, decision and, while pending, the end dates it may be approved on, and the version to send with a decision. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['cancellation_requests.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/cancellation-requests': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the cancellation requests the workspace's clients made from the portal, newest first, optionally by status (pending, approved, declined or withdrawn). A request is made in an agreement's request mode; in self-serve mode a client's cancellation schedules the end at once and makes no request. Each names its client and agreement with the agreement's page, the end date asked for, the client's reason, who asked and when, and the decision: who decided, when, the end date chosen, whether notice was waived and the note the client reads. A pending one also carries offered_end_dates (the period closes it may be approved on, with the notice period) and offered_end_dates_without_notice (with notice waived). Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['cancellation_requests.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/agreements/{agreement}/capacity-ledger': {
         parameters: {
             query?: never;
@@ -422,7 +524,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description For a client's portal contact: read one of your company's services with its terms, status, acceptance, next_period_start and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description For a client's portal contact: read one of your company's services with its terms, status, acceptance, next_period_start, cancellation and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['client_services.get'];
         put?: never;
         post?: never;
@@ -439,7 +541,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date), next_period_start (the day the next billing period, and its invoice, begins) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date), next_period_start (the day the next billing period, and its invoice, begins), cancellation (the agreement's own cancellation terms, the end dates you could choose now, and any pending request or scheduled end) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing, paying and cancelling happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['client_services.list'];
         put?: never;
         post?: never;
@@ -3371,6 +3473,43 @@ export interface components {
             square_location_id: string | null;
             /** @description Whether this agreement exposes its deferred backlog in the client portal; off by default. */
             show_deferred_backlog_to_client: boolean;
+            /** @description Days of notice a client gives before a cancellation may take effect (CAN-1). */
+            notice_days: number;
+            /** @description Months from starts_on before an end may fall; null for none. */
+            minimum_term_months: number | null;
+            /**
+             * @description What a company-wide portal contact may do: none (no cancellation in the portal), request (an owner or admin decides) or self_serve (the end is scheduled at once).
+             * @enum {string}
+             */
+            cancellation_mode: 'none' | 'request' | 'self_serve';
+            cancellation: components['schemas']['AgreementCancellation'];
+        };
+        AgreementCancellation: {
+            /** Format: date */
+            earliest_end_on: string | null;
+            offered_end_dates: string[];
+            offered_end_dates_without_notice: string[];
+            pending_request: {
+                id: components['schemas']['Uuid'];
+                version: components['schemas']['Version'];
+                /** Format: date */
+                requested_end_on: string;
+                reason: string | null;
+                /** Format: date-time */
+                requested_at: string;
+                requested_by: string | null;
+            } | null;
+            scheduled_end: {
+                id: components['schemas']['Uuid'];
+                /** Format: date */
+                ends_on: string;
+                /** Format: date */
+                previous_ends_on: string | null;
+                /** @enum {string} */
+                source: 'self_serve' | 'request' | 'operator';
+                /** Format: date-time */
+                scheduled_at: string;
+            } | null;
         };
         AgreementHandoverAudit: {
             count: number;
@@ -3394,6 +3533,14 @@ export interface components {
         };
         AgreementResponse: {
             data: components['schemas']['Agreement'];
+        };
+        AgreementScheduleEndRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            /** Format: date */
+            end_date: string | null;
+            waive_notice?: boolean;
         };
         AgreementSquareSeriesClearRequest: {
             expected_version: components['schemas']['Version'];
@@ -3605,6 +3752,64 @@ export interface components {
         BillingScheduleResponse: {
             data: components['schemas']['BillingSchedule'];
         };
+        CancellationRequest: {
+            id: components['schemas']['Uuid'];
+            version: components['schemas']['Version'];
+            /** @enum {string} */
+            status: 'pending' | 'approved' | 'declined' | 'withdrawn';
+            client: {
+                id: components['schemas']['Uuid'];
+                name: string;
+            };
+            agreement: {
+                id: components['schemas']['Uuid'];
+                title: string;
+                status: string;
+                /** Format: date */
+                ends_on: string | null;
+                /** Format: uri */
+                url: string;
+            };
+            /** Format: date */
+            requested_end_on: string;
+            reason: string | null;
+            requested_by: string | null;
+            /** Format: date-time */
+            requested_at: string;
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date */
+            decided_end_on: string | null;
+            notice_waived: boolean;
+            decision_note: string | null;
+            offered_end_dates: string[];
+            offered_end_dates_without_notice: string[];
+        };
+        CancellationRequestApproveRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            /** Format: date */
+            end_date?: string | null;
+            waive_notice?: boolean;
+            note?: string | null;
+        };
+        CancellationRequestDeclineRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+            note?: string | null;
+        };
+        CancellationRequestListResponse: {
+            data: components['schemas']['CancellationRequest'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        CancellationRequestResponse: {
+            data: components['schemas']['CancellationRequest'];
+        };
         CapacityLedger: {
             agreement_id: components['schemas']['Uuid'];
             /** Format: date */
@@ -3805,8 +4010,37 @@ export interface components {
             payment: components['schemas']['ServicePackageSignupPayment'];
             /** Format: date */
             next_period_start: string | null;
+            cancellation: components['schemas']['ClientServiceCancellation'];
             /** Format: uri */
             url: string;
+        };
+        ClientServiceCancellation: {
+            /** @enum {string} */
+            mode: 'none' | 'request' | 'self_serve';
+            notice_days: number;
+            minimum_term_months: number | null;
+            /** Format: date */
+            earliest_end_on: string | null;
+            offered_end_dates: string[];
+            pending_request: {
+                id: components['schemas']['Uuid'];
+                /** Format: date */
+                requested_end_on: string;
+                reason: string | null;
+                /** Format: date-time */
+                requested_at: string;
+            } | null;
+            scheduled_end: {
+                id: components['schemas']['Uuid'];
+                /** Format: date */
+                ends_on: string;
+                /** Format: date */
+                previous_ends_on: string | null;
+                /** @enum {string} */
+                source: 'self_serve' | 'request' | 'operator';
+                /** Format: date-time */
+                scheduled_at: string;
+            } | null;
         };
         ClientServiceListResponse: {
             data: components['schemas']['ClientService'][];
@@ -8285,6 +8519,10 @@ export interface components {
                 'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
             bill_overage_interim?: boolean | null;
             show_deferred_backlog_to_client?: boolean;
+            notice_days?: number;
+            minimum_term_months?: number | null;
+            /** @enum {string} */
+            cancellation_mode?: 'none' | 'request' | 'self_serve';
         };
         clients_archiveRequest: {
             expected_version: string;
@@ -8579,6 +8817,90 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'agreements.schedule_end': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['AgreementScheduleEndRequest'];
+            };
+        };
+        responses: {
+            /** @description The agreement, with its cancellation state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'agreements.square_series.set': {
         parameters: {
             query?: never;
@@ -8664,6 +8986,90 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'agreements.undo_scheduled_end': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                agreement: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description The agreement, with its cancellation state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['AgreementResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];
@@ -9565,6 +9971,315 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['BillingScheduleResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'cancellation_requests.approve': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                cancellation: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CancellationRequestApproveRequest'];
+            };
+        };
+        responses: {
+            /** @description Cancellation request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CancellationRequestResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'cancellation_requests.decline': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                cancellation: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['CancellationRequestDeclineRequest'];
+            };
+        };
+        responses: {
+            /** @description Cancellation request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CancellationRequestResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'cancellation_requests.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                cancellation: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CancellationRequestResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or cancellation request is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'cancellation_requests.list': {
+        parameters: {
+            query?: {
+                status?: 'pending' | 'approved' | 'declined' | 'withdrawn';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['CancellationRequestListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or cancellation request is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

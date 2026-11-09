@@ -25,8 +25,6 @@ final class RequirementTraceabilityTest extends TestCase
      * @var list<string>
      */
     private const PENDING = [
-        // Slice 5: cancellation.
-        'CAN-1', 'CAN-2', 'CAN-3', 'CAN-4', 'CAN-5', 'CAN-6', 'EDGE-9', 'EDGE-11',
         // Slice 6: version migration.
         'MIG-1', 'MIG-2', 'MIG-3', 'MIG-4', 'MIG-5',
     ];

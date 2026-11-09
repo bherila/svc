@@ -59,6 +59,9 @@ final class WebApiParityTest extends TestCase
         'portal.payment-methods.destroy' => 'deliberate:a client contact removing their own saved payment method is their own act in the portal, and turns autopay off if it was the default',
         'portal.services.accept' => 'deliberate:a client contact accepting a service package offer is their own signature on the agreement, given in the portal, which holds no agent credential; client agents read services through client_services.* only (docs/service-packages.md ACC-1, API-5)',
         'portal.services.add' => 'deliberate:a client contact adding a portal-addable package for their own company is their own act in the portal (ACC-8); the provider side offers through package_requests.approve',
+        'portal.agreements.cancellation.store' => 'deliberate:a client contact cancelling their own company\'s agreement, or asking to, is their own act in the portal (CAN-3); client agents read its state through client_services.* only, and the provider side decides through cancellation_requests.* and agreements.schedule_end',
+        'portal.agreements.cancellation.withdraw' => 'deliberate:a client contact withdrawing their own pending cancellation request is their own act in the portal (CAN-4); the provider side declines through cancellation_requests.decline',
+        'portal.agreements.cancellation.undo' => 'deliberate:a client contact undoing the end they scheduled themselves is their own act in the portal (EDGE-9); the provider side undoes through agreements.undo_scheduled_end',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in
         // owner or admin of each side may open, accept, end or relink it (#631).

@@ -113,7 +113,9 @@ final class AgentPackageFeatureFlagTest extends TestCase
         $expected = [
             ...array_map(static fn (string $path): string => '/paths/'.str_replace('/', '~1', $path).': missing from the generated document',
                 array_values(array_unique(array_column(ServicePackageOperations::ROUTES, 1)))),
-            ...array_map(static fn (string $component): string => '/components/schemas/'.$component.': missing from the generated document', ServicePackageOperations::components()),
+            // Every agreement carries its cancellation state (CAN-1), so agreements.get keeps that schema.
+            ...array_map(static fn (string $component): string => '/components/schemas/'.$component.': missing from the generated document',
+                array_values(array_diff(ServicePackageOperations::components(), ['AgreementCancellation']))),
         ];
         sort($expected);
         sort($missing);

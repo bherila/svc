@@ -365,3 +365,9 @@ switch off removes create/update/publish/retire, the sign-up request decisions
 while `packages.list`, `packages.get`, `package_requests.list`,
 `package_requests.get`, `enrollments.list`, `enrollments.get` and the client side's
 `client_services.list` and `client_services.get` remain for `packages:read`.
+The cancellation decisions (`cancellation_requests.approve`,
+`cancellation_requests.decline`, `agreements.schedule_end` and
+`agreements.undo_scheduled_end`) sit behind `AGENT_API_CLIENT_WRITES_ENABLED`
+instead, beside `agreements.terminate`, and also exist only while
+`SVC_SERVICE_PACKAGES_ENABLED` is on; `cancellation_requests.list` and
+`cancellation_requests.get` remain for `billing:read`.

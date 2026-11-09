@@ -305,6 +305,7 @@ export function portalServiceProps(
         accept_fields: { reviewed_version: 'version-2' },
         accept_refusal: null,
         checkout: null,
+        cancellation: null,
         ...overrides,
     };
 }

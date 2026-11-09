@@ -6,13 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\AgentAgreementReadService;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentPackageMutationAction;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
+use App\Services\Engagement\CancellationRequestReadService;
 use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
+use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
@@ -21,9 +24,9 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * The service package, sign-up request, enrollment and client service
- * operations (docs/service-packages.md); every decision is the read services'
- * or the workflows'.
+ * The service package, sign-up request, enrollment, client service and
+ * cancellation operations (docs/service-packages.md); every decision is the
+ * read services' or the workflows'.
  */
 final class AgentPackageController extends Controller
 {
@@ -34,6 +37,8 @@ final class AgentPackageController extends Controller
         private readonly AgentMutationContextFactory $contexts,
         private readonly PackageEnrollmentReadService $enrollmentReads,
         private readonly ClientServiceReadService $services,
+        private readonly CancellationRequestReadService $cancellationReads,
+        private readonly AgentAgreementReadService $agreements,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse
@@ -143,6 +148,55 @@ final class AgentPackageController extends Controller
         return response()->json(['data' => $this->services->get($this->reader($request), $workspace, $service)]);
     }
 
+    public function cancellationRequests(Request $request, Workspace $workspace): JsonResponse
+    {
+        [$actor, $status, $limit, $cursor] = $this->listing($request, CancellationRequestStatus::class);
+
+        return response()->json($this->cancellationReads->list($actor, $workspace, $status, $limit, $cursor));
+    }
+
+    public function showCancellationRequest(Request $request, Workspace $workspace, string $cancellation): JsonResponse
+    {
+        return response()->json(['data' => $this->cancellationReads->get($this->reader($request), $workspace, $cancellation)]);
+    }
+
+    public function approveCancellationRequest(Request $request, Workspace $workspace, string $cancellation): JsonResponse
+    {
+        return $this->decideCancellation($request, $workspace, 'cancellation_requests.approve', $cancellation);
+    }
+
+    public function declineCancellationRequest(Request $request, Workspace $workspace, string $cancellation): JsonResponse
+    {
+        return $this->decideCancellation($request, $workspace, 'cancellation_requests.decline', $cancellation);
+    }
+
+    /** The agreement as agreements.get answers it, with its cancellation state. */
+    public function scheduleAgreementEnd(Request $request, Workspace $workspace, string $agreement): JsonResponse
+    {
+        return $this->agreementEnd($request, $workspace, 'agreements.schedule_end', $agreement);
+    }
+
+    public function undoAgreementEnd(Request $request, Workspace $workspace, string $agreement): JsonResponse
+    {
+        return $this->agreementEnd($request, $workspace, 'agreements.undo_scheduled_end', $agreement);
+    }
+
+    private function decideCancellation(Request $request, Workspace $workspace, string $operation, string $cancellation): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $this->writes->decideCancellation($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $cancellation, $request->all());
+
+        return response()->json(['data' => $this->cancellationReads->get($context->user, $workspace, $cancellation)]);
+    }
+
+    private function agreementEnd(Request $request, Workspace $workspace, string $operation, string $agreement): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $id = $this->writes->agreementEnd($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $operation, $agreement, $request->all());
+
+        return response()->json(['data' => $this->agreements->get($context->user, $workspace, $id)]);
+    }
+
     private function mutate(Request $request, Workspace $workspace, string $operation, ?string $package, int $status = 200): JsonResponse
     {
         $context = $this->contexts->fromAuthenticatedClient($request);
@@ -170,7 +224,7 @@ final class AgentPackageController extends Controller
     /**
      * A list's caller and its validated filters.
      *
-     * @template T of PackageStatus|PackageRequestStatus|EnrollmentStatus
+     * @template T of PackageStatus|PackageRequestStatus|EnrollmentStatus|CancellationRequestStatus
      *
      * @param  class-string<T>  $statuses
      * @return array{User|AgentPrincipal, T|null, int, string|null}

@@ -2,6 +2,7 @@
 
 namespace App\Services\Engagement;
 
+use App\Exceptions\AgreementCancellationRefused;
 use App\Exceptions\ServicePackageRefused;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
@@ -16,6 +17,7 @@ use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
+use App\Support\Engagement\Cancellation\CancellationRefusal;
 use App\Support\Packages\PackageRefusal;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
@@ -40,6 +42,7 @@ class AgreementWorkflow
         'is_visible_to_client', 'show_deferred_backlog_to_client', 'hourly_rate_amount', 'retainer_amount', 'retainer_minutes',
         'period_retainer_amount', 'period_retainer_minutes', 'catch_up_threshold_minutes',
         'rollover_months', 'rollover_policy', 'first_cycle_proration', 'bill_overage_interim',
+        'notice_days', 'minimum_term_months', 'cancellation_mode',
     ];
 
     public function __construct(
@@ -47,6 +50,7 @@ class AgreementWorkflow
         private readonly ClientActivityRecorder $activities,
         private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly CancellationRecords $cancellations = new CancellationRecords,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -179,6 +183,13 @@ class AgreementWorkflow
                 return $locked;
             }
 
+            // A scheduled end owns `ends_on` until it is reached or undone
+            // (EDGE-9): undoing it restores the end it replaced, which would
+            // silently discard an edit made in between.
+            if (array_key_exists('ends_on', $changes) && $this->cancellations->lockScheduled($locked) !== null) {
+                throw AgreementCancellationRefused::because(CancellationRefusal::EndScheduled);
+            }
+
             if ($locked->status === 'active'
                 && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes))) {
                 $candidate = clone $locked;
@@ -196,7 +207,14 @@ class AgreementWorkflow
                 occurrence: (string) Str::uuid(),
             );
 
-            return $locked->fresh();
+            // Read back under the lock already held: an ordinary read would
+            // answer from a snapshot the caller's transaction may have fixed
+            // before this lock was taken.
+            return ClientAgreement::query()
+                ->whereKey($locked->getKey())
+                ->where('workspace_id', $workspace->id)
+                ->tap(Locks::forUpdate())
+                ->firstOrFail();
         });
     }
 
@@ -287,6 +305,11 @@ class AgreementWorkflow
      *
      * One-way: nothing reactivates a terminated agreement, and `activate()`
      * refuses it, so a mistaken termination is corrected by a new agreement.
+     *
+     * Records when it happened in `terminated_at` (the revenue projection and
+     * the agreement screens read it), and carries out any scheduled end and
+     * closes any pending cancellation request, so nothing waits on an
+     * agreement that has ended (CAN-5, EDGE-9).
      */
     public function terminate(ClientAgreement $agreement, ?string $endsOn = null, ?string $expectedVersion = null): ClientAgreement
     {
@@ -313,7 +336,9 @@ class AgreementWorkflow
             }
 
             $previousStatus = $locked->status;
-            $locked->forceFill(['status' => 'terminated', 'ends_on' => $end])->save();
+            $at = $this->clock->now()->utc();
+            $locked->forceFill(['status' => 'terminated', 'ends_on' => $end, 'terminated_at' => $at])->save();
+            $this->cancellations->closeOnTermination($locked, $at);
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,

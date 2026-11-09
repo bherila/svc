@@ -42,6 +42,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $signed_at
  * @property string|null $square_series_key
  * @property string|null $square_location_id
+ * @property int $notice_days
+ * @property int|null $minimum_term_months
+ * @property string $cancellation_mode
  * @property-read float $monthly_retainer_hours
  * @property-read float $monthly_retainer_fee
  * @property-read float|null $retainer_hours
@@ -59,6 +62,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'catch_up_threshold_minutes', 'period_retainer_minutes', 'period_retainer_amount',
     'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim',
     'first_cycle_proration', 'agreement_link',
+    // Cancellation terms (CAN-1).
+    'notice_days', 'minimum_term_months', 'cancellation_mode',
 ])]
 // `square_series_key` and `square_location_id` are the billed-in-Square marker
 // (#438, #488): an operator fact read through the agent API and the operator
@@ -67,6 +72,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ClientAgreement extends Model implements RetainerAgreementTerms, WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
+
+    /**
+     * The cancellation terms an agreement has until someone states others
+     * (CAN-1): no notice, no minimum term, and nothing offered in the portal.
+     * The columns default the same way; stating them here keeps a model just
+     * created from reading them as null before it is read back.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'notice_days' => 0,
+        'cancellation_mode' => 'none',
+    ];
 
     protected function casts(): array
     {
@@ -87,6 +105,8 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
             'activated_at' => 'immutable_datetime',
             'signed_at' => 'immutable_datetime',
             'terminated_at' => 'immutable_datetime',
+            'notice_days' => 'integer',
+            'minimum_term_months' => 'integer',
         ];
     }
 
@@ -408,6 +428,18 @@ class ClientAgreement extends Model implements RetainerAgreementTerms, Workspace
     public function recurringItems(): HasMany
     {
         return $this->hasMany(ClientAgreementRecurringItem::class);
+    }
+
+    /** @return HasMany<AgreementCancellationRequest, $this> */
+    public function cancellationRequests(): HasMany
+    {
+        return $this->hasMany(AgreementCancellationRequest::class);
+    }
+
+    /** @return HasMany<AgreementScheduledTermination, $this> */
+    public function scheduledTerminations(): HasMany
+    {
+        return $this->hasMany(AgreementScheduledTermination::class);
     }
 
     /** @return BelongsTo<User, $this> */

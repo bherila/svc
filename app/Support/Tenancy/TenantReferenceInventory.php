@@ -126,6 +126,13 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('service_package_enrollments', 'signup_invoice_id', 'client_invoices', 'svpke_ws_signup_invoice_fk'),
             TenantReference::enforcedBy('service_package_enrollments', 'auto_invoice_id', 'client_invoices', 'svpke_ws_auto_invoice_fk'),
 
+            // Cancellation (CAN-3, CAN-4, EDGE-9): a request and a scheduled
+            // end stay inside their agreement's workspace.
+            TenantReference::enforcedBy('agreement_cancellation_requests', 'client_company_id', 'client_companies', 'agcr_ws_company_fk'),
+            TenantReference::enforcedBy('agreement_cancellation_requests', 'client_agreement_id', 'client_agreements', 'agcr_ws_agreement_fk'),
+            TenantReference::enforcedBy('agreement_scheduled_terminations', 'client_agreement_id', 'client_agreements', 'agst_ws_agreement_fk'),
+            TenantReference::enforcedBy('agreement_scheduled_terminations', 'agreement_cancellation_request_id', 'agreement_cancellation_requests', 'agst_ws_request_fk'),
+
             // Projects.
             TenantReference::enforcedBy('client_task_graph_states', 'client_project_id', 'client_projects', 'task_graph_ws_project_fk'),
             TenantReference::enforcedBy('client_tasks', 'client_project_id', 'client_projects', 'ct_ws_project_fk'),

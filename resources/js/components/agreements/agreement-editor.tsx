@@ -61,6 +61,13 @@ const PRORATIONS = [
     { value: 'align_next_cycle', label: 'Align to the next cycle' },
 ] as const;
 
+/** What a company-wide portal contact may do about ending the agreement (CAN-1). */
+export const CANCELLATION_MODES = [
+    { value: 'none', label: 'No cancellation in the portal' },
+    { value: 'request', label: 'Client requests, you approve' },
+    { value: 'self_serve', label: 'Client cancels themselves' },
+] as const;
+
 const INTERIM = [
     { value: UNSET, label: 'Not stated — not billed mid-cycle' },
     { value: 'yes', label: 'Billed mid-cycle' },
@@ -279,6 +286,12 @@ export function AgreementTermsForm({
                   ? 'yes'
                   : 'no',
         agreement_text: agreement.agreement_text ?? '',
+        notice_days: String(agreement.notice_days),
+        minimum_term_months:
+            agreement.minimum_term_months === null
+                ? ''
+                : String(agreement.minimum_term_months),
+        cancellation_mode: agreement.cancellation_mode,
         is_visible_to_client: agreement.is_visible_to_client === true,
         show_deferred_backlog_to_client:
             agreement.show_deferred_backlog_to_client === true,
@@ -304,13 +317,15 @@ export function AgreementTermsForm({
             period_retainer_amount: scaled(form.period_retainer_fee, 100),
             catch_up_threshold_minutes: scaled(form.catch_up_hours, 60),
             rollover_months: whole(form.rollover_months),
+            minimum_term_months: whole(form.minimum_term_months),
         };
+        const noticeDays = whole(form.notice_days);
 
         const bad = Object.entries(numbers).find(
             ([, value]) => value === 'invalid',
         );
 
-        if (bad !== undefined) {
+        if (bad !== undefined || noticeDays === 'invalid') {
             setError(
                 'One of the numbers is not a number. Leave a term blank to say it is unstated.',
             );
@@ -340,6 +355,8 @@ export function AgreementTermsForm({
                     : form.bill_overage_interim === 'yes',
             agreement_text:
                 form.agreement_text === '' ? null : form.agreement_text,
+            notice_days: noticeDays ?? 0,
+            cancellation_mode: form.cancellation_mode,
             is_visible_to_client: form.is_visible_to_client,
             show_deferred_backlog_to_client:
                 form.show_deferred_backlog_to_client,
@@ -601,6 +618,73 @@ export function AgreementTermsForm({
                         </SelectTrigger>
                         <SelectContent>
                             {INTERIM.map((option) => (
+                                <SelectItem
+                                    key={option.value}
+                                    value={option.value}
+                                >
+                                    {option.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </Field>
+                <Field
+                    id="notice-days"
+                    label="Notice (days)"
+                    hint="A cancellation ends at the close of the billing period in which the notice runs out"
+                >
+                    <Input
+                        id="notice-days"
+                        type="number"
+                        min="0"
+                        max="365"
+                        step="1"
+                        inputMode="numeric"
+                        value={form.notice_days}
+                        onChange={(event) =>
+                            set('notice_days', event.target.value)
+                        }
+                    />
+                </Field>
+                <Field
+                    id="minimum-term"
+                    label="Minimum term (months)"
+                    hint="Blank for none"
+                >
+                    <Input
+                        id="minimum-term"
+                        type="number"
+                        min="1"
+                        max="120"
+                        step="1"
+                        inputMode="numeric"
+                        value={form.minimum_term_months}
+                        onChange={(event) =>
+                            set('minimum_term_months', event.target.value)
+                        }
+                    />
+                </Field>
+                <Field
+                    id="cancellation-mode"
+                    label="Cancellation in the portal"
+                >
+                    <Select
+                        items={CANCELLATION_MODES}
+                        value={form.cancellation_mode}
+                        onValueChange={(next) => {
+                            if (typeof next === 'string') {
+                                set('cancellation_mode', next);
+                            }
+                        }}
+                    >
+                        <SelectTrigger
+                            id="cancellation-mode"
+                            className="w-full"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {CANCELLATION_MODES.map((option) => (
                                 <SelectItem
                                     key={option.value}
                                     value={option.value}

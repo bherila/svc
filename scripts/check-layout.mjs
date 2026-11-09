@@ -1451,8 +1451,9 @@ try {
 
             const rows = await page.locator('main tbody tr').count();
 
-            if (rows !== 3) {
-                failures.push(`${screen} at ${width}px lists ${rows} services, expected 3.`);
+            // Three from the sign-up slices and three from cancellation.
+            if (rows !== 6) {
+                failures.push(`${screen} at ${width}px lists ${rows} services, expected 6.`);
             }
 
             for (const forbidden of ['awaiting_review', 'Awaiting_review']) {
@@ -1493,6 +1494,42 @@ try {
             }
 
             for (const forbidden of ['awaiting_payment', 'Awaiting_payment', 'setup_fee', 'first_period']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
+        if (screen === 'packages_portal_cancel') {
+            // The self-serve form: the server's dates in a select, then the confirmation.
+            await expect(page.getByRole('combobox', { name: 'End on' })).toBeVisible();
+            await page.getByLabel('Reason (optional)').fill('Reason'.repeat(40));
+            await page.getByRole('button', { name: /^Cancel on / }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'confirm-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        }
+
+        if (screen === 'packages_portal_cancel_pending') {
+            await expect(page.getByText(/^Cancellation requested · /)).toBeVisible();
+            await expect(page.getByRole('button', { name: 'Withdraw request…' })).toBeVisible();
+        }
+
+        if (screen === 'packages_portal_cancel_scheduled') {
+            await expect(page.getByText(/^Ends /).first()).toBeVisible();
+            await expect(page.getByRole('button', { name: 'Undo cancellation…' })).toBeVisible();
+        }
+
+        if (screen === 'packages_operator_cancellation') {
+            await expect(page.getByRole('heading', { name: 'Cancellation request' })).toBeVisible();
+            await page.getByRole('button', { name: /^Approve, end / }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'approve-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+            for (const forbidden of ['self_serve', 'waives_notice']) {
                 if (text.includes(forbidden)) {
                     failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
                 }
@@ -2463,6 +2500,10 @@ try {
                   'packages_portal_checkout_estimate',
                   'packages_portal_checkout_invoice',
                   'packages_operator_agreement',
+                  'packages_portal_cancel',
+                  'packages_portal_cancel_pending',
+                  'packages_portal_cancel_scheduled',
+                  'packages_operator_cancellation',
               ]
             : paletteOnly
             ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']

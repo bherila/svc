@@ -76,24 +76,8 @@ final class PortalOverviewQuery
         $workspace = $company->workspace;
         $today = $this->clock->today($workspace);
 
-        $open = $this->invoices->visibleTo($company, $viewer)
-            ->whereIn('status', InvoiceStatus::collectible())
-            ->where('balance_amount', '>', 0)
-            ->orderBy('id')
-            ->limit(self::OPEN_INVOICES)
-            ->get();
-
-        $balance = new PortalBalance(
-            array_values($open->map(fn (ClientInvoice $invoice): array => [
-                'id' => (string) $invoice->public_id,
-                'number' => (string) $invoice->invoice_number,
-                'balance' => (int) $invoice->balance_amount,
-                'currency' => (string) $invoice->currency,
-                'due_date' => $invoice->due_date?->toDateString(),
-            ])->all()),
-            $today->toDateString(),
-        );
-        $facts = $balance->toArray();
+        $open = $this->openInvoices($company, $viewer);
+        $facts = $this->balanceOf($open, $today->toDateString());
 
         $recent = $this->invoices->visibleTo($company, $viewer)
             ->orderByDesc('issue_date')
@@ -110,6 +94,47 @@ final class PortalOverviewQuery
                 $invoice, route('portal.invoice', [$company, $invoice], absolute: false),
             )->toArray())->all()),
         ];
+    }
+
+    /**
+     * What this client owes on the invoices the viewer can see, as the
+     * Balance card says it. Also shown before a cancellation, which never
+     * touches it (EDGE-11).
+     *
+     * @return array{amount_due: int|null, currency: string|null, invoice_count: int, overdue: bool, overdue_amount: int|null, first: array{id: string, number: string, balance: int, currency: string, due_date: string|null, days_until_due: int|null}|null}
+     */
+    public function balance(ClientCompany $company, User $viewer): array
+    {
+        return $this->balanceOf($this->openInvoices($company, $viewer), $this->clock->today($company->workspace)->toDateString());
+    }
+
+    /** @return Collection<int, ClientInvoice> */
+    private function openInvoices(ClientCompany $company, User $viewer): Collection
+    {
+        return $this->invoices->visibleTo($company, $viewer)
+            ->whereIn('status', InvoiceStatus::collectible())
+            ->where('balance_amount', '>', 0)
+            ->orderBy('id')
+            ->limit(self::OPEN_INVOICES)
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, ClientInvoice>  $open
+     * @return array{amount_due: int|null, currency: string|null, invoice_count: int, overdue: bool, overdue_amount: int|null, first: array{id: string, number: string, balance: int, currency: string, due_date: string|null, days_until_due: int|null}|null}
+     */
+    private function balanceOf(Collection $open, string $today): array
+    {
+        return (new PortalBalance(
+            array_values($open->map(fn (ClientInvoice $invoice): array => [
+                'id' => (string) $invoice->public_id,
+                'number' => (string) $invoice->invoice_number,
+                'balance' => (int) $invoice->balance_amount,
+                'currency' => (string) $invoice->currency,
+                'due_date' => $invoice->due_date?->toDateString(),
+            ])->all()),
+            $today,
+        ))->toArray();
     }
 
     /**

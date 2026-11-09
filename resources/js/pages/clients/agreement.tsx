@@ -3,10 +3,13 @@ import { useState } from 'react';
 import {
     AgreementTermsForm,
     AgreementTitle,
+    CANCELLATION_MODES,
 } from '@/components/agreements/agreement-editor';
 import { DeferredBacklogCard } from '@/components/agreements/deferred-backlog';
 import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
+import { OperatorCancellationCard } from '@/components/agreements/operator-cancellation';
+import { PortalCancellationCard } from '@/components/agreements/portal-cancellation';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
 import { ConfirmedAction } from '@/components/shared-projects/participation-panels';
@@ -34,6 +37,8 @@ import type {
     AgreementActions,
     AgreementFile,
     AgreementTerms,
+    OperatorCancellation,
+    PortalCancellation,
 } from '@/types/agreement';
 import type { AttachmentPanel } from '@/types/files';
 
@@ -150,6 +155,8 @@ export default function ClientAgreementDetail({
     agreement,
     recurring_items: recurringItems,
     deferred_backlog: deferredBacklog,
+    operator_cancellation: operatorCancellation = null,
+    portal_cancellation: portalCancellation = null,
 }: {
     company: { id: string; name: string };
     /** Where "back" goes, since the two route families differ. */
@@ -164,6 +171,10 @@ export default function ClientAgreementDetail({
     recurring_items: RecurringItem[];
     /** Managers, or portal readers where the agreement explicitly opts in. */
     deferred_backlog: DeferredBacklog | null;
+    /** A pending request, a scheduled end or how to schedule one (CAN-4, EDGE-9); owners and admins only. */
+    operator_cancellation?: OperatorCancellation | null;
+    /** Ending it from the portal (CAN-3, EDGE-9); null when there is nothing to show. */
+    portal_cancellation?: PortalCancellation | null;
 }) {
     const [editingTerms, setEditingTerms] = useState(false);
 
@@ -197,6 +208,16 @@ export default function ClientAgreementDetail({
 
                 {actions.activate_enrollment && (
                     <ActivateEnrollment action={actions.activate_enrollment} />
+                )}
+
+                {forOperator && operatorCancellation !== null && (
+                    <OperatorCancellationCard panel={operatorCancellation} />
+                )}
+                {!forOperator && portalCancellation !== null && (
+                    <PortalCancellationCard
+                        panel={portalCancellation}
+                        serviceName={agreement.title}
+                    />
                 )}
 
                 {forOperator && agreement.square_series_key !== undefined && (
@@ -404,6 +425,34 @@ export default function ClientAgreementDetail({
                                         />
                                     </>
                                 )}
+                                <Term
+                                    label="Notice"
+                                    value={
+                                        agreement.notice_days === 0
+                                            ? 'None'
+                                            : `${agreement.notice_days} days`
+                                    }
+                                />
+                                <Term
+                                    label="Minimum term"
+                                    value={
+                                        agreement.minimum_term_months === null
+                                            ? null
+                                            : `${agreement.minimum_term_months} months`
+                                    }
+                                    unset="None"
+                                />
+                                <Term
+                                    label="Cancellation"
+                                    value={
+                                        CANCELLATION_MODES.find(
+                                            (mode) =>
+                                                mode.value ===
+                                                agreement.cancellation_mode,
+                                        )?.label ??
+                                        statusLabel(agreement.cancellation_mode)
+                                    }
+                                />
                                 <Term
                                     label="Signed"
                                     value={

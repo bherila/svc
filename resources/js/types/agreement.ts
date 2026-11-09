@@ -46,6 +46,10 @@ export type AgreementTerms = CompanyAgreement & {
      * every location. Operators only.
      */
     square_location_id?: string | null;
+    /** Cancellation terms (CAN-1): the agreement's own copy, for both audiences. */
+    notice_days: number;
+    minimum_term_months: number | null;
+    cancellation_mode: string;
 };
 
 /**
@@ -73,4 +77,84 @@ export type AgreementFile = {
     download_href: string;
     /** Absent for anyone who may read the file but not remove it. */
     delete_href: string | null;
+};
+
+/** One end date an owner or admin may choose, as the server offers it. */
+export type CancellationOption = {
+    value: string;
+    /** Offered only once the notice period is waived. */
+    waives_notice: boolean;
+};
+
+/**
+ * The agreement page's cancellation panel for owners and admins (CAN-4,
+ * EDGE-9): finished endpoints, the version each sends, and only the dates
+ * the server offers. Null while the feature is off or for anyone else.
+ */
+export type OperatorCancellation = {
+    earliest_end_on: string | null;
+    pending: {
+        requested_end_on: string;
+        reason: string | null;
+        requested_at: string;
+        requested_by: string | null;
+        version: string;
+        options: CancellationOption[];
+        approve_href: string;
+        decline_href: string;
+    } | null;
+    scheduled: {
+        ends_on: string;
+        previous_ends_on: string | null;
+        source: string;
+        scheduled_at: string;
+        version: string;
+        undo_href: string;
+    } | null;
+    schedule: {
+        version: string;
+        options: CancellationOption[];
+        href: string;
+    } | null;
+};
+
+/**
+ * The portal's cancellation panel (CAN-2, CAN-3, EDGE-9, EDGE-11): what the
+ * client sees of ending an agreement. The URLs are present only for a
+ * company-wide contact and only while the act is possible.
+ */
+export type PortalCancellation = {
+    mode: string;
+    notice_days: number;
+    minimum_term_months: number | null;
+    minimum_term_ends_on: string | null;
+    earliest_end_on: string | null;
+    offered_end_dates: string[];
+    pending_request: {
+        id: string;
+        requested_end_on: string;
+        reason: string | null;
+        requested_at: string;
+    } | null;
+    scheduled_end: {
+        id: string;
+        ends_on: string;
+        previous_ends_on: string | null;
+        source: string;
+        scheduled_at: string;
+    } | null;
+    provider_name: string;
+    /** What the client owes now (EDGE-11): shown, never a reason to refuse. */
+    balance: {
+        amount_due: number | null;
+        currency: string | null;
+        invoice_count: number;
+        overdue: boolean;
+        overdue_amount: number | null;
+    } | null;
+    cancel_url: string | null;
+    cancel_refusal: { code: string; message: string } | null;
+    withdraw_url: string | null;
+    undo_url: string | null;
+    cancelled_by_client: boolean;
 };

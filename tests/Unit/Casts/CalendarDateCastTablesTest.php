@@ -66,6 +66,7 @@ final class CalendarDateCastTablesTest extends TestCase
             'activated_at', 'signed_at', 'signed_by_user_id', 'signer_name', 'signer_title', 'terminated_at',
             'catch_up_threshold_minutes', 'period_retainer_minutes', 'period_retainer_amount',
             'rollover_months', 'initial_rollover_minutes', 'bill_overage_interim', 'first_cycle_proration', 'agreement_link',
+            'notice_days', 'minimum_term_months', 'cancellation_mode',
         ], $agreement->getFillable());
         $agreement->forceFill(['id' => 1, 'workspace_id' => 1, 'lock_version' => 2,
             'client_company_id' => 3, 'client_project_id' => 4, 'source_proposal_id' => 5,
@@ -105,6 +106,8 @@ final class CalendarDateCastTablesTest extends TestCase
                 'activated_at' => 'immutable_datetime',
                 'signed_at' => 'immutable_datetime',
                 'terminated_at' => 'immutable_datetime',
+                'notice_days' => 'integer',
+                'minimum_term_months' => 'integer',
             ],
             ClientInvoice::class => [
                 'id' => 'int',

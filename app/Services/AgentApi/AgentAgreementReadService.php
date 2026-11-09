@@ -7,9 +7,12 @@ use App\Models\ClientAgreement;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Engagement\CancellationRecords;
+use App\Services\Engagement\CancellationStates;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\CursorPage;
 use App\Support\AgentApi\Presenters\AgreementReadPresenter;
+use App\Support\Engagement\Cancellation\CancellationState;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -19,6 +22,7 @@ final class AgentAgreementReadService
     public function __construct(
         private readonly AgentAccess $access,
         private readonly AgreementReadPresenter $presenter,
+        private readonly CancellationStates $cancellations,
     ) {}
 
     /** @return array{data:list<array<string, mixed>>,meta:array{next_cursor:?string}} */
@@ -29,6 +33,8 @@ final class AgentAgreementReadService
             ->where('workspace_id', $workspace->id)
             ->whereHas('clientCompany', fn ($company) => $company->where('workspace_id', $workspace->id))
             ->with(['project' => fn ($project) => $project->where('workspace_id', $workspace->id), 'clientCompany' => fn ($company) => $company->where('workspace_id', $workspace->id)])
+            // Each page's cancellation state in two bounded reads, not one per row.
+            ->with(CancellationRecords::openRelations($workspace->id))
             ->orderBy('id');
         if ($status !== null && $status !== '') {
             $query->where('status', $status);
@@ -40,7 +46,7 @@ final class AgentAgreementReadService
             $limit,
             $cursor,
             fn (int $take, ?int $after): Collection => $query->when($after !== null, fn ($rows) => $rows->where('id', '>', $after))->limit($take)->get(),
-            $this->present(...),
+            fn (ClientAgreement $agreement): array => $this->present($agreement, $this->cancellations->loaded($workspace, $agreement)),
         );
     }
 
@@ -55,7 +61,7 @@ final class AgentAgreementReadService
             ->with(['project' => fn ($project) => $project->where('workspace_id', $workspace->id), 'clientCompany' => fn ($company) => $company->where('workspace_id', $workspace->id)])
             ->firstOrFail();
 
-        return $this->present($agreement);
+        return $this->present($agreement, $this->cancellations->one($workspace, $agreement));
     }
 
     private function requireManager(User|AgentPrincipal $user, Workspace $workspace): void
@@ -75,7 +81,7 @@ final class AgentAgreementReadService
      *
      * @return array<string, mixed>
      */
-    private function present(ClientAgreement $agreement): array
+    private function present(ClientAgreement $agreement, CancellationState $cancellation): array
     {
         return [
             ...$this->presenter->present($agreement, $agreement->project?->name),
@@ -88,6 +94,13 @@ final class AgentAgreementReadService
             'show_deferred_backlog_to_client' => (bool) $agreement->show_deferred_backlog_to_client,
             // The series' Square location (#488); null for a marker from before markers named one.
             'square_location_id' => $agreement->square_location_id,
+            // Cancellation terms (CAN-1), and where a cancellation stands:
+            // the end dates offered today, any pending request and any
+            // scheduled end (CAN-2, CAN-4, EDGE-9).
+            'notice_days' => $cancellation->terms->noticeDays,
+            'minimum_term_months' => $cancellation->terms->minimumTermMonths,
+            'cancellation_mode' => $cancellation->terms->mode->value,
+            'cancellation' => $cancellation->forOperator(),
         ];
     }
 }

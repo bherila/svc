@@ -8,7 +8,8 @@ use Mcp\Capability\Attribute\Schema;
 use Mcp\Server\RequestContext;
 
 /**
- * The service package, sign-up request, enrollment and client service tools. Each calls its REST operation, so the manager
+ * The service package, sign-up request, enrollment, client service and
+ * cancellation tools. Each calls its REST operation, so the manager
  * rule, workspace scoping, validation, versions, receipts and cutovers are the
  * route's and cannot differ between the two transports (API-1). A write's
  * arguments are passed on exactly as sent: the fields its request schema
@@ -144,6 +145,54 @@ final class AgentMcpPackageTools
     public function getClientService(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $service_id): array
     {
         return $this->rest->call('client_services.get', ['workspace' => $workspace_id, 'service' => $service_id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function listCancellationRequests(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['pending', 'approved', 'declined', 'withdrawn'])] ?string $status = null,
+        #[Schema(minimum: 1, maximum: ServicePackageOperations::MAX_LIMIT)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->rest->call('cancellation_requests.list', ['workspace' => $workspace_id],
+            query: array_filter(compact('status', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function getCancellationRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $cancellation_request_id): array
+    {
+        return $this->rest->call('cancellation_requests.get', ['workspace' => $workspace_id, 'cancellation' => $cancellation_request_id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function approveCancellationRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $cancellation_request_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('cancellation_requests.approve', ['workspace' => $workspace_id, 'cancellation' => $cancellation_request_id], $this->body($request, 'cancellation_requests.approve'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function declineCancellationRequest(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $cancellation_request_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('cancellation_requests.decline', ['workspace' => $workspace_id, 'cancellation' => $cancellation_request_id], $this->body($request, 'cancellation_requests.decline'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function scheduleAgreementEnd(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('agreements.schedule_end', ['workspace' => $workspace_id, 'agreement' => $agreement_id], $this->body($request, 'agreements.schedule_end'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function undoAgreementEnd(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $agreement_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('agreements.undo_scheduled_end', ['workspace' => $workspace_id, 'agreement' => $agreement_id], $this->body($request, 'agreements.undo_scheduled_end'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */
