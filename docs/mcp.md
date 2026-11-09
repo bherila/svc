@@ -989,6 +989,7 @@ Equivalent REST routes live under `/api/v1/workspaces/{workspace}`:
 | `agreements.get`, `agreements.update` | GET/PATCH `/agreements/{agreement}` |
 | `agreements.create` | POST `/clients/{client}/agreements` |
 | `agreements.activate`, `agreements.terminate` | POST `/agreements/{agreement}/activate`, POST `/agreements/{agreement}/terminate` |
+| `agreements.schedule_end`, `agreements.undo_scheduled_end` | POST `/agreements/{agreement}/scheduled-end`, POST `/agreements/{agreement}/scheduled-end/undo` (service packages switch; see [Cancellation](#cancellation)) |
 
 Reads require `clients:read` for clients and `billing:read` for agreements.
 Every existing-record write requires `expected_version` from its latest read;
@@ -2155,6 +2156,12 @@ still answers 404 and offers no tool.
 | `enrollments.activate` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; an enrollment `awaiting_review` only; emails the client |
 | `client_services.list` | `packages:read` | A client's portal contacts only. Newest first; optional `company_id`, `limit` 1-100, `cursor`. Also answers `addable_packages` |
 | `client_services.get` | `packages:read` | A client's portal contacts only |
+| `cancellation_requests.list` | `billing:read` | Newest first; optional `status` (`pending`, `approved`, `declined`, `withdrawn`), `limit` 1-100, `cursor` |
+| `cancellation_requests.get` | `billing:read` | |
+| `cancellation_requests.approve` | `clients:write`, `billing:read` | `expected_version` and `confirm: true`; optional `end_date` (default: the date asked for), `waive_notice`, `note`; schedules the end and emails the client |
+| `cancellation_requests.decline` | `clients:write`, `billing:read` | `expected_version` and `confirm: true`; optional `note` the client reads |
+| `agreements.schedule_end` | `clients:write`, `billing:read` | The agreement's `expected_version`, `confirm: true` and `end_date`; optional `waive_notice`; emails the client |
+| `agreements.undo_scheduled_end` | `clients:write`, `billing:read` | The agreement's `expected_version` and `confirm: true`; emails owners and admins and the client |
 
 All but `client_services.*` are workspace owner/admin operations. Anyone else, a
 portal contact included, and any other workspace's package, is answered 404 as if
@@ -2226,7 +2233,50 @@ terms on offer), never the operator's settings, its status, acceptance, payment
 billing period, and its invoice, begins; not how that invoice is made) and
 portal links. `addable_packages` lists, for a company-wide contact, the packages they
 could add in the portal, each with `add_refusal` when it cannot be added now.
-Workspace staff who are not a client's portal contacts see none.
+Workspace staff who are not a client's portal contacts see none. Each service
+also carries `cancellation`: the agreement's own cancellation terms (`mode`,
+`notice_days`, `minimum_term_months`), the end dates the client could choose
+today (`offered_end_dates`, empty when they cannot cancel now), and any
+`pending_request` or `scheduled_end`. Cancelling, withdrawing and undoing are the
+portal's; no client agent operation does them.
+
+#### Cancellation
+
+Cancellation (`docs/service-packages.md`, CAN-1 to CAN-6, EDGE-9) applies to any
+agreement, so its operations sit beside the agreement ones: reads under
+`billing:read` like `agreements.list`, decisions under `clients:write` behind
+`AGENT_API_CLIENT_WRITES_ENABLED` like `agreements.terminate`. They exist only
+while `SVC_SERVICE_PACKAGES_ENABLED` is on, and are workspace owner/admin
+operations; a client's contacts are answered 404.
+
+Every agreement carries `notice_days`, `minimum_term_months` and
+`cancellation_mode` (`none`, `request` or `self_serve`), which `agreements.update`
+edits like any other term; a package agreement starts with its version's.
+`agreements.get` and `agreements.list` add `cancellation`: `earliest_end_on`,
+`offered_end_dates` (the closes of the billing engine's own periods from the one
+in which today plus the notice falls, never before the minimum term ends, and
+before the agreement's current end), `offered_end_dates_without_notice`, and any
+`pending_request` (with its `version`) or `scheduled_end`. No other date is
+accepted: `cancellation_date_not_offered`.
+
+A cancellation request is what a company-wide contact sends in `request` mode;
+in `self_serve` mode their cancellation schedules the end at once and makes no
+request. `cancellation_requests.approve` schedules the end on `end_date` (one of
+`offered_end_dates`, or of `offered_end_dates_without_notice` with
+`waive_notice: true`); `cancellation_requests.decline` closes it with a note.
+`agreements.schedule_end` schedules an end directly in any mode, refused while a
+request is pending (`cancellation_request_pending`: decide it instead). A
+scheduled end keeps the agreement `active` with `ends_on` set to the date and
+remembers the end it replaced; `agreements.undo_scheduled_end` restores that end
+until the date (`cancellation_end_reached` after it). On the date,
+`svc:agreements:terminate-scheduled` terminates the agreement through the same
+workflow as `agreements.terminate`, which now records `terminated_at`. Editing
+`ends_on` while an end is scheduled is refused (`cancellation_end_scheduled`).
+A balance owed never blocks any of this and stays owed. The other refusal codes
+are `cancellation_request_not_pending`, `cancellation_agreement_not_active`,
+`cancellation_not_recurring`, `cancellation_already_scheduled` and
+`cancellation_not_scheduled`; the server instructions ask for the user's
+confirmation before each decision.
 
 The routes, the tools and the website call the same `ServicePackageWorkflow`,
 `PackageRequestWorkflow`, `PackageEnrollmentWorkflow`, `ServicePackageReadService`,

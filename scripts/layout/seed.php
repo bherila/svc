@@ -40,6 +40,7 @@ use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\RecordReceivedPayment;
 use App\Services\Billing\StripeWebhookService;
+use App\Services\Engagement\AgreementCancellations;
 use App\Services\Files\AttachmentStorageService;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
@@ -65,6 +66,7 @@ use App\Support\Billing\Autopay\AutopayConsentRequest;
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\InvoiceHoursStatement;
 use App\Support\Billing\ReceivedPaymentData;
+use App\Support\Engagement\Cancellation\CancellationTerms;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
@@ -1457,6 +1459,31 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $workspace->refresh();
     $waitingAgreement = $waiting->refresh()->agreement;
 
+    // Slice 5: cancellation. Three started services of the same company and contact, each on
+    // its own project: one self-serve with the cancel form, one with a request pending (the
+    // portal's waiting state and the operator's decision), and one whose end the client
+    // scheduled (with the undo). Names and the reason are oversized; dates are the server's.
+    $cancellations = app(AgreementCancellations::class);
+    $cancelPackage = static function (string $name, string $link, string $mode) use ($packages, $owner, $workspace, $word): ServicePackage {
+        $package = $packages->create($owner, $workspace, [
+            'name' => $name.' '.$word, 'link_name' => $link, 'is_listed' => false, 'activation_mode' => 'automatic',
+            'billing_cadence' => 'monthly', 'cancellation_mode' => $mode, 'notice_days' => 30, 'minimum_term_months' => null,
+            'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1]],
+        ]);
+
+        return $packages->publish($owner, $workspace, $package)->refresh();
+    };
+    $startService = static function (ServicePackage $package) use ($enrollments, $squarePortalContact, $company, $signs) {
+        return $enrollments->accept($squarePortalContact, $company, $offer = $enrollments->addFromPortal($squarePortalContact, $company, $package), $signs($offer))->refresh();
+    };
+    $cancelForm = $startService($cancelPackage('Cancel', 'cancel-self-serve', 'self_serve'));
+    $cancelPending = $startService($cancelPackage('Requested', 'cancel-request', 'request'));
+    $cancelScheduled = $startService($cancelPackage('Ending', 'cancel-scheduled', 'self_serve'));
+    $pendingAgreement = $cancelPending->agreement;
+    $offeredEnds = static fn ($agreement): array => CancellationTerms::of($agreement)->offer(now($workspace->timezone))?->offeredDateStrings() ?? [];
+    $cancellations->cancelByContact($squarePortalContact, $company, $pendingAgreement, $offeredEnds($pendingAgreement)[1], str_repeat('UnbrokenReason', 30).' and a reason that wraps normally across the line.');
+    $cancellations->cancelByContact($squarePortalContact, $company, $cancelScheduled->agreement, $offeredEnds($cancelScheduled->agreement)[0], null);
+
     $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
     $packagePages = [
         'packages_list' => route('packages.index', $workspace, absolute: false),
@@ -1473,8 +1500,15 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'packages_operator_agreement' => route('clients.agreement', [$workspace, $company, $waitingAgreement], absolute: false),
         'packages_portal_checkout_estimate' => route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false),
         'packages_portal_checkout_invoice' => route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false),
+        'packages_portal_cancel' => route('portal.services.show', [$company, $cancelForm->public_id], absolute: false),
+        'packages_portal_cancel_pending' => route('portal.services.show', [$company, $cancelPending->public_id], absolute: false),
+        'packages_portal_cancel_scheduled' => route('portal.services.show', [$company, $cancelScheduled->public_id], absolute: false),
+        'packages_operator_cancellation' => route('clients.agreement', [$workspace, $company, $pendingAgreement], absolute: false),
         // Read as the company's contact rather than the owner.
         'package_viewers' => [
+            route('portal.services.show', [$company, $cancelForm->public_id], absolute: false) => $squarePortalContact->id,
+            route('portal.services.show', [$company, $cancelPending->public_id], absolute: false) => $squarePortalContact->id,
+            route('portal.services.show', [$company, $cancelScheduled->public_id], absolute: false) => $squarePortalContact->id,
             route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false) => $checkoutContact->id,
             route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false) => $checkoutContact->id,
             route('portal.services', $company, absolute: false) => $squarePortalContact->id,

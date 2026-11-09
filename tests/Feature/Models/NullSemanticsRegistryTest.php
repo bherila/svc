@@ -41,6 +41,7 @@ use Tests\Feature\Submission\SubmissionTest;
 use Tests\TestCase;
 use Tests\Unit\Billing\InvoiceLedgerBuilderTest;
 use Tests\Unit\Billing\RetainerCalculatorTest;
+use Tests\Unit\Engagement\CancellationTermsTest;
 
 /**
  * Every nullable column on the billing tables must be registered with either a
@@ -185,6 +186,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_an_interim_overage_is_refused_when_the_agreement_states_no_rate',
         'client_agreements.hourly_rate_amount => covered_by:Tests\Feature\Billing\UnpricedAgreementRefusalTest::test_cadence_overage_is_refused_when_the_agreement_states_no_rate',
         'client_agreements.initial_rollover_minutes => covered_by:Tests\Unit\Billing\InvoiceLedgerBuilderTest::test_an_agreement_with_no_recorded_opening_rollover_grants_none',
+        'client_agreements.minimum_term_months => covered_by:Tests\Unit\Engagement\CancellationTermsTest::test_an_agreement_with_no_minimum_term_ends_by_notice_alone',
         'client_agreements.period_retainer_amount => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
         'client_agreements.period_retainer_minutes => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_cycle_retainer_falls_back_to_monthly_ledger_terms',
         'client_agreements.retainer_amount => covered_by:Tests\Unit\Billing\RetainerCalculatorTest::test_an_agreement_with_no_retainer_price_bills_no_retainer_fee',
@@ -1004,6 +1006,12 @@ final class NullSemanticsRegistryTest extends TestCase
             'initial_rollover_minutes' => [
                 'covered_by' => InvoiceLedgerBuilderTest::class,
                 'method' => 'test_an_agreement_with_no_recorded_opening_rollover_grants_none',
+            ],
+            // No minimum term: the earliest end is decided by the notice alone
+            // (CAN-2); `CancellationTerms` reads null as none.
+            'minimum_term_months' => [
+                'covered_by' => CancellationTermsTest::class,
+                'method' => 'test_an_agreement_with_no_minimum_term_ends_by_notice_alone',
             ],
             // Unset reads as off. The column stays nullable so the backfill can
             // tell an unset flag from a deliberate false, but for billing there

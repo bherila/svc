@@ -12,6 +12,7 @@ use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Engagement\Cancellation\CancellationState;
 use App\Support\WorkspaceClock;
 use LogicException;
 
@@ -186,6 +187,10 @@ final class PackageEnrollmentPresenter
             // When the next billing period, and so its invoice, begins; not how
             // that invoice is made, which is the operator's setting.
             'next_period_start' => PackageBillingPeriods::nextPeriodStart($status, $agreement, (new WorkspaceClock)->today($timezone)),
+            // The agreement's own cancellation terms, the end dates the client
+            // could choose today, and what is pending or scheduled (CAN-2,
+            // CAN-3, EDGE-9). Read-only here: a client cancels in the portal.
+            'cancellation' => CancellationState::of($agreement, $agreement->cancellationRequests->first(), $agreement->scheduledTerminations->first(), (new WorkspaceClock)->today($timezone))->forClient(),
             'url' => $url,
         ];
     }

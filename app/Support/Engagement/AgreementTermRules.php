@@ -4,6 +4,7 @@ namespace App\Support\Engagement;
 
 use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\FirstCycleProration;
+use App\Support\Packages\CancellationMode;
 use Illuminate\Validation\Rule;
 
 /**
@@ -39,6 +40,11 @@ final class AgreementTermRules
             'retainer_minutes' => ['integer', 'min:0'],
             'rollover_months' => ['integer', 'min:0', 'max:120'],
             'first_cycle_proration' => [Rule::in(FirstCycleProration::cases())],
+            // Cancellation terms (CAN-1): the notice a client gives, the months
+            // before an end may fall, and what the portal offers.
+            'notice_days' => ['integer', 'min:0', 'max:365'],
+            'minimum_term_months' => ['integer', 'min:1', 'max:120'],
+            'cancellation_mode' => [Rule::enum(CancellationMode::class)],
         ];
     }
 

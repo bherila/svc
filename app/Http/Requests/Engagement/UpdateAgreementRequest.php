@@ -71,6 +71,11 @@ class UpdateAgreementRequest extends FormRequest
             'rollover_policy' => ['sometimes', 'nullable', 'string', 'max:40'],
             'first_cycle_proration' => AgreementTermRules::rule('first_cycle_proration', 'sometimes', 'nullable'),
             'bill_overage_interim' => ['sometimes', 'nullable', 'boolean'],
+            // Cancellation terms (CAN-1). A package agreement starts with its
+            // version's; any agreement may carry them. Null minimum: none.
+            'notice_days' => AgreementTermRules::rule('notice_days', 'sometimes', 'required'),
+            'minimum_term_months' => AgreementTermRules::rule('minimum_term_months', 'sometimes', 'nullable'),
+            'cancellation_mode' => AgreementTermRules::rule('cancellation_mode', 'sometimes', 'required'),
         ];
     }
 

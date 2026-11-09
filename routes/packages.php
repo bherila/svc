@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Packages\PackageAdminController;
+use App\Http\Controllers\Packages\PortalCancellationController;
 use App\Http\Controllers\Packages\PortalServicesController;
 use App\Http\Controllers\Packages\PublicPackageController;
 use App\Http\Middleware\EnsureServicePackagesEnabled;
@@ -55,4 +56,13 @@ Route::middleware(['web', 'auth', EnsureServicePackagesEnabled::class, ResolveWo
     Route::post('/portal/{clientCompany}/services/{enrollment}/accept', [PortalServicesController::class, 'accept'])
         ->whereUuid('enrollment')
         ->name('portal.services.accept');
+    // Cancelling an agreement (CAN-3, CAN-4, EDGE-9): a company contact's own
+    // act, browser-only like accepting; agents read the state through
+    // client_services.* and owners decide through cancellation_requests.*.
+    Route::post('/portal/{clientCompany}/agreements/{clientAgreement}/cancellation', [PortalCancellationController::class, 'store'])
+        ->name('portal.agreements.cancellation.store');
+    Route::post('/portal/{clientCompany}/agreements/{clientAgreement}/cancellation/withdraw', [PortalCancellationController::class, 'withdraw'])
+        ->name('portal.agreements.cancellation.withdraw');
+    Route::post('/portal/{clientCompany}/agreements/{clientAgreement}/cancellation/undo', [PortalCancellationController::class, 'undo'])
+        ->name('portal.agreements.cancellation.undo');
 });

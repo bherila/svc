@@ -45,6 +45,20 @@
             "mcp.switch:agreements.list"
         ]
     },
+    "agreements.schedule_end": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.schedule_end"
+        ]
+    },
     "agreements.square_series.clear": {
         "scopes": [
             "billing:write",
@@ -82,6 +96,20 @@
             "mcp",
             "mcp.switch:mcp.write.clients",
             "mcp.switch:agreements.terminate"
+        ]
+    },
+    "agreements.undo_scheduled_end": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:agreements.undo_scheduled_end"
         ]
     },
     "agreements.update": {
@@ -302,6 +330,56 @@
             "mcp",
             "mcp.switch:mcp.read.billing_schedules",
             "mcp.switch:billing_schedules.list"
+        ]
+    },
+    "cancellation_requests.approve": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:cancellation_requests.approve"
+        ]
+    },
+    "cancellation_requests.decline": {
+        "scopes": [
+            "clients:write",
+            "billing:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.clients",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write.clients",
+            "mcp.switch:cancellation_requests.decline"
+        ]
+    },
+    "cancellation_requests.get": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read.agreements",
+            "mcp.switch:cancellation_requests.get"
+        ]
+    },
+    "cancellation_requests.list": {
+        "scopes": [
+            "billing:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read.agreements",
+            "mcp.switch:cancellation_requests.list"
         ]
     },
     "capacity_ledger.get": {

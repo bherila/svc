@@ -19,6 +19,7 @@ use App\Services\Authorization\CompanyContacts;
 use App\Services\Authorization\PortalAccess;
 use App\Services\Billing\InvoicePaymentOptionsReader;
 use App\Services\Billing\PortalPaymentMethodService;
+use App\Services\Engagement\PortalCancellationPanel;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\Billing\Autopay\AutopayWording;
@@ -64,6 +65,7 @@ final class ClientServiceReadService
         private readonly PaymentConnectionResolver $payments,
         private readonly InvoicePaymentOptionsReader $paymentOptions,
         private readonly PortalPaymentMethodService $methodManagement,
+        private readonly PortalCancellationPanel $cancellationPanel,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -145,7 +147,7 @@ final class ClientServiceReadService
      * company-wide contact the finished URLs that pay it, save a card and turn
      * autopay on at the version's limit with the exact wording.
      *
-     * @return array{service: array<string, mixed>, offered_terms: array<string, mixed>|null, changed_terms: list<string>, accept_url: string|null, accept_fields: array{reviewed_version: string}|null, accept_refusal: array{code: string, message: string}|null, checkout: array<string, mixed>|null}
+     * @return array{service: array<string, mixed>, offered_terms: array<string, mixed>|null, changed_terms: list<string>, accept_url: string|null, accept_fields: array{reviewed_version: string}|null, accept_refusal: array{code: string, message: string}|null, checkout: array<string, mixed>|null, cancellation: array<string, mixed>|null}
      */
     public function reviewForPortal(User $viewer, ClientCompany $company, string $publicId): array
     {
@@ -177,6 +179,8 @@ final class ClientServiceReadService
             'accept_url' => $mayAccept ? route('portal.services.accept', [$company, $enrollment->public_id], absolute: false) : null,
             'accept_fields' => $mayAccept ? ['reviewed_version' => $shownVersion->public_id] : null,
             'accept_refusal' => $refusal === null ? null : ['code' => $refusal->value, 'message' => $refusal->message()],
+            // Ending the service from the portal (CAN-3, EDGE-9); null when there is nothing to show.
+            'cancellation' => $enrollment->agreement === null ? null : $this->cancellationPanel->for($viewer, $company, $enrollment->agreement),
         ];
     }
 

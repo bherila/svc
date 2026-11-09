@@ -44,7 +44,8 @@ final class AgentOperationRegistryTest extends TestCase
     public function test_every_confirmed_operation_is_explicitly_inventoried(): void
     {
         $expected = [
-            'agreements.activate', 'agreements.square_series.clear', 'agreements.square_series.set', 'agreements.terminate',
+            'agreements.activate', 'agreements.schedule_end', 'agreements.square_series.clear', 'agreements.square_series.set', 'agreements.terminate', 'agreements.undo_scheduled_end',
+            'cancellation_requests.approve', 'cancellation_requests.decline',
             'attachments.delete', 'billing_schedules.generate', 'clients.archive', 'clients.contacts.archive',
             'clients.portal_access.grant', 'clients.portal_access.revoke', 'clients.portal_access.update',
             'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke',

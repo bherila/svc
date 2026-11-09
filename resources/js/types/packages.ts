@@ -1,3 +1,4 @@
+import type { PortalCancellation } from '@/types/agreement';
 /**
  * Props of the service package screens (docs/service-packages.md, slice 1b).
  *
@@ -417,4 +418,6 @@ export type PortalServiceProps = {
     accept_refusal: PackageRefusal | null;
     /** What sign-up asks for: null when it asks for nothing. */
     checkout: PortalCheckout | null;
+    /** Ending the service (CAN-3, EDGE-9): null when there is nothing to show. */
+    cancellation: PortalCancellation | null;
 };

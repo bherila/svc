@@ -663,6 +663,106 @@ Slice 4 (automatic recurring invoices) settled these:
   `next_period_start`, `last_automatic`); `client_services.*` gains only
   `next_period_start` - how the invoice is made is the operator's setting.
 
+Slice 5 (cancellation) settled these:
+
+- **Two records, as sketched.** `agreement_cancellation_requests` holds a
+  company contact's request in `request` mode and its decision;
+  `agreement_scheduled_terminations` holds an accepted end until it is reached
+  or undone, with the `ends_on` it replaced and its source (`self_serve`,
+  `request` or `operator`). A self-serve cancellation writes no request. At most
+  one request is pending and one end scheduled per agreement, held under the
+  agreement's lock rather than by an index.
+- **Terms on every agreement (CAN-1).** `notice_days` (default 0),
+  `minimum_term_months` (null for none) and `cancellation_mode` (default
+  `none`) are agreement terms like any other: `AgreementTermRules` is the one
+  list of constraints for packages and agreements, `agreements.update` and the
+  terms form edit them, and `PackageAgreementTerms` copies a version's. The
+  migration gives agreements already made from a package their carried
+  version's terms.
+- **The dates offered (CAN-2)** are `CancellationDates::offer()` on the
+  workspace's today: up to three period closes of the billing engine's own
+  periods, from the earliest, each before the agreement's current end. An
+  agreement already ending before the earliest offers nothing
+  (`cancellation_no_dates_offered`); one that does not bill in periods cannot be
+  cancelled this way (`cancellation_not_recurring`: terminate it). Waiving
+  notice, an owner's or admin's alone, counts the notice as zero days; the
+  minimum term always holds. Every screen and agent read shows the server's
+  dates; any other date is refused with `cancellation_date_not_offered`.
+- **Approving** takes the date the client asked for unless the owner chooses
+  another offered one, and `waive_notice` must be sent for a date only waiving
+  allows. **Declining emails the client** with the note: the spec's email list
+  names no such message, but a client who asked deserves the answer.
+- **An owner or admin can schedule an end directly** (`agreements.schedule_end`,
+  "End this agreement" on the agreement's page), in any portal mode, on an
+  offered date; refused while a client's request is pending
+  (`cancellation_request_pending`), so that request is answered.
+- **Who undoes (EDGE-9).** An owner or admin undoes any scheduled end; a company
+  contact only an end they scheduled themselves in `self_serve` mode, while the
+  agreement is still in that mode, never one an owner or admin decided, even
+  after the mode becomes self-serve (`cancellation_undo_not_self_serve`). Undo
+  is possible through the end date itself and refused after it
+  (`cancellation_end_reached`), even if the scheduler missed the date; on the
+  date the first hourly run terminates it. While an end is scheduled the
+  agreement's `ends_on` cannot be edited (`cancellation_end_scheduled`): undoing
+  restores the end it replaced and would discard the edit.
+- **Termination on the date (CAN-5)** is `svc:agreements:terminate-scheduled`,
+  hourly, behind the feature flag, in process. It walks every scheduled end in
+  pages by id, decides which are due on each workspace's calendar, and carries
+  out each in its own transaction under its agreement's lock through
+  `AgreementWorkflow::terminate()` with `ends_on` set to the scheduled date, so
+  an undo racing it, or a second run, finds it settled.
+- **The `terminated_at` fix.** `AgreementWorkflow::terminate()` now writes
+  `terminated_at` (a UTC instant), for any termination, and settles what was
+  open on the agreement: its scheduled end becomes `terminated` and a pending
+  request is closed as declined with the note "The agreement was terminated."
+  (no email).
+- **Billing.** Nothing in the engine changed. A scheduled end is the agreement's
+  `ends_on`, at a period close, so automatic recurring invoices never sell a
+  period after it (`UncoveredCadencePeriods` already reads `ends_on`; tested
+  monthly and quarterly beside a package not cancelled), and termination
+  follows the existing rules. `BillingHistoryInvariantTest` gains a history: a
+  cancelled agreement invoices exactly as one ended on the same date by hand -
+  including the engine's existing settlement invoice for the period after an
+  ended agreement - and an undone one exactly as one never cancelled.
+- **Recurring items end with the agreement.** One engine change after all: the
+  closing invoice of any ended agreement used to sell the next cycle's
+  incidences of a recurring item with no `expires_on` (a monthly hosting fee
+  for the month after a 30 June end; a whole quarter of it on a quarterly
+  agreement), on `main` before packages too. `RecurringItemBiller` now clamps
+  every range to the agreement's `ends_on`, the same rule as the retainer, on
+  both cadence paths, so a cancellation, a manual or backdated termination and
+  a version move are all covered without touching the items.
+  `BillingHistoryInvariantTest` gains the history (monthly and
+  quarterly, at a period close and mid-period) and its own-segment invariant
+  refuses a live retainer or recurring-item line dated after the segment ends
+  (docs/client-management/cadence-billing.md).
+- **Emails (CAN-6)**, through `PackageNotifier` after commit: owners and admins
+  on a request and on a client's self-serve end; the client, with the end date,
+  on any accepted cancellation (self-serve, approved or scheduled by an owner);
+  both on an undo; the client on a decline. A withdrawal sends nothing.
+- **Lock order.** The agreement, then its pending request, then its scheduled
+  end (`LockResource` places both after `ClientAgreement`); every read of them
+  under the agreement's lock is a locking read. `AgreementWorkflow::update()`
+  now reads its result back under its own lock instead of from the snapshot,
+  which the MariaDB ratchet caught once package agreements carried terms that
+  differ from a new draft's. No new inversion, no new pinned snapshot read.
+- **Agent surface.** `cancellation_requests.list|get` (`billing:read`) and
+  `cancellation_requests.approve|decline`, `agreements.schedule_end` and
+  `agreements.undo_scheduled_end` (`clients:write`, the clients cutover,
+  `confirm` and `expected_version` - the request's for a decision, the
+  agreement's for an end) are declared in `ServicePackageOperations` and exist
+  only while the feature is on. `agreements.get|list` gain the three terms and
+  `cancellation` (the dates with and without notice, the pending request, the
+  scheduled end); `client_services.*` gains `cancellation` for the client,
+  read-only. A client contact cancels, withdraws and undoes in the portal only.
+- **Screens.** The portal's panel is keyed by the agreement
+  (`portal.agreements.cancellation.*`), drawn on the service's page and on the
+  portal's agreement page, with URLs for a company-wide contact only and the
+  amount still owed on the confirmation (EDGE-11, from the Balance card's own
+  reader); it is not drawn for `none` mode with nothing pending or scheduled.
+  The operator's panel on the agreement's page posts to the agent endpoints.
+  Each pending request is its own Needs you row, dated with the end asked for.
+
 ## Validation plan
 
 ### Tracing requirements to tests

@@ -4,6 +4,8 @@ namespace Tests\Feature\Concurrency;
 
 use App\Console\Commands\Billing\RehearseGenerationCommand;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
+use App\Exceptions\AgreementCancellationRefused;
+use App\Models\AgreementCancellationRequest;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
@@ -32,6 +34,7 @@ use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\TimeEntrySplitter;
+use App\Services\Engagement\AgreementCancellations;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Files\AttachmentAction;
@@ -333,7 +336,55 @@ final class LockOrderConformanceTest extends TestCase
 
         $this->driveTheExpenseLifecycle();
         $this->driveTheServicePackageEnrollments();
+        $this->driveTheCancellations();
         $this->driveTheAccessMutations();
+    }
+
+    /**
+     * Slice 5 (CAN-3, CAN-4, CAN-5, EDGE-9): a company contact's self-serve
+     * end and request, an owner's approval, decline and direct end, undoing,
+     * an edit refused under a scheduled end, and the termination on the date.
+     * Each locks the agreement, then its pending request, then its scheduled
+     * end; terminating then takes what AgreementWorkflow::terminate() takes.
+     */
+    private function driveTheCancellations(): void
+    {
+        [$company] = $this->secondaryCompany('cancellation');
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $agreements = app(AgreementWorkflow::class);
+        $cancellations = app(AgreementCancellations::class);
+        $agreement = function (string $mode) use ($agreements, $company): ClientAgreement {
+            $project = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $company->id, 'name' => 'Locks cancellation '.$mode.' '.uniqid()]);
+            $draft = $agreements->create($this->workspace, $company, $project, null, ['title' => 'Locks cancellation', 'starts_on' => '2026-01-01', 'currency' => 'USD', 'billing_cadence' => 'monthly']);
+
+            return $agreements->activate($agreements->update($this->workspace, $draft, ['notice_days' => 0, 'cancellation_mode' => $mode]))->refresh();
+        };
+        $close = now($this->workspace->timezone)->endOfMonth()->toDateString();
+
+        $selfServe = $agreement('self_serve');
+        $cancellations->cancelByContact($contact, $company, $selfServe, $close, null);
+        try {
+            $agreements->update($this->workspace, $selfServe->refresh(), ['ends_on' => '2030-12-31']);
+        } catch (AgreementCancellationRefused) {
+        }
+        $cancellations->undoByContact($contact, $company, $selfServe);
+
+        $requested = $agreement('request');
+        $approved = $cancellations->cancelByContact($contact, $company, $requested, $close, 'Synthetic reason');
+        $this->assertInstanceOf(AgreementCancellationRequest::class, $approved);
+        $cancellations->approve($this->user, $this->workspace, $approved, null, false, 'Synthetic note');
+        $cancellations->undo($this->user, $this->workspace, $requested->refresh());
+        $declined = $cancellations->cancelByContact($contact, $company, $requested, $close, null);
+        $this->assertInstanceOf(AgreementCancellationRequest::class, $declined);
+        $cancellations->decline($this->user, $this->workspace, $declined, null);
+        $cancellations->cancelByContact($contact, $company, $requested, $close, null);
+        $cancellations->withdrawByContact($contact, $company, $requested);
+
+        $ending = $cancellations->schedule($this->user, $this->workspace, $requested->refresh(), $close, true);
+        $this->travelTo(CarbonImmutable::parse($close.' 12:00:00', $this->workspace->timezone));
+        $cancellations->terminateDue($this->workspace, $ending);
+        $this->travelBack();
     }
 
     /**

@@ -538,6 +538,9 @@ final class AgentMcpServerFactory
         if (isset($available['enrollments.activate'])) {
             $mode .= ' Obtain explicit user confirmation before activating a package enrollment (enrollments.activate): it starts the client\'s service and its agreement, which then bills, and emails the client.';
         }
+        if (array_intersect(['cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before deciding a client\'s cancellation request or scheduling or undoing an agreement\'s end (cancellation_requests.approve, cancellation_requests.decline, agreements.schedule_end, agreements.undo_scheduled_end), and choose an end date only from the offered dates the user picked. Each emails the client; an approved or scheduled end terminates the agreement on that date.';
+        }
         if (isset($available['attachments.delete'])) {
             $mode .= ' Obtain explicit user confirmation before deleting an attachment.';
         }

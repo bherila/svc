@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
+use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
@@ -14,8 +15,11 @@ use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBacklogReader;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Engagement\AgreementCancellations;
+use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -44,7 +48,8 @@ use Tests\TestCase;
  *   something that has since moved, and the issue has to notice.
  * - **Charged once.** No hour is allocated by two live invoices.
  * - **Own segment.** No invoice of an agreement allocates work dated after its
- *   segment ends - its termination, or the day before a successor starts.
+ *   segment ends - its termination, or the day before a successor starts -
+ *   or sells a retainer cycle or recurring-item incidence dated after it.
  * - **Nothing left behind.** Once an ended agreement's invoices are issued,
  *   none of its own deferred work still waits.
  * - **Bulk is sequential.** Generating every period at once prices each exactly
@@ -317,6 +322,135 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertSame($totals['second alone']['second'], $totals['together']['second']);
     }
 
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function cancelledWorlds(): iterable
+    {
+        // From Oct 10 with no notice, the earliest end is the close of the period holding it.
+        yield 'monthly' => [['retainer_minutes' => 600, 'rollover_months' => 1], '2026-10-31'];
+        yield 'quarterly' => [['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 600, 'rollover_months' => 3], '2026-12-31'];
+    }
+
+    /**
+     * A cancellation is a scheduled end and nothing else (docs/service-packages.md,
+     * CAN-5, EDGE-9). Cancelled at a period close and terminated on that date by
+     * the scheduled run, an agreement bills exactly as one ended there by hand,
+     * under the existing termination rules: its last period whole, its deferred
+     * work collected. Undone, it bills exactly as one never cancelled.
+     *
+     * @param  array<string, mixed>  $terms
+     */
+    #[DataProvider('cancelledWorlds')]
+    public function test_a_cancellation_bills_as_the_end_it_schedules_and_an_undone_one_as_none(array $terms, string $end): void
+    {
+        config(['svc.service_packages.enabled' => true]);
+        // Work up to the end; what an ended agreement does with later work is the engine's existing rule, not this.
+        $history = array_filter([['2026-02-09', 1500, false], ['2026-03-02', 240, true], ['2026-07-14', 900, false], ['2026-10-20', 1300, false], ['2026-11-20', 300, false]],
+            static fn (array $entry): bool => $entry[0] <= $end);
+        $totals = [];
+        foreach (['cancelled', 'ended by hand', 'undone', 'never cancelled'] as $world) {
+            Carbon::setTestNow('2026-10-10 12:00:00');
+            CarbonImmutable::setTestNow('2026-10-10 12:00:00');
+            [$workspace, $company, $project, $owner] = $this->world('cancellation-'.str_replace(' ', '-', $world));
+            $agreement = $this->agreement($workspace, $company, $terms + ['cancellation_mode' => 'self_serve', 'notice_days' => 0]);
+            foreach ($history as [$day, $minutes, $deferred]) {
+                $entry = $this->hours($workspace, $company, $project, $owner, $day, $minutes);
+                if ($deferred) {
+                    ClientTimeEntry::query()->whereKey($entry->id)->update(['is_deferred' => true]);
+                }
+            }
+            $cancellations = app(AgreementCancellations::class);
+            if ($world === 'cancelled' || $world === 'undone') {
+                $cancellations->schedule($owner, $workspace, $agreement, $end, false);
+            }
+            if ($world === 'undone') {
+                $cancellations->undo($owner, $workspace, $agreement);
+            }
+
+            Carbon::setTestNow($end.' 06:00:00');
+            CarbonImmutable::setTestNow($end.' 06:00:00');
+            if ($world === 'cancelled') {
+                $this->artisan('svc:agreements:terminate-scheduled', ['--apply' => true])->assertSuccessful();
+            }
+            if ($world === 'ended by hand') {
+                app(AgreementWorkflow::class)->terminate($agreement, $end);
+            }
+
+            Carbon::setTestNow('2027-01-20 12:00:00');
+            CarbonImmutable::setTestNow('2027-01-20 12:00:00');
+            app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+            $this->assertInvariants($company, $world.', generated');
+            $this->issueEveryDraft($company, $workspace);
+            $this->assertInvariants($company, $world.', everything issued');
+            $totals[$world] = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)
+                ->orderBy('cycle_start')->orderBy('id')->get()
+                ->map(fn (ClientInvoice $invoice): array => [$invoice->invoice_kind, $invoice->cycle_start?->toDateString(), $invoice->cycle_end?->toDateString(), $invoice->status, (int) $invoice->total_amount])->all();
+        }
+
+        $this->assertSame('terminated', ClientAgreement::query()->where('title', 'Synthetic agreement')->orderBy('id')->firstOrFail()->status);
+        $this->assertSame($totals['ended by hand'], $totals['cancelled']);
+        $this->assertSame($totals['never cancelled'], $totals['undone']);
+        // The last period sold is whole: one closes on the end. What follows it
+        // is the engine's existing settlement of an ended agreement, the same
+        // whether the end was cancelled or set by hand.
+        $this->assertContains($end, array_column($totals['cancelled'], 2));
+        $this->assertNotSame($totals['never cancelled'], $totals['cancelled']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string, list<string>}> */
+    public static function terminatedWithItemsWorlds(): iterable
+    {
+        $monthly = ['retainer_minutes' => 600, 'rollover_months' => 1];
+        $quarterly = ['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 600, 'rollover_months' => 3];
+        $hosting = static fn (int $through): array => array_map(static fn (int $month): string => sprintf('2026-%02d-20', $month), range(1, $through));
+        yield 'monthly, ended at a period close' => [$monthly, '2026-06-30', $hosting(6)];
+        yield 'monthly, ended mid-period' => [$monthly, '2026-06-15', $hosting(5)];
+        yield 'quarterly, ended at a period close' => [$quarterly, '2026-06-30', $hosting(6)];
+        yield 'quarterly, ended mid-period' => [$quarterly, '2026-05-15', $hosting(4)];
+    }
+
+    /**
+     * A recurring item with no expiry of its own ends with its agreement
+     * (docs/client-management/cadence-billing.md): the closing invoice of a
+     * terminated agreement, and every period the walk reaches after it, sells
+     * no incidence dated after the end, exactly as it sells no retainer there.
+     * Each incidence up to the end is still billed, once.
+     *
+     * @param  array<string, mixed>  $terms
+     * @param  list<string>  $hostingBilled  the monthly item's incidences on or before the end
+     */
+    #[DataProvider('terminatedWithItemsWorlds')]
+    public function test_a_terminated_agreement_bills_no_recurring_item_after_its_end(array $terms, string $end, array $hostingBilled): void
+    {
+        Carbon::setTestNow('2026-10-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-10-10 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('terminated-items');
+        $agreement = $this->agreement($workspace, $company, $terms);
+        $hosting = $this->recurringItem($workspace, $agreement, 'Synthetic hosting', ['cadence' => 'monthly', 'anchor_day' => 20]);
+        $support = $this->recurringItem($workspace, $agreement, 'Synthetic support plan', ['cadence' => 'quarterly', 'anchor_month' => 1, 'anchor_day' => 1]);
+        foreach ([['2026-02-09', 1500], ['2026-04-14', 300], ['2026-05-04', 240], ['2026-06-08', 900]] as [$day, $minutes]) {
+            if ($day <= $end) {
+                $this->hours($workspace, $company, $project, $owner, $day, $minutes);
+            }
+        }
+        app(AgreementWorkflow::class)->terminate($agreement, $end);
+
+        Carbon::setTestNow('2027-01-20 12:00:00');
+        CarbonImmutable::setTestNow('2027-01-20 12:00:00');
+        app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+        $this->assertInvariants($company, 'generated after the termination');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+
+        $billed = fn (int $itemId): array => DB::table('client_invoice_lines as line')
+            ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+            ->where('invoice.workspace_id', $workspace->id)->where('invoice.status', '!=', InvoiceStatus::Void->value)
+            ->where('line.client_agreement_recurring_item_id', $itemId)
+            ->orderBy('line.line_date')->pluck('line.line_date')
+            ->map(fn ($date): string => Carbon::parse((string) $date)->toDateString())->all();
+        $this->assertSame($hostingBilled, $billed($hosting), 'The monthly item bills each incidence up to the end, once, and none after it.');
+        $this->assertSame(['2026-01-01', '2026-04-01'], $billed($support), 'The quarterly item bills each incidence up to the end, once, and none after it.');
+    }
+
     // ---- the invariants ----
 
     /**
@@ -400,6 +534,20 @@ final class BillingHistoryInvariantTest extends TestCase
                 ->whereDate('entry.worked_on', '>', $end)
                 ->pluck('entry.id')->all();
             $this->assertSame([], $late, "After {$step}, agreement {$agreement->id} bills work dated after its segment ends on {$end}.");
+
+            // Nor does it sell anything dated after that end: a retainer line
+            // is dated the day its cycle opens, an item's line the day of its
+            // incidence.
+            $sold = DB::table('client_invoice_lines as line')
+                ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+                ->where('invoice.workspace_id', $company->workspace_id)
+                ->where('invoice.client_agreement_id', $agreement->id)
+                ->where('invoice.status', '!=', InvoiceStatus::Void->value)
+                ->whereIn('line.type', [InvoiceLineType::Retainer->value, InvoiceLineType::RecurringItem->value])
+                ->whereDate('line.line_date', '>', $end)
+                ->get(['line.type', 'line.line_date'])
+                ->map(fn (object $line): string => $line->type.' '.Carbon::parse((string) $line->line_date)->toDateString())->all();
+            $this->assertSame([], $sold, "After {$step}, agreement {$agreement->id} sells a cycle or incidence dated after its segment ends on {$end}.");
         }
     }
 
@@ -515,6 +663,19 @@ final class BillingHistoryInvariantTest extends TestCase
             'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
             'retainer_amount' => $minutes * 100, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
         ]);
+    }
+
+    /**
+     * An item with no expiry of its own, starting with the agreement.
+     *
+     * @param  array<string, mixed>  $terms
+     */
+    private function recurringItem(Workspace $workspace, ClientAgreement $agreement, string $description, array $terms): int
+    {
+        return (int) ClientAgreementRecurringItem::query()->create($terms + [
+            'workspace_id' => $workspace->id, 'client_agreement_id' => $agreement->id, 'description' => $description,
+            'amount' => 5000, 'currency' => 'USD', 'quantity' => '1', 'is_active' => true,
+        ])->id;
     }
 
     private function hours(Workspace $workspace, ClientCompany $company, ClientProject $project, User $author, string $day, int $minutes): ClientTimeEntry
