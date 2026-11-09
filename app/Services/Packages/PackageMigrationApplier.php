@@ -184,9 +184,10 @@ final class PackageMigrationApplier
                 throw new MigrationHeld(MigrationHold::DraftKept, $kept->getMessage());
             }
         }
-        $successor = $this->agreements->activate($successor);
-
+        // The service names its new agreement before starting it, so the
+        // activation sees the enrollment that owns it.
         $enrollment->forceFill(['client_agreement_id' => $successor->id, 'current_version_id' => $migration->to_version_id])->save();
+        $successor = $this->agreements->activate($successor, null, $enrollment);
         $target->successor_agreement_id = $successor->id;
         $this->settle($workspace, $migration, $target, MigrationTargetStatus::Applied, MigrationDecision::apply());
         $this->activities->record($workspace, $company, 'agreement.moved', $old, [

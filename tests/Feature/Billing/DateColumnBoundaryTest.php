@@ -251,6 +251,8 @@ final class DateColumnBoundaryTest extends TestCase
             'ends_on' => '2026_11_16_090000_add_cancellation_to_client_agreements',
             'previous_ends_on' => '2026_11_16_090000_add_cancellation_to_client_agreements',
         ],
+        'service_package_migrations' => ['effective_on' => '2026_11_17_090000_create_service_package_migrations'],
+        'service_package_migration_targets' => ['effective_on' => '2026_11_17_090000_create_service_package_migrations'],
     ];
 
     /**
