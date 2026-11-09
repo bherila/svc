@@ -2308,7 +2308,17 @@ final class ClientInvoicingService
         }
 
         if ($terminationDate instanceof Carbon && $terminationDate->lt($referenceDate)) {
-            $referenceDate = $terminationDate->copy();
+            // A successor that starts after a gap leaves the ordinary work up
+            // to the day before it to this agreement, as on the monthly path:
+            // the walk reaches the cycle reconciling that day, however many
+            // cycles the gap spans, and a post-termination cycle with nothing
+            // to bill is skipped.
+            $beforeSuccessor = $successorAgreement instanceof ClientAgreement
+                ? $this->agreementStart($successorAgreement)->copy()->subDay()
+                : null;
+            $referenceDate = $beforeSuccessor instanceof Carbon && $beforeSuccessor->gt($terminationDate)
+                ? ($beforeSuccessor->lt($referenceDate) ? $beforeSuccessor : $referenceDate)
+                : $terminationDate->copy();
         }
 
         return $this->nextBillingCycle(

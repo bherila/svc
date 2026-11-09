@@ -213,37 +213,41 @@ final class BillingHistoryInvariantTest extends TestCase
     /** Deferred work drawn on Q1's unused rollover pool, then an overage the pool must not cover twice. */
     private const array ROLLOVER_DRAW_HISTORY = [['2026-01-20', 1800, true], ['2026-06-10', 3600, false]];
 
-    /** @return iterable<string, array{string}> */
+    /** @return iterable<string, array{string, string, list<string>, string, string}> cadence, successor start, gap days, a day after, now */
     public static function gapCadences(): iterable
     {
-        yield 'monthly' => ['monthly'];
-        yield 'quarterly' => ['quarterly'];
+        yield 'monthly, a month' => ['monthly', '2026-06-16', ['2026-06-10'], '2026-06-20', '2026-10-20'];
+        yield 'quarterly, a month' => ['quarterly', '2026-06-16', ['2026-06-10'], '2026-06-20', '2026-10-20'];
+        yield 'monthly, several cycles' => ['monthly', '2026-11-16', ['2026-07-10', '2026-09-10', '2026-11-12'], '2026-11-20', '2027-01-20'];
+        yield 'quarterly, several cycles' => ['quarterly', '2026-11-16', ['2026-07-10', '2026-09-10', '2026-11-12'], '2026-11-20', '2027-01-20'];
     }
 
     /**
-     * Codex's gap: the outgoing agreement ends on May 15 and its successor
-     * starts on June 16. Ordinary work up to the day before the successor
-     * starts is the outgoing agreement's, gap included, at its rate, and the
-     * successor's from its start, at its own - each billed exactly once, by a
-     * bulk walk that reaches the gap.
+     * Codex's gaps: the outgoing agreement ends on May 15 and its successor
+     * starts later - the next month, or after several cycles. Ordinary work up
+     * to the day before the successor starts is the outgoing agreement's, gap
+     * included, at its rate, and the successor's from its start, at its own -
+     * each billed exactly once, by a bulk walk that reaches the whole gap.
+     *
+     * @param  list<string>  $gapDays
      */
     #[DataProvider('gapCadences')]
-    public function test_work_in_a_gap_before_a_successor_is_billed_once_by_the_outgoing_agreement(string $cadence): void
+    public function test_work_in_a_gap_before_a_successor_is_billed_once_by_the_outgoing_agreement(string $cadence, string $successorStart, array $gapDays, string $afterDay, string $now): void
     {
-        Carbon::setTestNow('2026-10-20 12:00:00');
-        CarbonImmutable::setTestNow('2026-10-20 12:00:00');
-        [$workspace, $company, $project, $owner] = $this->world('gap-'.$cadence);
+        Carbon::setTestNow($now.' 12:00:00');
+        CarbonImmutable::setTestNow($now.' 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('gap-'.$cadence.'-'.$successorStart);
         $outgoing = $this->agreement($workspace, $company, [
             'billing_cadence' => $cadence, 'bill_overage_interim' => false, 'ends_on' => '2026-05-15', 'status' => 'terminated',
             'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 20000,
         ]);
         $successor = $this->agreement($workspace, $company, [
-            'starts_on' => '2026-06-16', 'billing_cadence' => $cadence, 'bill_overage_interim' => false,
+            'starts_on' => $successorStart, 'billing_cadence' => $cadence, 'bill_overage_interim' => false,
             'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
         ]);
         $may = $this->hours($workspace, $company, $project, $owner, '2026-05-12', 60);
-        $gap = $this->hours($workspace, $company, $project, $owner, '2026-06-10', 60);
-        $after = $this->hours($workspace, $company, $project, $owner, '2026-06-20', 60);
+        $gap = array_map(fn (string $day): ClientTimeEntry => $this->hours($workspace, $company, $project, $owner, $day, 60), $gapDays);
+        $after = $this->hours($workspace, $company, $project, $owner, $afterDay, 60);
 
         app(ClientInvoicingService::class)->generateAllInvoices($company);
         $this->assertInvariants($company, 'generated in bulk');
@@ -251,7 +255,9 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertInvariants($company, 'everything issued');
 
         $this->assertSame([[$outgoing->id, 20000]], $this->chargesOf($may));
-        $this->assertSame([[$outgoing->id, 20000]], $this->chargesOf($gap), 'Work in the gap is the outgoing agreement\'s, once, at its rate.');
+        foreach ($gap as $entry) {
+            $this->assertSame([[$outgoing->id, 20000]], $this->chargesOf($entry), 'Work in the gap, on '.$entry->worked_on->toDateString().', is the outgoing agreement\'s, once, at its rate.');
+        }
         $this->assertSame([[$successor->id, 10000]], $this->chargesOf($after), 'Work from the successor\'s start is the successor\'s.');
     }
 
