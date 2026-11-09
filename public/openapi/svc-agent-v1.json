@@ -33365,6 +33365,13 @@
                             "null"
                         ],
                         "format": "uuid"
+                    },
+                    "company_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 200
                     }
                 }
             },

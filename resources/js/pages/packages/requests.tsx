@@ -6,6 +6,7 @@ import { ConfirmedAction } from '@/components/shared-projects/participation-pane
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OptionSelect } from '@/components/ui/option-select';
 import {
@@ -132,6 +133,11 @@ function Panel({
         request.suggested_client?.id ?? '',
     );
     const [reason, setReason] = useState('');
+    // The new client's name starts as the visitor typed it; once approved it is
+    // the workspace's own record, so it can be corrected here first.
+    const [companyName, setCompanyName] = useState(
+        untrusted?.company_name ?? '',
+    );
     const attachTo = clients.find((client) => client.id === clientId) ?? null;
 
     // Every decision goes to the server's own URL, confirmed, against the
@@ -293,6 +299,10 @@ function Panel({
                     confirmLabel="Approve and invite"
                     run={decide(urls.approve, {
                         client_id: clientId === '' ? undefined : clientId,
+                        company_name:
+                            clientId === '' && companyName.trim() !== ''
+                                ? companyName.trim()
+                                : undefined,
                     })}
                 >
                     <div className="grid grid-cols-1 gap-1.5">
@@ -304,6 +314,21 @@ function Panel({
                             onValueChange={setClientId}
                         />
                     </div>
+                    {clientId === '' && (
+                        <div className="grid grid-cols-1 gap-1.5">
+                            <Label htmlFor={`company-${request.id}`}>
+                                New client's name
+                            </Label>
+                            <Input
+                                id={`company-${request.id}`}
+                                maxLength={200}
+                                value={companyName}
+                                onChange={(event) =>
+                                    setCompanyName(event.target.value)
+                                }
+                            />
+                        </div>
+                    )}
                     <ApprovalSummary request={request} attachTo={attachTo} />
                 </ConfirmedAction>
             )}

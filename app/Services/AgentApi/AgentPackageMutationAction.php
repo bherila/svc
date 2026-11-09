@@ -67,7 +67,7 @@ final class AgentPackageMutationAction
             function (array $fields, ?string $version) use ($actor, $workspace, $operation, $requestId): string {
                 $request = $this->requestReads->find($actor, $workspace, $requestId);
                 match ($operation) {
-                    'package_requests.approve' => $this->requestWorkflow->approve($actor, $workspace, $request, self::text($fields['client_id'] ?? null), $version),
+                    'package_requests.approve' => $this->requestWorkflow->approve($actor, $workspace, $request, self::text($fields['client_id'] ?? null), $version, self::text($fields['company_name'] ?? null)),
                     'package_requests.decline' => $this->requestWorkflow->decline($actor, $workspace, $request, self::text($fields['reason'] ?? null), $version),
                     'package_requests.erase' => $this->requestWorkflow->erase($actor, $workspace, $request, $version),
                     default => throw new InvalidArgumentException("Unsupported package request decision [{$operation}]."),

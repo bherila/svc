@@ -50,6 +50,9 @@ use Illuminate\Support\Facades\Validator;
  */
 final class PackageRequestWorkflow
 {
+    /** The name an owner or admin may give the new client at approval. */
+    public const array COMPANY_NAME_RULES = ['nullable', 'string', 'max:200'];
+
     /** Open requests one address may have per workspace before more are refused (PUB-5). */
     public const MAX_OPEN_PER_ADDRESS = 3;
 
@@ -128,13 +131,16 @@ final class PackageRequestWorkflow
      * access for the contact (ADM-1, ADM-2, ADM-3).
      *
      * @param  string|null  $clientPublicId  attach to this existing client instead of creating one
+     * @param  string|null  $companyName  the new client's name, when the visitor's needs correcting; ignored when attaching
      */
-    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null): ServicePackageEnrollment
+    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null, ?string $companyName = null): ServicePackageEnrollment
     {
         $this->requireManager($actor, $workspace);
+        $companyName = self::nullableText($companyName);
+        Validator::make(['company_name' => $companyName], ['company_name' => self::COMPANY_NAME_RULES])->validate();
         $existingAccount = null;
 
-        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, &$existingAccount): ServicePackageEnrollment {
+        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, &$existingAccount): ServicePackageEnrollment {
             $locked = $this->locked($workspace, $request);
             $this->assertVersion($locked, $expectedVersion);
             $this->refuseUnlessOpen($locked);
@@ -156,7 +162,9 @@ final class PackageRequestWorkflow
             }
 
             $company = $clientPublicId === null
-                ? $this->companies->handle($workspace, (string) $locked->company_name, $email)
+                // The owner or admin may correct the name the visitor typed:
+                // once created, it is the workspace's record, not the visitor's.
+                ? $this->companies->handle($workspace, $companyName ?? (string) $locked->company_name, $email)
                 : ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $clientPublicId)->firstOrFail();
             $project = $company->projects()->create([
                 'workspace_id' => $workspace->id,

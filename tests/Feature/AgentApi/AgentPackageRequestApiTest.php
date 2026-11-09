@@ -145,7 +145,7 @@ final class AgentPackageRequestApiTest extends TestCase
             }
             $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($name), $tools[$name]['outputSchema'], $name);
         }
-        $this->assertSame(['expected_version', 'confirm', 'client_id'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.approve')['properties']));
+        $this->assertSame(['expected_version', 'confirm', 'client_id', 'company_name'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.approve')['properties']));
         $this->assertSame(['expected_version', 'confirm', 'reason'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.decline')['properties']));
         $this->assertSame(['expected_version', 'confirm'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.erase')['properties']));
 

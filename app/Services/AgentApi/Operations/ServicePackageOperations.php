@@ -84,6 +84,7 @@ final class ServicePackageOperations
      */
     public const array DECISION_RULES = [
         'client_id' => ['nullable', 'string', 'uuid'],
+        'company_name' => PackageRequestWorkflow::COMPANY_NAME_RULES,
         'reason' => PackageRequestWorkflow::REASON_RULES,
     ];
 
@@ -377,7 +378,7 @@ final class ServicePackageOperations
             'ServicePackageCreateRequest' => self::fromRules([...ServicePackageRules::package(creating: true), ...ServicePackageRules::terms()], $fields),
             'ServicePackageUpdateRequest' => [...$expected, ...self::fromRules([...ServicePackageRules::package(creating: false), ...ServicePackageRules::terms()], $fields)],
             'ServicePackageConfirmRequest' => [...$expected, ...$confirm],
-            'ServicePackageRequestApproveRequest' => [...$expected, ...$confirm, ...self::fromRules(self::DECISION_RULES, ['client_id'])],
+            'ServicePackageRequestApproveRequest' => [...$expected, ...$confirm, ...self::fromRules(self::DECISION_RULES, ['client_id', 'company_name'])],
             'ServicePackageRequestDeclineRequest' => [...$expected, ...$confirm, ...self::fromRules(self::DECISION_RULES, ['reason'])],
             default => throw new InvalidArgumentException("Unknown service package request {$component}."),
         };

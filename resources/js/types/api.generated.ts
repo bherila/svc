@@ -6220,6 +6220,7 @@ export interface components {
             confirm: true;
             /** Format: uuid */
             client_id?: string | null;
+            company_name?: string | null;
         };
         ServicePackageRequestDeclineRequest: {
             expected_version: string;

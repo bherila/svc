@@ -113,7 +113,11 @@ describe('package requests', () => {
         expect(vi.mocked(apiRequest).mock.calls[0].slice(0, 3)).toEqual([
             'POST',
             '/api/v1/workspaces/ws-1/package-requests/request-1/approve',
-            { expected_version: 'b'.repeat(64), confirm: true },
+            {
+                expected_version: 'b'.repeat(64),
+                confirm: true,
+                company_name: 'Lakeside Bakery',
+            },
         ]);
     });
 

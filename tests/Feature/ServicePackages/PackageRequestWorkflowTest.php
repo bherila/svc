@@ -217,6 +217,18 @@ final class PackageRequestWorkflowTest extends TestCase
         $this->workflow()->approve($owner, $workspace, $request);
     }
 
+    public function test_the_new_clients_name_can_be_corrected_at_approval(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner);
+        $request = $this->packageRequest($workspace, $package, ['company_name' => 'lakeside bakry llc']);
+
+        $enrollment = $this->workflow()->approve($owner, $workspace, $request, companyName: ' Lakeside Synthetic Bakery ');
+
+        $this->assertSame('Lakeside Synthetic Bakery', ClientCompany::query()->whereKey($enrollment->client_company_id)->value('name'));
+        $this->assertSame('lakeside bakry llc', $request->refresh()->company_name, 'what the visitor typed is kept as they typed it');
+    }
+
     #[Requirement('EDGE-4')]
     public function test_a_known_address_suggests_its_client_and_approval_can_attach_to_it(): void
     {
