@@ -35,6 +35,7 @@ use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Files\AttachmentAction;
 use App\Services\Finance\PaymentReconciliationService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\PackageRecurringInvoices;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\WorkspaceProjectMutationAction;
 use App\Services\WorkspaceTaskMutationAction;
@@ -371,6 +372,40 @@ final class LockOrderConformanceTest extends TestCase
         $this->travel(30)->days();
         $enrollments->lapse($this->workspace, $unpaid);
         $this->travelBack();
+
+        $this->driveTheAutomaticPackageInvoices($contact, $signature);
+    }
+
+    /**
+     * Slice 4 (INV-1, INV-3): the automatic invoicing of a package's billing
+     * period - the billing maintenance share, the enrollment, then the cadence
+     * guard's agreement and invoice claims, the engine and the issue - and a
+     * refusal recorded apart under the enrollment's lock. On a company of its
+     * own, so no company-wide agreement's invoice overlaps its periods.
+     *
+     * @param  array{signer_name: string, accepted_terms: bool}  $signature
+     */
+    private function driveTheAutomaticPackageInvoices(User $contact, array $signature): void
+    {
+        [$company] = $this->secondaryCompany('auto-invoice');
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $packages = app(ServicePackageWorkflow::class);
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        $terms = [
+            'name' => 'Locks automatic invoices', 'currency' => 'USD', 'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
+            'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]],
+        ];
+        $issued = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-issued', ...$terms]))), $signature);
+        $square = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-auto-square', ...$terms]))), $signature);
+        ClientAgreement::query()->whereKey($square->client_agreement_id)->update(['square_series_key' => 'synthetic-locks-square']);
+
+        $recurring = app(PackageRecurringInvoices::class);
+        $outcomes = [];
+        foreach ($recurring->due($this->workspace, $recurring->automaticEnrollments($this->workspace)) as [$enrollment, $agreement, $cycle]) {
+            $outcomes[$enrollment->id] = $recurring->invoice($this->workspace, $enrollment, $agreement, $cycle)->label();
+        }
+        $this->assertSame('issued', $outcomes[$issued->id] ?? null, 'The automatic period must be issued to be measured.');
+        $this->assertSame('refused', $outcomes[$square->id] ?? null, 'The refusal must be recorded to be measured.');
     }
 
     /**
