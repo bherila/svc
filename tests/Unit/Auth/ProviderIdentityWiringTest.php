@@ -3,15 +3,24 @@
 namespace Tests\Unit\Auth;
 
 use App\Models\User;
+use App\Providers\AppServiceProvider;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\FirstPartySession;
 use App\Support\AgentApi\ProviderIdentityWrites;
+use App\Support\Auth\PersonalAccessTokenIdentity;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\Concerns\FakesProviderIdentity;
 use Tests\TestCase;
 
 /** The resource ceilings and the provider identity hooks, without a database. */
+#[CoversClass(AppServiceProvider::class)]
+#[CoversClass(PersonalAccessTokenIdentity::class)]
+#[CoversClass(AgentApiScopes::class)]
+#[CoversClass(FirstPartySession::class)]
+#[CoversClass(ProviderIdentityWrites::class)]
+#[CoversClass(User::class)]
 final class ProviderIdentityWiringTest extends TestCase
 {
     use FakesProviderIdentity;

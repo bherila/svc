@@ -13,9 +13,18 @@ use App\Services\Mcp\Context\McpRequestContext;
 use App\Support\AgentApi\AgentApiContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mcp\Exception\ToolCallException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /** context.get names the scope an agent must ask for when it lacks it. */
+#[CoversClass(AgentMcpReadTools::class)]
+#[CoversClass(AgentReadService::class)]
+#[CoversClass(McpRequestContext::class)]
+#[CoversClass(McpPrincipal::class)]
+#[CoversClass(AgentApiContract::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(User::class)]
+#[CoversClass(AgentPrincipal::class)]
 final class AgentMcpContextScopeTest extends TestCase
 {
     use RefreshDatabase;

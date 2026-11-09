@@ -3,8 +3,10 @@
 namespace Tests\Unit\Billing;
 
 use App\Support\Billing\RecordedOverage;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(RecordedOverage::class)]
 final class RecordedOverageTest extends TestCase
 {
     public function test_termination_charges_for_deferred_work_are_not_part_of_the_recorded_figure(): void

@@ -9,8 +9,14 @@ use App\Models\Workspace;
 use App\Services\Billing\AgreementSelector;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgreementSelector::class)]
+#[CoversClass(Workspace::class)]
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientProject::class)]
+#[CoversClass(ClientAgreement::class)]
 final class AgreementSelectorTest extends TestCase
 {
     use RefreshDatabase;

@@ -4,9 +4,11 @@ namespace Tests\Unit\Billing;
 
 use App\Support\Billing\BillingCadence;
 use App\Support\Billing\CadenceOverageLineDescription;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(CadenceOverageLineDescription::class)]
 final class CadenceOverageLineDescriptionTest extends TestCase
 {
     #[DataProvider('descriptions')]

@@ -8,9 +8,14 @@ use App\Models\ClientTimeEntry;
 use App\Support\AgentApi\TimeEntryAllocation;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
+#[CoversClass(TimeEntryAllocation::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientTimeEntry::class)]
 final class TimeEntryAllocationTest extends TestCase
 {
     public function test_scoped_relationships_are_required_without_lazy_queries(): void

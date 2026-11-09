@@ -2,15 +2,20 @@
 
 namespace Tests\Unit\Mcp;
 
+use App\Providers\AppServiceProvider;
 use App\Support\AgentApi\InternalApiDispatch;
 use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\AgentApiTransport;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Illuminate\Http\Request;
+use PHPUnit\Framework\Attributes\CoversClass;
 use ReflectionProperty;
 use Tests\TestCase;
 
 /** How the application binds the transport MCP tools reach their REST routes through (#459). */
+#[CoversClass(MarkedInternalAgentApiTransport::class)]
+#[CoversClass(InternalApiDispatch::class)]
+#[CoversClass(AppServiceProvider::class)]
 final class AgentApiTransportBindingTest extends TestCase
 {
     public function test_tools_get_the_marked_transport_addressed_to_the_callers_host(): void

@@ -7,6 +7,7 @@ use App\Support\AgentApi\AgentApiScopes as S;
 use BWH\Auth\OAuth\Credentials\DeclaresScopeImplications;
 use BWH\Auth\OAuth\Credentials\ScopePresentation;
 use BWH\Auth\OAuth\Credentials\ScopePresentationValidator;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
@@ -14,6 +15,8 @@ use Tests\TestCase;
  * (#582). Pinned exactly, so changing a group or preset is a deliberate edit
  * that the owner sees.
  */
+#[CoversClass(AgentApiScopePresentation::class)]
+#[CoversClass(S::class)]
 final class AgentApiScopePresentationTest extends TestCase
 {
     private AgentApiScopePresentation $presentation;

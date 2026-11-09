@@ -8,6 +8,7 @@ use App\Models\ClientTimeEntry;
 use App\Support\Billing\DeferredWorkDisposition;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
@@ -17,6 +18,10 @@ use Tests\TestCase;
  * rule and the tenant scoping of the eager load it depends on are pinned here
  * rather than only through the feature ledger tests.
  */
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(DeferredWorkDisposition::class)]
 final class TimeEntryCapacityDateTest extends TestCase
 {
     public function test_ordinary_work_draws_on_the_day_it_was_worked_without_reading_any_invoice(): void

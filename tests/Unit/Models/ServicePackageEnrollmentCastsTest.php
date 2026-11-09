@@ -4,6 +4,7 @@ namespace Tests\Unit\Models;
 
 use App\Models\ServicePackageEnrollment;
 use Carbon\CarbonImmutable;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
@@ -11,6 +12,7 @@ use Tests\TestCase;
  * the enrollment presenter read these columns as immutable instants, so each
  * must come back from a database row as one, not as a raw string.
  */
+#[CoversClass(ServicePackageEnrollment::class)]
 final class ServicePackageEnrollmentCastsTest extends TestCase
 {
     public function test_the_enrollment_instants_are_immutable_dates(): void

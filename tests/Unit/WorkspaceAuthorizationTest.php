@@ -9,8 +9,13 @@ use App\Models\Workspace;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(WorkspaceAuthorization::class)]
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientStripeEvent::class)]
+#[CoversClass(Workspace::class)]
 class WorkspaceAuthorizationTest extends TestCase
 {
     use RefreshDatabase;

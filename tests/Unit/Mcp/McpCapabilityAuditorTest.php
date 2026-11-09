@@ -12,9 +12,14 @@ use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Psr\Log\AbstractLogger;
 use Tests\TestCase;
 
+#[CoversClass(McpCapabilityAuditor::class)]
+#[CoversClass(McpCapabilityInvoked::class)]
+#[CoversClass(McpRequestContext::class)]
+#[CoversClass(McpPrincipal::class)]
 final class McpCapabilityAuditorTest extends TestCase
 {
     use RefreshDatabase;

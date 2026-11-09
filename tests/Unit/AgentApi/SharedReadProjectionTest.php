@@ -23,8 +23,26 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgentClientPresenter::class)]
+#[CoversClass(AgentExpensePresenter::class)]
+#[CoversClass(AgentInvoicePresenter::class)]
+#[CoversClass(AgentPortalInvitationPresenter::class)]
+#[CoversClass(AgentProjectMemberPresenter::class)]
+#[CoversClass(AgentProposalPresenter::class)]
+#[CoversClass(AgentTimeEntryPresenter::class)]
+#[CoversClass(AgentUserPresenter::class)]
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientExpense::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientPortalInvitation::class)]
+#[CoversClass(ClientProjectMembership::class)]
+#[CoversClass(ClientProposal::class)]
+#[CoversClass(ClientProposalItem::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(User::class)]
 final class SharedReadProjectionTest extends TestCase
 {
     public function test_public_summaries_do_not_resolve_relations_or_include_internal_envelope_fields(): void

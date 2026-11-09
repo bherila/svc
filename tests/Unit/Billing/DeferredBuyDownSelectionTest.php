@@ -6,11 +6,19 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Support\Billing\DeferredBuyDownRequest;
 use App\Support\Billing\DeferredBuyDownSelection;
+use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\InvoiceKind;
 use DomainException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /** No database: target arithmetic must preserve termination's grouped rounding. */
+#[CoversClass(DeferredBuyDownSelection::class)]
+#[CoversClass(DeferredBuyDownRequest::class)]
+#[CoversClass(DeferredTerminationPricing::class)]
+#[CoversClass(InvoiceKind::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientTimeEntry::class)]
 final class DeferredBuyDownSelectionTest extends TestCase
 {
     public function test_amount_targets_round_the_canonical_group_total_instead_of_each_entry(): void

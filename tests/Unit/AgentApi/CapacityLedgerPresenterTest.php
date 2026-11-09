@@ -6,8 +6,13 @@ use App\Services\Billing\Balances\ClosingBalance;
 use App\Services\Billing\Balances\MonthSummary;
 use App\Services\Billing\Balances\OpeningBalance;
 use App\Support\AgentApi\Presenters\CapacityLedgerPresenter;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(CapacityLedgerPresenter::class)]
+#[CoversClass(MonthSummary::class)]
+#[CoversClass(OpeningBalance::class)]
+#[CoversClass(ClosingBalance::class)]
 final class CapacityLedgerPresenterTest extends TestCase
 {
     public function test_it_serializes_only_the_computed_capacity_ledger_values(): void

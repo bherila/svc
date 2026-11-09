@@ -18,8 +18,24 @@ use App\Support\ClientHome\TaskRow;
 use App\Support\ClientHome\TimeEntryRow;
 use App\Support\Engagement\AgreementTermsPayload;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(AgentInvoicePresenter::class)]
+#[CoversClass(AgentProposalPresenter::class)]
+#[CoversClass(AgentTimeEntryPresenter::class)]
+#[CoversClass(AgreementReadPresenter::class)]
+#[CoversClass(InvoiceSummary::class)]
+#[CoversClass(TaskRow::class)]
+#[CoversClass(TimeEntryRow::class)]
+#[CoversClass(AgreementTermsPayload::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(ClientInvoiceLine::class)]
+#[CoversClass(ClientProposal::class)]
+#[CoversClass(ClientTask::class)]
+#[CoversClass(ClientTimeEntry::class)]
+#[CoversClass(ClientAgreement::class)]
+#[CoversClass(ClientAgreementRecurringItem::class)]
 final class PortalReadProjectionTest extends TestCase
 {
     public function test_portal_invoice_fields_keep_numeric_browser_quantities_and_withhold_internal_metadata_without_queries(): void

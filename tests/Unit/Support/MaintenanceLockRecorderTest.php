@@ -9,8 +9,14 @@ use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
+#[CoversClass(LockOrderRecorder::class)]
+#[CoversClass(LockResource::class)]
+#[CoversClass(LockMode::class)]
+#[CoversClass(Locks::class)]
+#[CoversClass(BillingMaintenance::class)]
 final class MaintenanceLockRecorderTest extends TestCase
 {
     protected function tearDown(): void

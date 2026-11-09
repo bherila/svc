@@ -2,8 +2,10 @@
 
 namespace Tests\Unit;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use Tests\TestCase;
 
+#[CoversNothing]
 final class MutationGateConfigurationTest extends TestCase
 {
     public function test_the_diff_gate_has_one_broad_source_and_an_honest_covered_code_score(): void

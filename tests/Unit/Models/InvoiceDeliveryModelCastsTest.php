@@ -6,6 +6,7 @@ use App\Casts\DateOnly;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use DateTimeInterface;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Tests\TestCase;
 
 /**
@@ -14,6 +15,9 @@ use Tests\TestCase;
  * automatic-delivery field cannot silently turn established values back into
  * raw database strings.
  */
+#[CoversClass(ClientCompany::class)]
+#[CoversClass(ClientInvoice::class)]
+#[CoversClass(DateOnly::class)]
 final class InvoiceDeliveryModelCastsTest extends TestCase
 {
     public function test_client_activation_remains_a_boolean(): void

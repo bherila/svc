@@ -2,13 +2,18 @@
 
 namespace Tests\Unit\Mcp;
 
+use App\Providers\AppServiceProvider;
+use App\Support\AgentApi\MarkedInternalAgentApiTransport;
 use Bherila\McpLaravelBridge\Http\InternalAgentApiTransport;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Mockery;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Tests\TestCase;
 
+#[CoversClass(MarkedInternalAgentApiTransport::class)]
+#[CoversClass(AppServiceProvider::class)]
 final class AccessCorrelationTransportTest extends TestCase
 {
     public function test_the_registered_transport_carries_correlation_and_idempotency_but_rejects_other_headers(): void

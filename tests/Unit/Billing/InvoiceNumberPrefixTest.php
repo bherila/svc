@@ -4,6 +4,7 @@ namespace Tests\Unit\Billing;
 
 use App\Services\Billing\InvoiceNumberAllocator;
 use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -13,6 +14,7 @@ use Tests\TestCase;
  * An empty one numbered the invoice `202610-001`, which the allocator cannot
  * read back as a series, so every later invoice started over.
  */
+#[CoversClass(InvoiceNumberAllocator::class)]
 final class InvoiceNumberPrefixTest extends TestCase
 {
     /** @return iterable<string, array{string, string}> */
