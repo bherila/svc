@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Packages;
 
 use App\Models\ServicePackageComponent;
@@ -62,28 +64,28 @@ final readonly class PackageTerms
         $questions = array_values($input['intake_questions'] ?? []);
 
         return new self(
-            name: trim((string) $input['name']),
+            name: trim(self::string($input, 'name')),
             summary: self::text($input['summary'] ?? null),
             bodyMarkdown: self::text($input['body_markdown'] ?? null),
             agreementText: self::text($input['agreement_text'] ?? null),
-            currency: strtoupper((string) $input['currency']),
-            billingCadence: ChargeCadence::from((string) $input['billing_cadence']),
+            currency: strtoupper(self::string($input, 'currency')),
+            billingCadence: ChargeCadence::from(self::string($input, 'billing_cadence')),
             hourlyRateAmount: self::int($input['hourly_rate_amount'] ?? null),
             retainerAmount: self::int($input['retainer_amount'] ?? null),
             retainerMinutes: self::int($input['retainer_minutes'] ?? null),
             rolloverMonths: self::int($input['rollover_months'] ?? null),
-            firstCycleProration: isset($input['first_cycle_proration']) ? FirstCycleProration::from((string) $input['first_cycle_proration']) : null,
+            firstCycleProration: isset($input['first_cycle_proration']) ? FirstCycleProration::from(self::string($input, 'first_cycle_proration')) : null,
             chargeSetupFeeAtSignup: (bool) ($input['charge_setup_fee_at_signup'] ?? false),
             chargeFirstPeriod: (bool) ($input['charge_first_period'] ?? false),
             requireAutopay: (bool) ($input['require_autopay'] ?? false),
             autopayLimitAmount: self::int($input['autopay_limit_amount'] ?? null),
             payBeforeActivation: (bool) ($input['pay_before_activation'] ?? false),
             paymentLapseDays: (int) ($input['payment_lapse_days'] ?? 14),
-            activationMode: PackageActivationMode::from((string) ($input['activation_mode'] ?? PackageActivationMode::Review->value)),
-            invoiceIssuing: PackageInvoiceIssuing::from((string) ($input['invoice_issuing'] ?? PackageInvoiceIssuing::Draft->value)),
+            activationMode: PackageActivationMode::from(self::string($input, 'activation_mode', PackageActivationMode::Review->value)),
+            invoiceIssuing: PackageInvoiceIssuing::from(self::string($input, 'invoice_issuing', PackageInvoiceIssuing::Draft->value)),
             noticeDays: (int) ($input['notice_days'] ?? 0),
             minimumTermMonths: self::int($input['minimum_term_months'] ?? null),
-            cancellationMode: CancellationMode::from((string) ($input['cancellation_mode'] ?? CancellationMode::Request->value)),
+            cancellationMode: CancellationMode::from(self::string($input, 'cancellation_mode', CancellationMode::Request->value)),
             components: array_map(PackageComponentTerms::fromArray(...), $components),
             intakeQuestions: array_map(IntakeQuestion::fromArray(...), $questions),
         );
@@ -190,9 +192,7 @@ final readonly class PackageTerms
     /** Whether any term bills by usage: an hourly rate or a retainer (whose overage does). */
     public function billsByUsage(): bool
     {
-        return $this->hourlyRateAmount !== null
-            || ($this->retainerAmount ?? 0) > 0
-            || ($this->retainerMinutes ?? 0) > 0;
+        return $this->hourlyRateAmount !== null || self::positive($this->retainerAmount) || self::positive($this->retainerMinutes);
     }
 
     public function setupFeeTotal(): int
@@ -226,12 +226,28 @@ final readonly class PackageTerms
         return $this->chargesAtSignup() || $this->requireAutopay || $this->payBeforeActivation;
     }
 
+    private static function positive(?int $value): bool
+    {
+        return $value !== null && $value > 0;
+    }
+
+    /**
+     * A field the rules hold to a string (an enum value, a currency code, the
+     * name), from validated input or a version's columns.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private static function string(array $input, string $key, ?string $default = null): string
+    {
+        $value = $input[$key] ?? $default;
+
+        // @infection-ignore-all Equivalent: the validator and the version's columns only ever hold a string (or nothing, read as empty) here; the cast tells static analysis what the rules guarantee about mixed input.
+        return (string) $value;
+    }
+
     private static function text(mixed $value): ?string
     {
-        if (! is_string($value)) {
-            return null;
-        }
-        $trimmed = trim($value);
+        $trimmed = is_string($value) ? trim($value) : '';
 
         return $trimmed === '' ? null : $trimmed;
     }

@@ -114,7 +114,7 @@ final class ServicePackageRules
         $taken = [];
         foreach ($terms['intake_questions'] as $question) {
             if (is_array($question) && is_string($question['key'] ?? null)) {
-                $taken[$question['key']] = true;
+                $taken[] = $question['key'];
             }
         }
 
@@ -124,10 +124,10 @@ final class ServicePackageRules
             }
             $base = Str::limit(Str::slug(is_string($question['label'] ?? null) ? $question['label'] : '', '_'), 36, '') ?: 'question';
             $key = $base;
-            for ($suffix = 2; isset($taken[$key]); $suffix++) {
+            for ($suffix = 2; in_array($key, $taken, true); $suffix++) {
                 $key = $base.'_'.$suffix;
             }
-            $taken[$key] = true;
+            $taken[] = $key;
             $terms['intake_questions'][$index]['key'] = $key;
         }
 

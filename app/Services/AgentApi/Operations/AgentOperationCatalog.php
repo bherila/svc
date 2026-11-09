@@ -2384,7 +2384,7 @@ final class AgentOperationCatalog
     private static function requestBody(string $id): array
     {
         if (isset(ServicePackageOperations::ROUTES[$id])) {
-            return ServicePackageOperations::schema((string) ServicePackageOperations::DEFINITIONS[$id][4]);
+            return ServicePackageOperations::requestSchema($id);
         }
 
         return AgentApiResponseSchemaCatalog::requestForOperation($id);

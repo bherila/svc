@@ -219,7 +219,6 @@ final class ServicePackageOperations
         $nullableInt = ['type' => ['integer', 'null']];
         $bool = ['type' => 'boolean'];
         $nullableInstant = ['type' => ['string', 'null'], 'format' => 'date-time'];
-        $packageRules = ServicePackageRules::package(creating: true);
         $named = self::object(['id' => $uuid, 'name' => $text]);
         $nullableNamed = ['oneOf' => [$named, ['type' => 'null']]];
 
@@ -339,11 +338,7 @@ final class ServicePackageOperations
                 'data' => ['$ref' => '#/components/schemas/ServicePackageRequest'],
                 'enrollment' => ['$ref' => '#/components/schemas/ServicePackageEnrollmentSummary'],
             ]),
-            'ServicePackageCreateRequest' => self::request(self::requestProperties($component), array_values(array_filter(
-                [...array_keys($packageRules), ...ServicePackageRules::termKeys()],
-                static fn (string $key): bool => in_array('required', ServicePackageRules::terms()[$key] ?? $packageRules[$key], true)
-                    && ! array_key_exists($key, PackageTerms::defaults('USD')),
-            ))),
+            'ServicePackageCreateRequest' => self::request(self::requestProperties($component), self::requiredToCreate()),
             'ServicePackageUpdateRequest' => self::request(self::requestProperties($component), ['expected_version']),
             'ServicePackageConfirmRequest', 'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest' => self::request(self::requestProperties($component), ['expected_version', 'confirm']),
             default => throw new InvalidArgumentException("Unknown service package component {$component}."),
@@ -358,47 +353,98 @@ final class ServicePackageOperations
      */
     public static function bodyFields(string $id): array
     {
-        $request = self::DEFINITIONS[$id][4] ?? throw new LogicException("Operation [{$id}] takes no body.");
+        return array_keys(self::requestProperties(self::requestComponent($id)));
+    }
 
-        return array_keys(self::requestProperties($request));
+    /**
+     * A write's request body schema.
+     *
+     * @return array<string, mixed>
+     */
+    public static function requestSchema(string $id): array
+    {
+        return self::schema(self::requestComponent($id));
+    }
+
+    /** @return 'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest' */
+    private static function requestComponent(string $id): string
+    {
+        return self::DEFINITIONS[$id][4] ?? throw new LogicException("Operation [{$id}] takes no body.");
+    }
+
+    /**
+     * Every rule a create validates with, package fields first.
+     *
+     * @return array<string, list<mixed>>
+     */
+    private static function createRules(): array
+    {
+        return [...ServicePackageRules::package(creating: true), ...ServicePackageRules::terms()];
+    }
+
+    /**
+     * The fields a create must send: those its rules require outright (not
+     * only when present), less every term that has a default. Everything else
+     * has a default when creating, and is the draft's when updating.
+     *
+     * @return list<string>
+     */
+    private static function requiredToCreate(): array
+    {
+        $defaults = PackageTerms::defaults('USD');
+        $required = [];
+        foreach (self::createRules() as $field => $rules) {
+            if (! str_contains($field, '.') && in_array('required', $rules, true) && ! in_array('sometimes', $rules, true) && ! array_key_exists($field, $defaults)) {
+                $required[] = $field;
+            }
+        }
+
+        return $required;
     }
 
     /**
      * A request body's fields and their schemas.
      *
+     * @param  'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest'  $component
      * @return array<string, array<string, mixed>>
      */
     private static function requestProperties(string $component): array
     {
         $expected = ['expected_version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64]];
         $confirm = ['confirm' => ['type' => 'boolean', 'const' => true]];
-        $fields = [...array_keys(ServicePackageRules::package(creating: true)), ...ServicePackageRules::termKeys()];
-
         return match ($component) {
-            'ServicePackageCreateRequest' => self::fromRules([...ServicePackageRules::package(creating: true), ...ServicePackageRules::terms()], $fields),
-            'ServicePackageUpdateRequest' => [...$expected, ...self::fromRules([...ServicePackageRules::package(creating: false), ...ServicePackageRules::terms()], $fields)],
+            'ServicePackageCreateRequest' => self::fromRules(self::createRules()),
+            'ServicePackageUpdateRequest' => [...$expected, ...self::fromRules([
+                ...ServicePackageRules::package(
+                    // @infection-ignore-all Equivalent: fromRules() leaves presence to the caller at the top level, so `sometimes` and `required` translate alike and either presence mode yields the same schemas.
+                    creating: false,
+                ),
+                ...ServicePackageRules::terms(),
+            ])],
             'ServicePackageConfirmRequest' => [...$expected, ...$confirm],
-            'ServicePackageRequestApproveRequest' => [...$expected, ...$confirm, ...self::fromRules(self::DECISION_RULES, ['client_id', 'company_name'])],
-            'ServicePackageRequestDeclineRequest' => [...$expected, ...$confirm, ...self::fromRules(self::DECISION_RULES, ['reason'])],
-            default => throw new InvalidArgumentException("Unknown service package request {$component}."),
+            'ServicePackageRequestApproveRequest' => [...$expected, ...$confirm, ...self::fromRules(array_intersect_key(self::DECISION_RULES, array_flip(['client_id', 'company_name'])))],
+            'ServicePackageRequestDeclineRequest' => [...$expected, ...$confirm, ...self::fromRules(array_intersect_key(self::DECISION_RULES, array_flip(['reason'])))],
         };
     }
 
     /**
-     * JSON schemas for the top-level fields named, generated from Laravel
-     * rules. Presence (`required`, `sometimes`) is the caller's to say at the
-     * top level, because an update merges onto the stored draft and a create
-     * onto the defaults; inside a list item `required` means the item needs it.
+     * JSON schemas for the top-level fields of a rule set (those without a
+     * `.`), in its order, generated from Laravel rules. Presence (`required`,
+     * `sometimes`) is the caller's to say at the top level, because an update
+     * merges onto the stored draft and a create onto the defaults; inside a
+     * list item `required` means the item needs it. A rule with no
+     * translation fails the generation rather than being left out.
      *
      * @param  array<string, list<mixed>>  $rules
-     * @param  list<string>  $fields
      * @return array<string, array<string, mixed>>
      */
-    private static function fromRules(array $rules, array $fields): array
+    public static function fromRules(array $rules): array
     {
         $schemas = [];
-        foreach ($fields as $field) {
-            $schemas[$field] = self::field($rules, $field);
+        foreach (array_keys($rules) as $field) {
+            if (! str_contains($field, '.')) {
+                $schemas[$field] = self::field($rules, $field);
+            }
         }
 
         return $schemas;
@@ -418,7 +464,8 @@ final class ServicePackageOperations
             if (! is_string($rule)) {
                 throw new LogicException("Rule for [{$path}] has no schema translation.");
             }
-            [$name, $argument] = array_pad(explode(':', $rule, 2), 2, null);
+            // A rule without an argument reads as an empty one.
+            [$name, $argument] = [...explode(':', $rule, 2), ''];
             match ($name) {
                 'required', 'sometimes', 'distinct' => null,
                 'nullable' => $nullable = true,
@@ -427,9 +474,9 @@ final class ServicePackageOperations
                 'integer' => $schema['type'] = 'integer',
                 'numeric' => $schema['type'] = 'number',
                 'boolean' => $schema['type'] = 'boolean',
-                'array' => $schema += self::container($rules, $path, $argument),
-                'in' => $schema['enum'] = str_getcsv((string) $argument, ',', '"', ''),
-                'regex' => $schema['pattern'] = substr((string) $argument, 1, (int) strrpos((string) $argument, '/') - 1),
+                'array' => $schema = self::container($rules, $path, $argument),
+                'in' => $schema['enum'] = str_getcsv($argument, ',', '"', ''),
+                'regex' => $schema['pattern'] = self::pattern($argument, $path),
                 'min', 'max', 'size', 'gt' => $bounds[] = [$name, (int) $argument],
                 default => throw new LogicException("Rule [{$rule}] for [{$path}] has no schema translation."),
             };
@@ -462,14 +509,25 @@ final class ServicePackageOperations
     }
 
     /**
+     * A `regex:` rule's pattern without its delimiters. JSON Schema has no
+     * flags, so a pattern with any is refused rather than published loosened.
+     */
+    private static function pattern(string $regex, string $path): string
+    {
+        return preg_match('~^/(.+)/$~', $regex, $match) === 1
+            ? $match[1]
+            : throw new LogicException("Pattern for [{$path}] is not a /-delimited regex without flags.");
+    }
+
+    /**
      * A list (`field.*` has rules) or a closed object (`array:a,b`).
      *
      * @param  array<string, list<mixed>>  $rules
      * @return array<string, mixed>
      */
-    private static function container(array $rules, string $path, ?string $keys): array
+    private static function container(array $rules, string $path, string $keys): array
     {
-        if ($keys === null) {
+        if ($keys === '') {
             return ['type' => 'array', 'items' => self::field($rules, $path.'.*')];
         }
         $properties = [];
@@ -509,6 +567,7 @@ final class ServicePackageOperations
      */
     private static function values(array $cases): array
     {
+        // @infection-ignore-all Equivalent: every enum listed here is string-backed, and without strict_types the closure's string return type coerces as the cast does; the cast is for static analysis.
         return array_map(static fn (BackedEnum $case): string => (string) $case->value, $cases);
     }
 }

@@ -16,7 +16,10 @@ final class EnsureServicePackagesEnabled
 {
     public static function enabled(): bool
     {
-        return (bool) config('svc.service_packages.enabled', false);
+        $enabled = config('svc.service_packages.enabled', false);
+
+        // @infection-ignore-all Equivalent: config/svc.php already casts the switch, and without strict_types the bool return type coerces as the cast does; the cast is for static analysis of config()'s mixed.
+        return (bool) $enabled;
     }
 
     /** @param Closure(Request): Response $next */

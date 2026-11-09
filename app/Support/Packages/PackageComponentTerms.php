@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Packages;
 
 use App\Support\Billing\ChargeCadence;
@@ -25,7 +27,7 @@ final readonly class PackageComponentTerms
             $kind,
             trim($input['description']),
             // A setup fee is charged once by definition, whatever was sent.
-            $kind === PackageComponentKind::SetupFee ? ChargeCadence::OneTime : ChargeCadence::from((string) ($input['cadence'] ?? ChargeCadence::Monthly->value)),
+            $kind === PackageComponentKind::SetupFee ? ChargeCadence::OneTime : ChargeCadence::from($input['cadence'] ?? ChargeCadence::Monthly->value),
             (int) $input['amount'],
             number_format((float) ($input['quantity'] ?? 1), 3, '.', ''),
             (bool) ($input['is_taxable'] ?? false),
@@ -35,7 +37,10 @@ final readonly class PackageComponentTerms
     /** The line's total in minor units: amount × quantity, rounded half up. */
     public function total(): int
     {
-        return (int) round($this->amount * (float) $this->quantity);
+        // @infection-ignore-all Equivalent: PHP multiplies an int by the stored decimal string numerically even under strict types (strictness covers arguments and returns, not arithmetic); the cast is for static analysis.
+        $quantity = (float) $this->quantity;
+
+        return (int) round($this->amount * $quantity);
     }
 
     /** @return array{kind: string, description: string, cadence: string, amount: int, quantity: string, is_taxable: bool} */
