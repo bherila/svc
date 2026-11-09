@@ -473,7 +473,7 @@ final class BillingHistoryInvariantTest extends TestCase
             $contact = User::factory()->create();
             ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
             $enrollments = app(PackageEnrollmentWorkflow::class);
-            $enrollment = $enrollments->accept($contact, $company, $enrollments->addFromPortal($contact, $company, $package), ['signer_name' => 'Synthetic Signer', 'accepted_terms' => true]);
+            $enrollment = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
             $project = ClientProject::query()->findOrFail($enrollment->client_project_id);
             $original = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
             $packages->update($owner, $workspace, $package->refresh(), $v2);

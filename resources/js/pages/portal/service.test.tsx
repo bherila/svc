@@ -128,11 +128,15 @@ describe('portal service review and sign', () => {
         expect(router.post).toHaveBeenCalledWith(
             ACCEPT,
             {
+                reviewed_version: 'version-2',
                 signer_name: 'Morgan Synthetic',
                 signer_title: 'Owner',
                 accepted_terms: true,
             },
-            expect.any(Object),
+            expect.objectContaining({
+                preserveScroll: true,
+                preserveState: 'errors',
+            }),
         );
     });
 
@@ -147,9 +151,89 @@ describe('portal service review and sign', () => {
 
         expect(router.post).toHaveBeenCalledWith(
             ACCEPT,
-            { signer_name: 'Morgan', accepted_terms: true },
+            {
+                reviewed_version: 'version-2',
+                signer_name: 'Morgan',
+                accepted_terms: true,
+            },
             expect.any(Object),
         );
+    });
+
+    it('[EDGE-7] [ACC-2] a version published while reviewing: says so, unticks the box, and signs the version now shown', async () => {
+        vi.mocked(router.post).mockImplementationOnce(
+            (_url, _data, options) => {
+                options?.onError?.({
+                    reviewed_version:
+                        'This service’s terms were updated while you were reviewing them.',
+                });
+                options?.onFinish?.({} as never);
+            },
+        );
+        const { rerender } = render(
+            <PortalService {...portalServiceProps()} />,
+        );
+
+        await userEvent.type(screen.getByLabelText('Full name'), 'Morgan');
+        await userEvent.click(screen.getByRole('checkbox'));
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Accept and sign' }),
+        );
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'This service’s terms were updated while you were reviewing them.',
+        );
+        expect(screen.getByRole('checkbox')).not.toBeChecked();
+
+        // The page's props come back on the current version; the form's state stays.
+        rerender(
+            <PortalService
+                {...portalServiceProps({
+                    accept_fields: { reviewed_version: 'version-3' },
+                    changed_terms: ['notice_days'],
+                })}
+            />,
+        );
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Accept and sign' }),
+        );
+        expect(router.post).toHaveBeenCalledTimes(1);
+
+        await userEvent.click(screen.getByRole('checkbox'));
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Accept and sign' }),
+        );
+        expect(router.post).toHaveBeenCalledTimes(2);
+        expect(router.post).toHaveBeenLastCalledWith(
+            ACCEPT,
+            {
+                reviewed_version: 'version-3',
+                signer_name: 'Morgan',
+                accepted_terms: true,
+            },
+            expect.any(Object),
+        );
+    });
+
+    it('[ACC-1] keeps the box ticked after any other refusal', async () => {
+        vi.mocked(router.post).mockImplementation((_url, _data, options) => {
+            options?.onError?.({
+                acceptance: 'This offer is no longer open.',
+            });
+            options?.onFinish?.({} as never);
+        });
+        render(<PortalService {...portalServiceProps()} />);
+
+        await userEvent.type(screen.getByLabelText('Full name'), 'Morgan');
+        await userEvent.click(screen.getByRole('checkbox'));
+        await userEvent.click(
+            screen.getByRole('button', { name: 'Accept and sign' }),
+        );
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'This offer is no longer open.',
+        );
+        expect(screen.getByRole('checkbox')).toBeChecked();
     });
 
     it('[ACC-1] reads a coded refusal out instead of losing it', async () => {
@@ -177,6 +261,7 @@ describe('portal service review and sign', () => {
             <PortalService
                 {...portalServiceProps({
                     accept_url: null,
+                    accept_fields: null,
                     accept_refusal: {
                         code: 'package_payment_unavailable',
                         message: 'Online payment is not available yet.',

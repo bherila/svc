@@ -61,6 +61,7 @@ final readonly class AutoInvoiceResult
     /** The name the command reports it by. */
     public function label(): string
     {
+        /** @infection-ignore-all The constructor is private and every factory sets exactly one of outcome and skipped, so skipped is a string whenever outcome is null; the cast states that for static analysis. */
         return $this->outcome->value ?? (string) $this->skipped;
     }
 }

@@ -573,7 +573,7 @@ final class PackageMigrationTest extends TestCase
         $first = ServicePackageVersion::query()->where('service_package_id', $package->id)->orderBy('number')->firstOrFail();
         $package->forceFill(['published_version_id' => $first->id])->save();
         $workflow = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan '.$name, 'accepted_terms' => true])->refresh();
+        $enrollment = $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Morgan '.$name))->refresh();
         $package->forceFill(['published_version_id' => $current])->save();
         $this->assertSame('active', $enrollment->status);
         // What the client heard on starting is not what these tests listen for.

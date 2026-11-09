@@ -20,6 +20,7 @@ enum CancellationRefusal: string
     case UndoNotSelfServe = 'cancellation_undo_not_self_serve';
     case EndReached = 'cancellation_end_reached';
     case EndScheduled = 'cancellation_end_scheduled';
+    case UndoOverlaps = 'cancellation_undo_overlaps';
 
     public function message(): string
     {
@@ -36,6 +37,7 @@ enum CancellationRefusal: string
             self::UndoNotSelfServe => 'This cancellation was decided by us, so only we can undo it. Please contact us to keep the service.',
             self::EndReached => 'The scheduled end date has been reached, so it can no longer be undone.',
             self::EndScheduled => 'This agreement has an end scheduled by a cancellation. Undo the scheduled end before changing its end date.',
+            self::UndoOverlaps => 'Another active agreement already covers the dates after this end, so the end cannot be undone. Change or end that agreement first.',
         };
     }
 }

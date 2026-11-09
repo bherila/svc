@@ -1583,7 +1583,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.update',
                 'Update agreement',
-                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here. The cancellation terms (notice_days, minimum_term_months, cancellation_mode: none, request or self_serve) are terms like any other; ends_on is refused with cancellation_end_scheduled while a cancellation\'s end is scheduled (undo it first).',
+                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here. The cancellation terms (notice_days, minimum_term_months, cancellation_mode: none, request or self_serve) are terms like any other; ends_on is refused with cancellation_end_scheduled while a cancellation\'s end is scheduled (undo it first). A draft agreement a service package sign-up created is refused with package_agreement_terms_fixed: until its service starts it carries the package version\'s terms.',
                 [AgentMcpClientWriteTools::class, 'agreementsUpdate'],
                 Effect::LocalWrite,
                 true,

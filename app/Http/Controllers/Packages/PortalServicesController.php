@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
+use App\Support\Packages\PackageRefusal;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -78,9 +79,12 @@ final class PortalServicesController extends Controller
         $found = $this->reads->findForPortal($viewer, $clientCompany, $enrollment);
 
         try {
-            $this->workflow->accept($viewer, $clientCompany, $found, $request->only(['signer_name', 'signer_title', 'accepted_terms']));
+            $this->workflow->accept($viewer, $clientCompany, $found, $request->only(['signer_name', 'signer_title', 'accepted_terms', 'reviewed_version']));
         } catch (ServicePackageRefused $refused) {
-            throw ValidationException::withMessages(['acceptance' => $refused->getMessage()]);
+            // A newer version than the one reviewed is the form's own error:
+            // the page reloads with it, and the client reviews it again.
+            $field = $refused->refusalCode() === PackageRefusal::VersionChanged->value ? 'reviewed_version' : 'acceptance';
+            throw ValidationException::withMessages([$field => $refused->getMessage()]);
         }
 
         return redirect()->route('portal.services.show', [$clientCompany, $found->public_id])->with('status', 'Accepted.');

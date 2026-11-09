@@ -372,6 +372,25 @@ final class AgreementCancellationTest extends TestCase
         $this->assertNull($agreement->refresh()->ends_on);
     }
 
+    /** An end cannot be undone over a replacement agreement already active for the dates after it. */
+    #[Requirement('EDGE-9')]
+    public function test_an_end_is_not_undone_over_a_replacement_already_active_after_it(): void
+    {
+        [$workspace, $owner, $company] = $this->world();
+        $agreement = $this->agreement($workspace, $company, ['cancellation_mode' => 'none']);
+        $this->cancellations()->schedule($owner, $workspace, $agreement, '2026-11-30', true, AgentApiVersion::for($agreement));
+        $replacement = $this->agreement($workspace, $company, ['starts_on' => '2026-12-01']);
+        $this->assertSame('active', $replacement->status);
+
+        $this->assertRefused(CancellationRefusal::UndoOverlaps, fn () => $this->cancellations()->undo($owner, $workspace, $agreement));
+        $this->assertSame('2026-11-30', $agreement->refresh()->ends_on?->toDateString(), 'the scheduled end stands');
+
+        // With the replacement ended first, the undo is allowed again.
+        app(AgreementWorkflow::class)->terminate($replacement, '2026-12-01');
+        $this->cancellations()->undo($owner, $workspace, $agreement);
+        $this->assertNull($agreement->refresh()->ends_on);
+    }
+
     #[Requirement('EDGE-9')]
     public function test_the_end_date_cannot_be_edited_under_a_scheduled_end_nor_undone_after_it(): void
     {

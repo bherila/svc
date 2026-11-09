@@ -196,7 +196,7 @@ final class AgentPackageMigrationApiTest extends TestCase
         $contact = User::factory()->create();
         ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
         $workflow = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+        $enrollment = $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer));
         $packages = app(ServicePackageWorkflow::class);
         $packages->update($owner, $workspace, $package->refresh(), ['components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 5000]]]);
         $packages->publish($owner, $workspace, $package->refresh());

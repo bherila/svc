@@ -5,6 +5,7 @@ namespace App\Support\Engagement\Cancellation;
 use App\Models\AgreementCancellationRequest;
 use App\Models\AgreementScheduledTermination;
 use App\Models\ClientAgreement;
+use App\Services\Engagement\CancellationRecords;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Engagement\CancellationDates;
 use Carbon\CarbonInterface;
@@ -14,7 +15,7 @@ use Carbon\CarbonInterface;
  * reader (CAN-2, CAN-4, EDGE-9): its terms, the end dates offered today, any
  * pending request and any scheduled end. Built from the agreement and its two
  * open records already loaded, with no database, so a page of agreements is
- * presented from two bounded reads ({@see \App\Services\Engagement\CancellationRecords::openFor()}).
+ * presented from two bounded reads ({@see CancellationRecords::openFor()}).
  *
  * Dates are offered only while an end may be scheduled: an active agreement
  * that bills in periods and has no end scheduled. The browser never works a

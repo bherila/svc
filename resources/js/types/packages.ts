@@ -545,6 +545,12 @@ export type PortalServiceProps = {
     changed_terms: string[];
     /** Null while the viewer may not sign, or nothing is open to sign. */
     accept_url: string | null;
+    /**
+     * Sent with the signature, exactly: the version shown, so the acceptance
+     * signs these terms and is refused if a newer version was published since.
+     * Null exactly when `accept_url` is.
+     */
+    accept_fields: { reviewed_version: string } | null;
     accept_refusal: PackageRefusal | null;
     /** What sign-up asks for: null when it asks for nothing. */
     checkout: PortalCheckout | null;

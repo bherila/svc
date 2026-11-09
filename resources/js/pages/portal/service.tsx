@@ -95,9 +95,11 @@ function TextBlocks({ text }: { text: string | null }) {
 
 function SignForm({
     acceptUrl,
+    acceptFields,
     companyName,
 }: {
     acceptUrl: string;
+    acceptFields: { reviewed_version: string };
     companyName: string;
 }) {
     const [name, setName] = useState('');
@@ -130,13 +132,25 @@ function SignForm({
         router.post(
             acceptUrl,
             {
+                ...acceptFields,
                 signer_name: name.trim(),
                 ...(title.trim() === '' ? {} : { signer_title: title.trim() }),
                 accepted_terms: true,
             },
             {
                 preserveScroll: true,
-                onError: (serverErrors) => setErrors(serverErrors),
+                // Kept, so the refusal stays on the form while the page's
+                // props - a newer version's terms among them - are replaced.
+                preserveState: 'errors',
+                onError: (serverErrors) => {
+                    setErrors(serverErrors);
+
+                    // The terms changed under the reader: they review the
+                    // new ones and tick the box again before signing.
+                    if (serverErrors.reviewed_version !== undefined) {
+                        setAccepted(false);
+                    }
+                },
                 onFinish: () => setBusy(false),
             },
         );
@@ -194,12 +208,12 @@ function SignForm({
                     </FieldError>
                 )}
             </div>
-            {errors.acceptance !== undefined && (
+            {(errors.reviewed_version ?? errors.acceptance) !== undefined && (
                 <p
                     role="alert"
                     className="text-sm wrap-anywhere text-destructive"
                 >
-                    {errors.acceptance}
+                    {errors.reviewed_version ?? errors.acceptance}
                 </p>
             )}
             <div>
@@ -225,6 +239,7 @@ export default function PortalService({
     offered_terms: offeredTerms,
     changed_terms: changedTerms,
     accept_url: acceptUrl,
+    accept_fields: acceptFields,
     accept_refusal: acceptRefusal,
     checkout,
     cancellation,
@@ -390,7 +405,7 @@ export default function PortalService({
                 )}
 
                 {service.status === 'offered' &&
-                    (acceptUrl === null ? (
+                    (acceptUrl === null || acceptFields === null ? (
                         <Card>
                             <CardContent className="text-sm wrap-anywhere text-muted-foreground">
                                 {acceptRefusal?.message ??
@@ -405,6 +420,7 @@ export default function PortalService({
                             <CardContent>
                                 <SignForm
                                     acceptUrl={acceptUrl}
+                                    acceptFields={acceptFields}
                                     companyName={company.name}
                                 />
                             </CardContent>

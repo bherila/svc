@@ -8,6 +8,7 @@ use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\RecurringItemBiller;
 use App\Services\Billing\RetainerCalculator;
 use App\Services\Packages\PackageAgreementTerms;
+use App\Support\Accounting\MinorUnits;
 use App\Support\Billing\BillingCadence;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -74,7 +75,13 @@ final readonly class SignupCharges
         $agreement->forceFill([...PackageAgreementTerms::agreementTerms($terms), 'starts_on' => $startsOn->toDateString()]);
         $items = [];
         foreach (PackageAgreementTerms::recurringItems($terms) as $index => $item) {
-            $items[] = (new ClientAgreementRecurringItem)->forceFill([...$item, 'currency' => $terms->currency, 'sort_order' => $index, 'is_active' => true]);
+            $items[] = (new ClientAgreementRecurringItem)->forceFill([
+                ...$item,
+                // @infection-ignore-all Equivalent: this agreement is never saved, and no engine part the estimate calls reads an item's currency - RecurringItemBiller prices by amount and quantity, and the estimate's currency is the terms'. Set so the item matches the one acceptance creates.
+                'currency' => $terms->currency,
+                'sort_order' => $index,
+                'is_active' => true,
+            ]);
         }
         $agreement->setRelation('recurringItems', new Collection($items));
 
@@ -87,14 +94,17 @@ final readonly class SignupCharges
         $biller = new RecurringItemBiller;
         $amount = 0;
         foreach ($biller->linesForCycle($agreement, $cycleStart, $cycleEnd) as $lineData) {
-            $amount += (int) $biller->buildLine($lineData)->getAttribute('total_amount');
+            $amount += MinorUnits::from($biller->buildLine($lineData)->getAttribute('total_amount'));
         }
 
         $calculator = new RetainerCalculator($resolver);
         $multiplier = $agreement->effectiveBillingCadence() === BillingCadence::Monthly
             ? $calculator->monthRetainerMultiplier($agreement, $cycleStart, $cycleEnd)
             : $calculator->cyclePeriodRetainerMultiplier($agreement, $cycle);
-        $amount += (int) round(round($agreement->periodRetainerFee() * $multiplier, 2) * 100);
+        $retainer = round(round($agreement->periodRetainerFee() * $multiplier, 2) * 100);
+        /** @infection-ignore-all Equivalent: round() returns a whole float, and SignupChargeLine's int parameter coerces it identically without strict_types; the cast states the type for static analysis. */
+        $retainerAmount = (int) $retainer;
+        $amount += $retainerAmount;
 
         return new SignupChargeLine(
             SignupChargeKind::FirstPeriod,

@@ -211,7 +211,7 @@ final class AgentCancellationApiTest extends TestCase
         $company = $this->company($workspace);
         $contact = $this->contact($company);
         $workflow = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+        $enrollment = $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer));
         $this->actingAsMcp($contact, ['mcp:use', 'packages:read']);
 
         $before = $this->getJson("/api/v1/workspaces/{$workspace->public_id}/client-services/{$enrollment->public_id}")->assertOk();

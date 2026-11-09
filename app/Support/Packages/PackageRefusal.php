@@ -29,6 +29,8 @@ enum PackageRefusal: string
     case ActivationConflict = 'package_activation_conflict';
     case AgreementStartsWithService = 'package_agreement_starts_with_service';
     case AutopayCurrencyMismatch = 'package_autopay_currency_mismatch';
+    case VersionChanged = 'package_version_changed';
+    case AgreementTermsFixed = 'package_agreement_terms_fixed';
 
     case NothingToPublish = 'package_nothing_to_publish';
     case NothingPriced = 'package_nothing_priced';
@@ -67,6 +69,9 @@ enum PackageRefusal: string
             self::AgreementStartsWithService => 'This agreement belongs to a service package sign-up, so it starts with the service: automatically once the client has signed and paid what the package asks, or by activating the service on the agreement\'s page when it waits for review.',
             // ACC-4: autopay's limit is in the company's billing currency.
             self::AutopayCurrencyMismatch => 'This service is paid by autopay in its own currency, and autopay for your account is in a different currency, so it cannot be set up here. Please contact us to sign up.',
+            // The client signs the terms they reviewed, never newer ones (ACC-2, EDGE-7).
+            self::VersionChanged => 'This service\'s terms were updated while you were reviewing them. Review the current terms below, then sign again.',
+            self::AgreementTermsFixed => 'This agreement belongs to a service package sign-up, so until its service starts it carries the terms of the package version the client signs. To offer different terms, publish a new version of the package; once the service has started, its agreement can be corrected here.',
             self::NothingToPublish => 'There is no draft to publish.',
             self::NothingPriced => 'Add a component, a retainer or an hourly rate before publishing.',
             self::PaymentNeedsStripe => 'This package takes a payment at sign-up, so the workspace needs a Stripe connection before it can be published.',

@@ -9,6 +9,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\CompanyContacts;
@@ -63,6 +64,7 @@ final class AgreementCancellations
         private readonly ClientActivityRecorder $activities,
         private readonly PackageNotifier $notifier,
         private readonly PortalCancellationPanel $panel,
+        private readonly ProposalAcceptanceAgreementQuery $acceptanceAgreements,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -336,6 +338,17 @@ final class AgreementCancellations
 
         $undone = $scheduled->ends_on;
         $restored = $scheduled->previous_ends_on;
+        // The restored term must not overlap an agreement activated for the
+        // dates after the scheduled end - the same rule activation and term
+        // edits keep, under the same company lock (Codex P2 on #672).
+        if ($locked->status === 'active') {
+            $candidate = clone $locked;
+            $candidate->ends_on = $restored;
+            $this->acceptanceAgreements->lockCompany($locked->workspace_id, $locked->client_company_id);
+            if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($candidate)) {
+                throw AgreementCancellationRefused::because(CancellationRefusal::UndoOverlaps);
+            }
+        }
         $scheduled->forceFill([
             'status' => ScheduledTerminationStatus::Undone->value,
             'undone_by_user_id' => $by->id,

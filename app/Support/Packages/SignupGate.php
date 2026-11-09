@@ -3,6 +3,7 @@
 namespace App\Support\Packages;
 
 use App\Models\ClientInvoice;
+use App\Support\Accounting\MinorUnits;
 use App\Support\Billing\InvoiceStatus;
 
 /**
@@ -41,7 +42,7 @@ final class SignupGate
         }
 
         return $invoice->status === InvoiceStatus::Paid->value
-            || (InvoiceStatus::hasChargedValue($invoice->status) && (int) $invoice->balance_amount === 0);
+            || (InvoiceStatus::hasChargedValue($invoice->status) && MinorUnits::from($invoice->balance_amount) === 0);
     }
 
     /** Where an accepted enrollment goes now: `awaiting_payment` while it waits, else by its activation mode. */

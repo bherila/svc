@@ -298,6 +298,28 @@ final class PackageRecurringInvoicesTest extends TestCase
         $this->assertSame([['period_start' => '2027-01-01', 'outcome' => 'issued']], $this->brief($this->issueRun()));
     }
 
+    /**
+     * A company-wide agreement that starts after the period being sold has no
+     * dates there yet, so it does not hold the package's invoice back; the
+     * period it starts in is refused as before.
+     */
+    #[Requirement('INV-1')]
+    public function test_a_company_wide_agreement_starting_later_does_not_hold_back_earlier_periods(): void
+    {
+        [$workspace, , $package, $company, $contact] = $this->world();
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic future company-wide retainer',
+            'status' => 'active', 'starts_on' => '2026-12-01', 'billing_cadence' => 'monthly', 'currency' => 'USD',
+            'hourly_rate_amount' => 10000, 'retainer_amount' => 50000, 'retainer_minutes' => 300, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+        ]);
+        $this->accept($contact, $company, $package);
+
+        $this->assertSame([['period_start' => '2026-11-01', 'outcome' => 'issued']], $this->brief($this->issueRun()));
+
+        $this->travelTo(CarbonImmutable::parse('2026-12-01 10:00:00', 'UTC'));
+        $this->assertSame('company_wide_agreement', $this->issueRun(expectFailure: true)['outcomes'][0]['refusal'], 'the period it starts in is its own');
+    }
+
     /** A refused period an owner then invoices by hand is marked covered, and leaves Needs you. */
     #[Requirement('INV-1')]
     public function test_a_refused_period_invoiced_by_hand_is_marked_covered(): void
@@ -530,7 +552,7 @@ final class PackageRecurringInvoicesTest extends TestCase
     {
         $workflow = app(PackageEnrollmentWorkflow::class);
 
-        return $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        return $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer))->refresh();
     }
 
     private function invoiceFor(ServicePackageEnrollment $enrollment, string $cycleStart): ClientInvoice
