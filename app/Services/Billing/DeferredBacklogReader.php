@@ -114,6 +114,40 @@ final class DeferredBacklogReader
     }
 
     /**
+     * The last day before a successor for the same project scope takes over
+     * from this agreement, or null when none does. From that day on its
+     * ordinary work is the successor's to bill, at the successor's terms; a
+     * termination without a successor hands nothing over, and the outgoing
+     * agreement still bills what is logged after it.
+     */
+    public function handedOverAfter(int $workspaceId, ClientAgreement $agreement): ?CarbonImmutable
+    {
+        $companyId = (int) $agreement->client_company_id;
+        $successor = $this->agreements->successorAgreementForGeneration($this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection, $agreement);
+
+        return $successor instanceof ClientAgreement ? $successor->starts_on->startOfDay()->subDay() : null;
+    }
+
+    /**
+     * The day this agreement took over from a predecessor for the same project
+     * scope - its own start - or null when it succeeds nobody. Work before it
+     * is the predecessor's to bill.
+     */
+    public function tookOverOn(int $workspaceId, ClientAgreement $agreement): ?CarbonImmutable
+    {
+        $companyId = (int) $agreement->client_company_id;
+        $segments = $this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection;
+        foreach ($segments as $candidate) {
+            $successor = $this->agreements->successorAgreementForGeneration($segments, $candidate);
+            if ($successor instanceof ClientAgreement && $successor->id === $agreement->id) {
+                return $agreement->starts_on->startOfDay();
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * The last day an agreement's backlog runs to.
      *
      * The workspace's today, the agreement's own end - where its capacity

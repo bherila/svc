@@ -414,6 +414,28 @@ terminated and successor agreements is implemented in
 A rule used during calculation does not by itself expose a workflow for changing
 an existing agreement's terms.
 
+### Who bills work around a handover
+
+When a successor agreement for the same project scope starts, ordinary work
+(consultant and retainer-mode time) dated from its start is the successor's, at
+its terms; work before it is the outgoing agreement's. The outgoing agreement's
+final reconciliation still spans its whole natural cycle, but selects no
+ordinary work from the successor's start, and the successor selects none from
+before its own (`DeferredBacklogReader::handedOverAfter()` and `tookOverOn()`,
+applied in `ClientInvoicingService::unbilledEntriesBetween()`). The overlapping
+invoice guard compares the two agreements' invoices by the days each can bill,
+so the successor's first period is not refused by the outgoing final invoice.
+A termination with no successor hands nothing over: work logged after it still
+bills on the outgoing agreement's post-termination invoices. Deferred work ends
+with the agreement's segment, its termination included.
+
+A draft generated before the successor was added, or before a backdated
+termination made room for it, still carries what it selected then. Issue
+refuses it (`work_outside_agreement_segment`, 422) until it is regenerated.
+Flat-hourly and direct time is priced at its own terms and is not handed over.
+Pinned by `AgreementSegmentBoundaryTest` and the handover histories in
+`BillingHistoryInvariantTest`.
+
 ## Payment Handling
 
 See [Payments](payments.md), [Stripe billing](stripe-billing.md), and

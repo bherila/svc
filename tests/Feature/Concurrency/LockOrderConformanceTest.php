@@ -132,6 +132,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\Billing\\InvoiceFromTimeService::prepareLines',
         'App\\Services\\Billing\\InvoiceFromTimeService::regenerateDraftSelection',
         'App\\Services\\Billing\\InvoiceLifecycleService::assertChargesNoDisputedRows',
+        'App\\Services\\Billing\\InvoiceLifecycleService::lockDeferredCandidates',
         'App\\Services\\Billing\\InvoiceLifecycleService::releaseAllocations',
         'App\\Services\\Billing\\InvoiceLineComposer::addBillableMilestoneTasks',
         'App\\Services\\Files\\AttachmentAction::lockedRecord',

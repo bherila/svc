@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\Balances\BillingCycle;
 use App\Services\Billing\Balances\ClosingBalance;
@@ -33,6 +34,7 @@ use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -1730,8 +1732,11 @@ final class ClientInvoicingService
      * regenerating its charges or allocating any further work. Generation's
      * snapshot can predate new approvals or a client's visibility decision.
      * Legacy drafts without a matching agreement retain their existing facts.
+     *
+     * @param  array<int, array<string, mixed>>|null  $current  the candidates the issue
+     *                                                          read with row locks; every row the statement lists must match its locked row
      */
-    public function refreshDeferredWorkSnapshotAtIssue(ClientInvoice $invoice): void
+    public function refreshDeferredWorkSnapshotAtIssue(ClientInvoice $invoice, ?array $current = null): void
     {
         if ($invoice->invoice_kind !== InvoiceKind::CadencePeriod->value || $invoice->client_agreement_id === null) {
             return;
@@ -1749,11 +1754,15 @@ final class ClientInvoicingService
             ->whereKey($invoice->client_company_id)
             ->firstOrFail();
         $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
-        $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
+        $this->recordDeferredWorkSnapshot($invoice, $agreement, $company, $current);
     }
 
-    /** Store the unallocated deferred entries remaining after this draft's lines were composed. */
-    private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company): void
+    /**
+     * Store the unallocated deferred entries remaining after this draft's lines were composed.
+     *
+     * @param  array<int, array<string, mixed>>|null  $current  at issue, the candidates read with row locks
+     */
+    private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company, ?array $current = null): void
     {
         $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
         $through = $this->deferredBacklogReader->segmentEnd($workspace, $agreement, $this->clock->today($workspace));
@@ -1778,6 +1787,17 @@ final class ClientInvoicingService
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
+
+        // At issue, these ordinary reads return the caller's snapshot: every
+        // row they list must be the row as it is now, or the issued statement
+        // would print work since withdrawn as it was.
+        if ($current !== null) {
+            foreach ($entries->concat($disputed) as $entry) {
+                if (($current[$entry->id] ?? null) !== $entry->getAttributes()) {
+                    throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+                }
+            }
+        }
 
         $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries, $disputed));
     }
@@ -1935,7 +1955,57 @@ final class ClientInvoicingService
      * agreement's invoices, another agreement's on the same project, and any
      * invoice naming no agreement, or one this company cannot account for,
      * still refuse.
+     *
+     * Nor does another agreement's invoice whose work cannot meet this
+     * period's across a handover ({@see self::workOverlaps()}): an outgoing
+     * agreement's final reconciliation spans its whole natural cycle but bills
+     * no ordinary work from its successor's start, and the successor bills
+     * none from before its own ({@see self::unbilledEntriesBetween()}), so the
+     * two never select the same day.
      */
+    /**
+     * Whether a candidate invoice overlapping the period by its dates can bill
+     * the same work. Its own agreement's always can. Another agreement's can
+     * only on days both agreements bill: each bills from the later of the
+     * period's start and the day it took over from a predecessor, through the
+     * earlier of the period's end and the day before a successor took over.
+     */
+    private function workOverlaps(ClientCompany $company, ClientAgreement $agreement, Carbon $periodStart, Carbon $periodEnd, ClientInvoice $candidate): bool
+    {
+        if ($candidate->client_agreement_id === null || (int) $candidate->client_agreement_id === (int) $agreement->id
+            || $candidate->service_period_start === null || $candidate->service_period_end === null) {
+            return true;
+        }
+        $other = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)->find($candidate->client_agreement_id);
+        if (! $other instanceof ClientAgreement) {
+            return true;
+        }
+        $workspace = (int) $company->workspace_id;
+        [$ownStart, $ownEnd] = $this->billedWork($workspace, $agreement, CarbonImmutable::instance($periodStart), CarbonImmutable::instance($periodEnd));
+        [$otherStart, $otherEnd] = $this->billedWork($workspace, $other, CarbonImmutable::instance($candidate->service_period_start), CarbonImmutable::instance($candidate->service_period_end));
+
+        return $otherStart->lte($ownEnd) && $otherEnd->gte($ownStart);
+    }
+
+    /**
+     * The days of a period this agreement bills ordinary work for: the period
+     * clipped to its handovers. A period lying wholly outside them - an invoice
+     * dated after its agreement handed over, which no generation writes - keeps
+     * its dates, so history nobody can explain still refuses.
+     *
+     * @return array{CarbonImmutable, CarbonImmutable}
+     */
+    private function billedWork(int $workspace, ClientAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end): array
+    {
+        $tookOver = $this->deferredBacklogReader->tookOverOn($workspace, $agreement);
+        $handedOver = $this->deferredBacklogReader->handedOverAfter($workspace, $agreement);
+        $from = $tookOver instanceof CarbonImmutable && $tookOver->gt($start) ? $tookOver : $start->startOfDay();
+        $through = $handedOver instanceof CarbonImmutable && $handedOver->lt($end) ? $handedOver : $end->startOfDay();
+
+        return $from->lte($through) ? [$from, $through] : [$start->startOfDay(), $end->startOfDay()];
+    }
+
     private function assertNoOverlappingInvoice(
         ClientCompany $company,
         ClientAgreement $agreement,
@@ -1960,7 +2030,9 @@ final class ClientInvoicingService
             ->when($invoice instanceof ClientInvoice, function ($query) use ($invoice): void {
                 $query->whereKeyNot($invoice->id);
             })
-            ->first();
+            ->orderBy('id')
+            ->get()
+            ->first(fn (ClientInvoice $candidate): bool => $this->workOverlaps($company, $agreement, $periodStart, $periodEnd, $candidate));
 
         if ($overlapping instanceof ClientInvoice) {
             throw new RuntimeException(sprintf(
@@ -2146,7 +2218,12 @@ final class ClientInvoicingService
     }
 
     /**
-     * Work this agreement's retainer may draw on, inside a period.
+     * Work this agreement's retainer may draw on, inside a period - and inside
+     * its handovers: from a successor's start the work is the successor's to
+     * bill at its own terms, however far the period being reconciled runs, and
+     * before this agreement took over from a predecessor it is the
+     * predecessor's. A termination with no successor hands nothing over, and
+     * an agreement that succeeds nobody still reconciles the work before it.
      *
      * @return Collection<int, ClientTimeEntry>
      */
@@ -2156,6 +2233,15 @@ final class ClientInvoicingService
         Carbon $from,
         Carbon $to,
     ): Collection {
+        $handedOver = $this->deferredBacklogReader->handedOverAfter((int) $company->workspace_id, $agreement);
+        if ($handedOver instanceof CarbonImmutable && $handedOver->lt($to)) {
+            $to = Carbon::instance($handedOver);
+        }
+        $tookOver = $this->deferredBacklogReader->tookOverOn((int) $company->workspace_id, $agreement);
+        if ($tookOver instanceof CarbonImmutable && $tookOver->gt($from)) {
+            $from = Carbon::instance($tookOver);
+        }
+
         return ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)

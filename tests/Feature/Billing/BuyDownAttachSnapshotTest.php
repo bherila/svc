@@ -127,6 +127,34 @@ final class BuyDownAttachSnapshotTest extends TestCase
         });
     }
 
+    /**
+     * The post-merge review's disclosure: the draft's *Still deferred*
+     * statement is frozen at issue from ordinary reads. A deferred hour
+     * returned to draft after the caller's snapshot - withdrawn from the client
+     * - would be printed as it was. The issue refuses instead, and a fresh one
+     * freezes the statement without it.
+     */
+    public function test_an_issue_from_a_snapshot_older_than_a_withdrawn_deferred_hour_is_refused(): void
+    {
+        $this->inProbe('withdrawn', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x): void {
+            $c = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->where('is_deferred', true)->sole();
+            $listed = fn (): array => array_column((array) ($x->fresh()->deferred_work_statement['entries'] ?? []), 'id');
+            $this->assertContains($c->id, $listed(), 'Approved and waiting, the deferred hour is listed.');
+
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($c): void {
+                ClientTimeEntry::query()->whereKey($c->id)->update(['status' => 'draft', 'lock_version' => DB::raw('lock_version + 1')]);
+            }, 'issue');
+
+            $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame('This invoice changed after it was loaded. Reload it and issue it again.', $outcome['message']);
+            $this->assertSame('draft', $x->fresh()?->status);
+
+            app(InvoiceLifecycleService::class)->issue($x->fresh(), $workspace);
+            $this->assertSame('issued', $x->fresh()->status);
+            $this->assertNotContains($c->id, $listed(), 'The issued statement no longer lists the withdrawn hour.');
+        });
+    }
+
     /** @param callable(Workspace, ClientAgreement, ClientInvoice, ClientTimeEntry, User): void $test */
     private function inProbe(string $name, callable $test): void
     {

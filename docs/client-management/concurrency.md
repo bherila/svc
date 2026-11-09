@@ -489,7 +489,12 @@ So a write derived from rows the transaction has locked reads them with a
 lock (`HeldWorkBasisRecorder::renewCurrent()`, the attach's line totals), or
 the transaction refuses when its snapshot disagrees with the locked rows
 (`InvoiceLifecycleService::assertSnapshotHoldsTheLockedLines()`, which every
-later ordinary read of the draft's lines then relies on).
+later ordinary read of the draft's lines then relies on). Issue also locks the time a
+cadence draft's *Still deferred* statement may list, with the draft's other
+time and before the company (`lockDeferredCandidates()`), and the statement it
+freezes from ordinary reads must list each of those rows as it is now, or the
+issue refuses: a deferred hour withdrawn after the caller's snapshot would
+otherwise be printed as it was.
 
 `LockOrderConformanceTest` records, on the MariaDB lane, every ordinary read
 of a table its transaction has already locked, keyed `opener > reader table`
