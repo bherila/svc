@@ -23977,6 +23977,8 @@
                                             "package_activation_conflict",
                                             "package_agreement_starts_with_service",
                                             "package_autopay_currency_mismatch",
+                                            "package_version_changed",
+                                            "package_agreement_terms_fixed",
                                             "package_nothing_to_publish",
                                             "package_nothing_priced",
                                             "package_payment_needs_stripe",
@@ -33731,7 +33733,7 @@
                     },
                     "publish_refusals": {
                         "type": "array",
-                        "maxItems": 29,
+                        "maxItems": 31,
                         "items": {
                             "type": "object",
                             "additionalProperties": false,
@@ -33761,6 +33763,8 @@
                                         "package_activation_conflict",
                                         "package_agreement_starts_with_service",
                                         "package_autopay_currency_mismatch",
+                                        "package_version_changed",
+                                        "package_agreement_terms_fixed",
                                         "package_nothing_to_publish",
                                         "package_nothing_priced",
                                         "package_payment_needs_stripe",

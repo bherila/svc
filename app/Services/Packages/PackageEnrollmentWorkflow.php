@@ -66,6 +66,9 @@ use LogicException;
  */
 final class PackageEnrollmentWorkflow
 {
+    /** How many waiting sign-ups one page of {@see autopayChanged()} reads. */
+    private const int AUTOPAY_PAGE = 25;
+
     public function __construct(
         private readonly AgentAccess $access,
         private readonly CompanyContacts $contacts,
@@ -124,10 +127,15 @@ final class PackageEnrollmentWorkflow
      * activation rule follows (ACC-5).
      *
      * The terms accepted are the package's currently published version
-     * (EDGE-7): when it is newer than the one offered, its terms are written
-     * onto the draft agreement first. A retired package's offer is accepted on
-     * the terms it was offered with (EDGE-8). The agreement starts on the day
-     * of acceptance, in the workspace's timezone.
+     * (EDGE-7), and only when that is the version the client reviewed:
+     * `reviewed_version` is the version's id the review page sent, and a
+     * version published since is refused with `package_version_changed`, so
+     * the client reviews it before signing. A retired package's offer is
+     * accepted on the terms it was offered with (EDGE-8). The accepted
+     * version's terms are then written onto the draft agreement, so the
+     * sign-up invoice and the agreement bill what the client signed (ACC-2).
+     * The agreement starts on the day of acceptance, in the workspace's
+     * timezone.
      *
      * A version that charges at sign-up has its one sign-up invoice issued
      * here, on the draft agreement (ACC-3), and the enrollment then waits
@@ -139,15 +147,16 @@ final class PackageEnrollmentWorkflow
      * agreement Square bills (X-2), and `package_first_period_unbillable` when
      * the engine refuses the first cycle; each leaves nothing behind.
      *
-     * @param  array<string, mixed>  $input  signer_name, signer_title, accepted_terms
+     * @param  array<string, mixed>  $input  signer_name, signer_title, accepted_terms, reviewed_version
      */
     public function accept(User $contact, ClientCompany $company, ServicePackageEnrollment $enrollment, array $input): ServicePackageEnrollment
     {
         $signer = EnrollmentSigner::fromInput($input);
+        $reviewed = $input['reviewed_version'] ?? null;
         abort_unless($enrollment->workspace_id === $company->workspace_id && $enrollment->client_company_id === $company->id, 404);
         $workspace = $this->workspaceOf($company);
 
-        return DB::transaction(function () use ($contact, $company, $enrollment, $signer, $workspace): ServicePackageEnrollment {
+        return DB::transaction(function () use ($contact, $company, $enrollment, $signer, $reviewed, $workspace): ServicePackageEnrollment {
             // First, ahead of every other lock: a sign-up invoice is generated
             // and issued in this transaction, and those lock time and tasks.
             BillingMaintenance::share($workspace->id);
@@ -172,6 +181,11 @@ final class PackageEnrollmentWorkflow
             }
 
             $version = $this->versionToAccept($workspace, $package, $locked);
+            // Decided under the package's lock, so no publish lands between
+            // this check and the signature.
+            if ($reviewed !== $version->public_id) {
+                throw ServicePackageRefused::because(PackageRefusal::VersionChanged);
+            }
             $terms = PackageTerms::fromVersion($version);
             // The Stripe connection that let it publish (PKG-4) may have gone.
             if ($terms->involvesPayment() && $this->payments->stripe($workspace) === null) {
@@ -186,10 +200,10 @@ final class PackageEnrollmentWorkflow
             if ($agreement->status !== 'draft') {
                 throw ServicePackageRefused::because(PackageRefusal::OfferNotOpen);
             }
-            if ($version->id !== $locked->service_package_version_id) {
-                $agreement = $this->agreementTerms->apply($workspace, $agreement, $version);
-            }
-            $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()]);
+            // Always, not only for a newer version: a draft edited since the
+            // offer would otherwise bill terms the client never saw.
+            $agreement = $this->agreementTerms->apply($workspace, $agreement, $version, $locked);
+            $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()], enrollment: $locked);
 
             $locked->forceFill([
                 'accepted_at' => $this->instant(),
@@ -236,7 +250,7 @@ final class PackageEnrollmentWorkflow
             if (! self::billsFirstPeriod($invoice)) {
                 // The service starts on the day it can, unless the sign-up
                 // invoice already billed a period starting at acceptance.
-                $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()]);
+                $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()], enrollment: $locked);
             }
             $this->moveOn($workspace, $company, $locked, $agreement, $version, $next);
 
@@ -267,23 +281,30 @@ final class PackageEnrollmentWorkflow
 
     /**
      * A company contact turned autopay on or changed its limit in the portal:
-     * move on every one of the company's enrollments it was waiting for.
+     * move on every one of the company's enrollments it was waiting for,
+     * walked in pages by id so none is left behind however many wait. Each is
+     * decided under its own lock; one still waiting stays behind the cursor.
      */
     public function autopayChanged(Workspace $workspace, ClientCompany $company): void
     {
         if (! EnsureServicePackagesEnabled::enabled() || $company->workspace_id !== $workspace->id) {
             return;
         }
-        $waiting = ServicePackageEnrollment::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_company_id', $company->id)
-            ->where('status', EnrollmentStatus::AwaitingPayment->value)
-            ->orderBy('id')
-            ->limit(25)
-            ->get();
-        foreach ($waiting as $enrollment) {
-            $this->continueSignup($workspace, $enrollment);
-        }
+        $after = 0;
+        do {
+            $waiting = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id)
+                ->where('status', EnrollmentStatus::AwaitingPayment->value)
+                ->where('id', '>', $after)
+                ->orderBy('id')
+                ->limit(self::AUTOPAY_PAGE)
+                ->get();
+            foreach ($waiting as $enrollment) {
+                $this->continueSignup($workspace, $enrollment);
+                $after = (int) $enrollment->id;
+            }
+        } while ($waiting->count() === self::AUTOPAY_PAGE);
     }
 
     /**
@@ -374,7 +395,7 @@ final class PackageEnrollmentWorkflow
             // sign-up invoice billed a first period starting at acceptance,
             // which is the period the client paid for (EDGE-6).
             if (! self::billsFirstPeriod($this->signupInvoiceOf($workspace, $locked))) {
-                $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()]);
+                $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()], enrollment: $locked);
             }
             $this->start($workspace, $company, $locked, $agreement, $version, $actor);
 

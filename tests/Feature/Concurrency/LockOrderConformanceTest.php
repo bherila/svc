@@ -14,6 +14,8 @@ use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -351,12 +353,12 @@ final class LockOrderConformanceTest extends TestCase
         $automatic = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-automatic', ...$terms, 'activation_mode' => 'automatic']));
         $contact = User::factory()->create();
         ClientCompanyMembership::query()->create(['client_company_id' => $this->company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
-        $signature = ['signer_name' => 'Synthetic Signer', 'accepted_terms' => true];
-
         $enrollments = app(PackageEnrollmentWorkflow::class);
-        $waiting = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $reviewed), $signature);
+        // The review page's signature, on the version it shows.
+        $sign = fn (ServicePackage $package): ServicePackageEnrollment => $enrollments->accept($contact, $this->company, $offer = $enrollments->addFromPortal($contact, $this->company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
+        $waiting = $sign($reviewed);
         $enrollments->activate($this->user, $this->workspace, $waiting);
-        $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $automatic), $signature);
+        $sign($automatic);
 
         // Slice 3b: an acceptance that issues the sign-up invoice (the billing
         // maintenance share first, then the package, the enrollment, the
@@ -366,10 +368,10 @@ final class LockOrderConformanceTest extends TestCase
         $this->connectStripe();
         $paying = [...$terms, 'activation_mode' => 'automatic', 'charge_first_period' => true, 'pay_before_activation' => true,
             'charge_setup_fee_at_signup' => true, 'components' => [...$terms['components'], ['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => 15000]]];
-        $paid = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-paid', ...$paying]))), $signature);
+        $paid = $sign($packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-paid', ...$paying])));
         $invoice = ClientInvoice::query()->whereKey($paid->signup_invoice_id)->sole();
         app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => $invoice->balance_amount, 'currency' => $invoice->currency, 'method' => 'synthetic transfer']);
-        $unpaid = $enrollments->accept($contact, $this->company, $enrollments->addFromPortal($contact, $this->company, $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-unpaid', ...$paying, 'charge_first_period' => false]))), $signature);
+        $unpaid = $sign($packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-unpaid', ...$paying, 'charge_first_period' => false])));
         $this->travel(30)->days();
         $enrollments->lapse($this->workspace, $unpaid);
         $this->travelBack();

@@ -1583,7 +1583,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.update',
                 'Update agreement',
-                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here.',
+                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here. A draft agreement a service package sign-up created is refused with package_agreement_terms_fixed: until its service starts it carries the package version\'s terms.',
                 [AgentMcpClientWriteTools::class, 'agreementsUpdate'],
                 Effect::LocalWrite,
                 true,

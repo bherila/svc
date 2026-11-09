@@ -302,6 +302,7 @@ export function portalServiceProps(
         offered_terms: null,
         changed_terms: [],
         accept_url: '/portal/company-1/services/enrollment-1/accept',
+        accept_fields: { reviewed_version: 'version-2' },
         accept_refusal: null,
         checkout: null,
         ...overrides,

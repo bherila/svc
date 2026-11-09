@@ -617,6 +617,12 @@ class ClientDirectoryController extends Controller
         // than booleans, so the browser is handed finished URLs it never has to
         // assemble - and every endpoint behind one authorizes again.
         $manages = Gate::forUser($user)->allows('manage', $workspace);
+        // A sign-up's agreement starts with its service and, until it does,
+        // carries the terms its client signs: no correction is offered on it
+        // (ACC-2, ACC-5), only the enrollment's activation while it waits for
+        // review.
+        $packageActivations = $manages ? app(PackageAgreementActivations::class)->forAgreements($workspace, [(int) $clientAgreement->id]) : [];
+        $signupDraft = $clientAgreement->status === 'draft' && array_key_exists((int) $clientAgreement->id, $packageActivations);
         // Legacy malformed project references remain inspectable as terms,
         // without resolving another company's name or authorizing its files.
         $validFileParent = $clientAgreement->client_project_id === null || $projectNames->has((int) $clientAgreement->client_project_id)
@@ -635,7 +641,7 @@ class ClientDirectoryController extends Controller
             // the commercial terms and not these.
             'audience' => 'operator',
             'actions' => [
-                'update' => $manages
+                'update' => $manages && ! $signupDraft
                     ? route('agent-api.v1.agreements.update', [$workspace, $clientAgreement->public_id], absolute: false)
                     : null,
                 'deferred_buydown' => $manages ? [
@@ -644,7 +650,7 @@ class ClientDirectoryController extends Controller
                 ] : null,
                 // A service package the client accepted that waits for review
                 // (ACC-5): the endpoint that starts it, with the version to send.
-                'activate_enrollment' => $manages ? $this->enrollmentActivation($workspace, $clientAgreement) : null,
+                'activate_enrollment' => $packageActivations[(int) $clientAgreement->id] ?? null,
             ],
             'attachment_upload' => $manages && $validFileParent ? [
                 'href' => route('agent-api.v1.attachments.upload-url', ['workspace' => $workspace, 'recordType' => 'agreement', 'recordPublicId' => $clientAgreement->public_id], absolute: false),
@@ -1597,11 +1603,5 @@ class ClientDirectoryController extends Controller
         }
 
         return $used;
-    }
-
-    /** @return array{href: string, version: string}|null */
-    private function enrollmentActivation(Workspace $workspace, ClientAgreement $agreement): ?array
-    {
-        return app(PackageAgreementActivations::class)->forAgreements($workspace, [(int) $agreement->id])[(int) $agreement->id] ?? null;
     }
 }
