@@ -2,12 +2,15 @@
 
 namespace Tests\Concerns;
 
+use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use Illuminate\Support\Str;
 
 /**
  * Synthetic service-package worlds: a workspace, its people, and packages.
@@ -30,6 +33,19 @@ trait BuildsServicePackages
     {
         $user = User::factory()->create();
         $workspace->memberships()->create(['user_id' => $user->id, 'role' => $role]);
+
+        return $user;
+    }
+
+    /** Someone who may not manage the workspace: a `member`, a `viewer`, or a `portal` contact of one of its clients. */
+    protected function packageNonManager(Workspace $workspace, string $who): User
+    {
+        if ($who !== 'portal') {
+            return $this->workspaceMember($workspace, $who);
+        }
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic Package Client', 'slug' => 'synthetic-'.Str::uuid()]);
+        $user = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'member', 'access_scope' => 'company']);
 
         return $user;
     }

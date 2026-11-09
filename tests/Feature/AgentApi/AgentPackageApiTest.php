@@ -2,14 +2,10 @@
 
 namespace Tests\Feature\AgentApi;
 
-use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
-use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BootsServicePackages;
@@ -243,7 +239,7 @@ final class AgentPackageApiTest extends TestCase
     {
         [$workspace, $owner] = $this->packageWorkspace();
         $package = $this->createPackage($workspace, $owner);
-        $this->actingAsMcp($this->nonManager($workspace, $who), self::SCOPES);
+        $this->actingAsMcp($this->packageNonManager($workspace, $who), self::SCOPES);
         $version = AgentApiVersion::for($package);
 
         $this->getJson($this->url($workspace))->assertNotFound();
@@ -313,18 +309,6 @@ final class AgentPackageApiTest extends TestCase
         $this->postJson($this->url($workspace, $package->public_id).'/publish', ['expected_version' => AgentApiVersion::for($package), 'confirm' => true], ['Idempotency-Key' => 'synthetic-off'])->assertNotFound();
         $this->assertSame([], array_values(array_filter($this->toolNames($this->initialize()), static fn (string $name): bool => str_starts_with($name, 'packages.'))));
         $this->assertSame('draft', $package->refresh()->status);
-    }
-
-    private function nonManager(Workspace $workspace, string $who): User
-    {
-        if ($who !== 'portal') {
-            return $this->workspaceMember($workspace, $who);
-        }
-        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic Package Client', 'slug' => 'synthetic-'.Str::uuid()]);
-        $user = User::factory()->create();
-        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'member', 'access_scope' => 'company']);
-
-        return $user;
     }
 
     private function url(Workspace $workspace, ?string $package = null): string
