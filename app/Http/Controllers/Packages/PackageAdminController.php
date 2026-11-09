@@ -44,16 +44,23 @@ final class PackageAdminController extends Controller
         private readonly PackageRequestReadService $requestReads,
     ) {}
 
+    /** Packages a page of the list shows; the rest are a page link away (Codex P2 on #665). */
+    public const PAGE_SIZE = 100;
+
     public function index(Request $request, Workspace $workspace): Response
     {
         $user = $this->manager($request, $workspace);
+        $cursor = $request->query('cursor');
+        $page = $this->reads->list($user, $workspace, limit: self::PAGE_SIZE, cursor: is_string($cursor) ? $cursor : null);
 
         return Inertia::render('packages/index', [
             ...$this->workspaceProps($workspace),
             'packages' => array_map(fn (array $package): array => [
                 ...$package,
                 'edit_url' => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package['id']], absolute: false),
-            ], $this->reads->list($user, $workspace, limit: 100)['data']),
+            ], $page['data']),
+            'next_page_url' => $page['meta']['next_cursor'] === null ? null : route('packages.index', ['workspace' => $workspace, 'cursor' => $page['meta']['next_cursor']], absolute: false),
+            'first_page_url' => is_string($cursor) ? route('packages.index', $workspace, absolute: false) : null,
             'new_package_url' => route('packages.create', $workspace, absolute: false),
         ]);
     }

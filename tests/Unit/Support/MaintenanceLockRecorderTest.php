@@ -49,6 +49,38 @@ final class MaintenanceLockRecorderTest extends TestCase
         $this->assertSame([], LockOrderRecorder::maintenanceExemptions());
     }
 
+    public function test_a_transaction_an_after_commit_callback_opens_keeps_the_committed_frame(): void
+    {
+        LockOrderRecorder::start();
+        // Laravel runs after-commit callbacks before it announces the commit,
+        // so the callback's transaction begins while the committed one's frame
+        // is still open: it is archived, exemption and all, not dropped.
+        DB::transaction(static function (): void {
+            DB::table('billing_maintenance_locks')->tap(Locks::forUpdate());
+            LockOrderRecorder::maintenanceExclusive(ReplayInvoicesCommand::class);
+            DB::afterCommit(static function (): void {
+                DB::transaction(static function (): void {
+                    DB::table('client_invoices')->tap(Locks::forUpdate());
+                });
+            });
+        });
+        // A transaction that locked nothing leaves no empty sequence behind.
+        DB::transaction(static function (): void {
+            DB::afterCommit(static function (): void {
+                DB::transaction(static function (): void {
+                    DB::table('client_companies')->tap(Locks::forUpdate());
+                });
+            });
+        });
+
+        $this->assertSame([
+            [LockResource::BillingMaintenance],
+            [LockResource::ClientInvoice],
+            [LockResource::ClientCompany],
+        ], LockOrderRecorder::sequences());
+        $this->assertSame([ReplayInvoicesCommand::class, null, null], LockOrderRecorder::maintenanceExemptions());
+    }
+
     public function test_direct_records_and_internal_callbacks_use_the_unknown_source_marker(): void
     {
         LockOrderRecorder::start();

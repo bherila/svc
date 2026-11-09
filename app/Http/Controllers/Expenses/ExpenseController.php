@@ -14,6 +14,7 @@ use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AgentExpensePresenter;
 use App\Support\AgentApi\Presenters\AgentProjectPresenter;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Expenses\ExpenseStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -144,6 +145,15 @@ class ExpenseController extends Controller
                 'can_approve' => $isManager && ExpenseStatus::mayTransitionValue($expense->status, ExpenseStatus::Approved),
                 'can_unapprove' => $isManager && ExpenseStatus::mayTransitionValue($expense->status, ExpenseStatus::Draft),
                 'can_discard' => $isManager && ExpenseStatus::isEditableValue($expense->status),
+                // A client's open dispute, settled by a manager on the terms
+                // DisputeSettlements enforces (docs/ux-overhaul.md 7b″).
+                'settle_dispute' => $isManager && $expense->client_disputed_at !== null ? [
+                    'url' => route('agent-api.v1.expenses.settle_dispute', [$workspace, $expense->public_id], absolute: false),
+                    // Never written off while an issued invoice charges it.
+                    'outcomes' => $expense->invoiceLine?->invoice === null || $expense->invoiceLine->invoice->status === 'draft'
+                        ? [DisputeSettlement::Answered->value, DisputeSettlement::WrittenOff->value]
+                        : [DisputeSettlement::Answered->value],
+                ] : null,
                 'urls' => [
                     'receipts' => $isManager ? route('svc.expenses.receipts', [$workspace, $clientCompany, $expense->public_id], absolute: false) : null,
                     'update' => route('agent-api.v1.expenses.update', [$workspace, $expense->public_id], absolute: false),

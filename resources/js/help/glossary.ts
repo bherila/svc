@@ -40,6 +40,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'Questioned by the client. It stays out of billing until the question is settled.',
     },
     {
+        term: 'Written off',
+        definition:
+            'Disputed and settled by not billing it. It will never appear on an invoice.',
+    },
+    {
         term: 'Retainer',
         definition:
             'A block of hours the client pays for each period, whether or not they are all used.',
@@ -53,6 +58,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
         term: 'Overage',
         definition:
             'Hours worked beyond what the retainer covers, billed at the hourly rate.',
+    },
+    {
+        term: 'Service package',
+        definition:
+            'A fixed bundle of services at a fixed price that clients can request from its public page or add from their portal.',
     },
     {
         term: 'Reviewer access',

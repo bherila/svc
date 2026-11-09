@@ -27,6 +27,15 @@ SVC is a standalone Laravel 13 and React operations platform for independent ser
 - Prefer one reviewable PR with stacked commits for a coherent slice of work.
 - Keep `match` expressions over billing enums exhaustive: enumerate every case and never add a `default` arm. Adding an enum case must make every undecided billing path fail static analysis instead of silently inheriting fallback behavior.
 
+## Billing review checklist
+
+Reviews of #655 found the same shapes repeatedly. Check every billing change for them, and keep each guard green rather than weakening it:
+
+- **A digest or fingerprint missing a column a state change moves.** A new column on `client_time_entries` must be decided in `tests/Feature/Billing/IssueDigestCoverageTest.php`.
+- **A write derived from an ordinary read after a locking check.** Under REPEATABLE READ that read returns the caller's snapshot, which can predate what was checked (the API's mutation executor reads first). Read with a lock or refuse an older snapshot; the ratchet in `LockOrderConformanceTest` (`tests/Fixtures/Concurrency/snapshot-reads.txt`) fails on a new site.
+- **A stale draft that issues, a rebuild that misses a dependent draft, a bulk walk priced from a stale ledger, an agreement billing past its segment, a final reconciliation leaving its own deferred work.** `tests/Feature/Billing/BillingHistoryInvariantTest.php` asserts these as invariants over scripted histories; add a history when a change creates a new shape.
+- **Monthly and non-monthly paths diverging.** A fix on one cadence path needs the same case on the other.
+
 ## Codex review workflow
 
 After the initial review, let finding severity determine whether to run another

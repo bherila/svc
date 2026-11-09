@@ -260,6 +260,19 @@ final class AgentMcpWriteTools
     }
 
     /** @return array<string,mixed> */
+    public function expensesSettleDispute(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $expense_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(enum: ['answered', 'written_off'])] string $outcome,
+        #[Schema(minLength: 1, maxLength: 1000)] string $reply,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+    ): array {
+        return $this->rest->call('expenses.settle_dispute', ['workspace' => $workspace_id, 'expense' => $expense_id], compact('expected_version', 'outcome', 'reply', 'confirm'), $idempotency_key);
+    }
+
+    /** @return array<string,mixed> */
     public function expenseSchedulesList(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] ?string $company_id = null, #[Schema(minimum: 1, maximum: 100)] int $limit = 25, #[Schema(maxLength: 2048)] ?string $cursor = null): array
     {
         return $this->rest->call('expense_schedules.list', ['workspace' => $workspace_id], query: array_map(strval(...), array_filter(compact('company_id', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null)));
@@ -395,6 +408,19 @@ final class AgentMcpWriteTools
     public function timeEntriesUnapprove(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $entry_id, #[Schema(minLength: 64, maxLength: 64)] string $expected_version, #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key): array
     {
         return $this->rest->call('time_entries.unapprove', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function timeEntriesSettleDispute(
+        #[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(format: 'uuid')] string $entry_id,
+        #[Schema(minLength: 64, maxLength: 64)] string $expected_version,
+        #[Schema(enum: ['answered', 'written_off'])] string $outcome,
+        #[Schema(minLength: 1, maxLength: 1000)] string $reply,
+        #[Schema] bool $confirm,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+    ): array {
+        return $this->rest->call('time_entries.settle_dispute', ['workspace' => $workspace_id, 'entry' => $entry_id], compact('expected_version', 'outcome', 'reply', 'confirm'), $idempotency_key);
     }
 
     /** @param list<array{id: string, expected_version: string}> $entries

@@ -7,8 +7,12 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Approval\ConsultantTimeRelease;
+use App\Support\Approval\DisputeHold;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredWorkDisposition;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Submission\SubmissionRules;
 use Carbon\CarbonImmutable;
@@ -46,6 +50,10 @@ use LogicException;
  * @property CarbonImmutable|null $client_disputed_at
  * @property int|null $client_disputed_by_user_id
  * @property string|null $client_dispute_note
+ * @property string|null $client_dispute_settlement `answered` or `written_off`; {@see DisputeSettlement}
+ * @property string|null $client_dispute_reply
+ * @property CarbonImmutable|null $client_dispute_settled_at
+ * @property int|null $client_dispute_settled_by_user_id
  * @property CarbonImmutable|null $submitted_at
  * @property int|null $submitted_by_user_id
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
@@ -58,9 +66,10 @@ use LogicException;
     'subcontractor_cost_metadata',
     'client_approved_at', 'client_approved_by_user_id', 'client_approval_source',
     'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
+    'client_dispute_settlement', 'client_dispute_reply', 'client_dispute_settled_at', 'client_dispute_settled_by_user_id',
     'submitted_at', 'submitted_by_user_id',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'submitted_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'client_dispute_settled_by_user_id', 'submitted_by_user_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -77,6 +86,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
             'approved_at' => 'immutable_datetime',
             'client_approved_at' => 'immutable_datetime',
             'client_disputed_at' => 'immutable_datetime',
+            'client_dispute_settled_at' => 'immutable_datetime',
             'submitted_at' => 'immutable_datetime',
             'subcontractor_billing_mode' => SubcontractorBillingMode::class,
             'subcontractor_cost_amount' => 'integer',
@@ -165,7 +175,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeRetainerBillable(Builder $query): Builder
     {
-        return $query->approved()->where(
+        return $query->approved()->notHeldForDispute()->where(
             fn (Builder $mode): Builder => $mode
                 ->where('subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value)
                 ->orWhere(
@@ -461,6 +471,81 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     }
 
     /**
+     * Work no client dispute holds out of billing (docs/ux-overhaul.md 7b″).
+     *
+     * Every billing read derives from this through {@see scopeRetainerBillable()},
+     * {@see scopeBillableForInvoicing()} and {@see scopeFlatHourlySubcontractor()}:
+     * release, cadence generation, regeneration, the deferred backlog and the
+     * retainer ledger. A disputed row an issued invoice already charges is
+     * kept - that charge stands until a correction changes it, and the ledger
+     * of billed work must not forget it. A draft's link does not count, so a
+     * draft rebuilt after a dispute leaves the row off. The pure rule is
+     * {@see DisputeHold::holds()}.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeNotHeldForDispute(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $open): Builder => $open
+            ->where(fn (Builder $settled): Builder => $settled
+                ->whereNull('client_disputed_at')
+                // A write-off is terminal: never billed, whatever an edit
+                // does to its billable flag afterwards.
+                ->where(fn (Builder $outcome): Builder => $outcome
+                    ->whereNull('client_dispute_settlement')
+                    ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value)))
+            ->orWhereHas('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
+                ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                    ->whereIn('client_invoices.status', InvoiceStatus::charged()))));
+    }
+
+    /**
+     * Rows a client dispute holds out of billing: the complement of
+     * {@see scopeNotHeldForDispute()}.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeHeldForDispute(Builder $query): Builder
+    {
+        return $query->whereNotNull('client_disputed_at')
+            ->whereDoesntHave('invoiceLines', fn (Builder $lines): Builder => self::ownWorkspaceAllocation($lines)
+                ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                    ->whereIn('client_invoices.status', InvoiceStatus::charged())));
+    }
+
+    /**
+     * Held work that would otherwise have billed: billable, disputed, not on a
+     * charged invoice, and either already approved in a mode this vendor
+     * invoices, or the consultant's own draft that generation would release
+     * ({@see ConsultantTimeRelease}). A draft lists these beside its deferred
+     * work, tagged, so it says what was left off and why
+     * (docs/ux-overhaul.md 7b″).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeHeldThatWouldOtherwiseBill(Builder $query): Builder
+    {
+        return $query->heldForDispute()
+            ->where('is_billable', true)
+            ->where(fn (Builder $wouldBill): Builder => $wouldBill
+                ->where(fn (Builder $approved): Builder => $approved
+                    ->where('status', 'approved')
+                    ->where(fn (Builder $mode): Builder => $mode
+                        ->whereNull('subcontractor_billing_mode')
+                        ->orWhereIn('subcontractor_billing_mode', [
+                            SubcontractorBillingMode::FlatHourly->value,
+                            SubcontractorBillingMode::Retainer->value,
+                        ])))
+                ->orWhere(fn (Builder $consultant): Builder => $consultant
+                    ->where('status', 'draft')
+                    ->whereNull('subcontractor_billing_mode')
+                    ->whereNull('subcontractor_cost_amount')));
+    }
+
+    /**
      * Work that may appear on an invoice at all.
      *
      * Direct-mode subcontractor work is visible time but never ours to invoice.
@@ -472,7 +557,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeBillableForInvoicing(Builder $query): Builder
     {
-        return $query->approved()->where(
+        return $query->approved()->notHeldForDispute()->where(
             fn (Builder $mode): Builder => $mode
                 ->whereNull('subcontractor_billing_mode')
                 ->orWhereIn('subcontractor_billing_mode', [
@@ -523,7 +608,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
      */
     public function scopeFlatHourlySubcontractor(Builder $query): Builder
     {
-        return $query->approved()
+        return $query->approved()->notHeldForDispute()
             ->where('subcontractor_billing_mode', SubcontractorBillingMode::FlatHourly->value);
     }
 

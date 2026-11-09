@@ -57,9 +57,13 @@ const actionTitles: Record<string, string> = {
     'payment_method.added': 'Payment method added',
     'payment_method.removed': 'Payment method removed',
     'payment_method.default_changed': 'Default payment method changed',
+    'dispute.answered': 'Client dispute answered',
+    'dispute.written_off': 'Disputed work written off',
 };
 
 const meaningfulActions = new Set([
+    'dispute.answered',
+    'dispute.written_off',
     'collaboration.topic_created',
     'collaboration.topic_updated',
     'collaboration.topic_deleted',
@@ -111,12 +115,14 @@ const redActions = new Set([
     'payment_method.removed',
 ]);
 const greenActions = new Set([
+    'dispute.answered',
     'invoice.marked_paid',
     'invoice.payment_received',
     'agreement.signed',
     'payment_method.added',
 ]);
 const blueActions = new Set([
+    'dispute.written_off',
     'invoice.issued',
     'invoice.reissued',
     'agreement.created',
@@ -219,6 +225,21 @@ function subtitleFor(
 
     if (action === 'invoice.details_updated') {
         return invoiceDetailsSubtitle(payload);
+    }
+
+    // What the client asked and what they were told, for the record.
+    if (action === 'dispute.answered' || action === 'dispute.written_off') {
+        const parts = [
+            typeof payload.dispute_note === 'string' &&
+            payload.dispute_note !== ''
+                ? `Client: ${payload.dispute_note}`
+                : null,
+            typeof payload.reply === 'string' && payload.reply !== ''
+                ? `Reply: ${payload.reply}`
+                : null,
+        ].filter((part): part is string => part !== null);
+
+        return parts.length > 0 ? parts.join(' · ') : undefined;
     }
 
     if (

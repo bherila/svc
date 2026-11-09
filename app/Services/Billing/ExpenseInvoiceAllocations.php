@@ -8,6 +8,7 @@ use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Concurrency\Locks;
@@ -31,6 +32,13 @@ final class ExpenseInvoiceAllocations
 
         return ClientExpense::query()->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)->where('status', 'approved')
+            // A client's dispute holds the expense until the provider settles
+            // it (docs/ux-overhaul.md 7b″). Regeneration re-reads this after
+            // releasing its claims, so a disputed expense leaves the draft.
+            ->whereNull('client_disputed_at')
+            // Settled by writing it off: never billed.
+            ->where(fn (Builder $settled): Builder => $settled->whereNull('client_dispute_settlement')
+                ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
             ->whereNull('client_invoice_line_id')->where('currency', $currency)
             ->whereDate('spent_on', '<=', $through)
             ->when($projectId !== null, fn (Builder $query): Builder => $query->where('client_project_id', $projectId))

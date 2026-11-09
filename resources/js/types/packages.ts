@@ -85,6 +85,10 @@ export type PackageListItem = ServicePackage & { edit_url: string };
 
 export type PackagesIndexProps = {
     packages: PackageListItem[];
+    /** The next page of packages, when there is one. */
+    next_page_url: string | null;
+    /** Back to the first page, when this is a later one. */
+    first_page_url: string | null;
     new_package_url: string;
     catalog_url: string | null;
     stripe_connected: boolean;

@@ -11,6 +11,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\DeferredAllocationResult;
 use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\FlatHourlyGroup;
 use App\Support\Billing\FlatHourlyPricing;
@@ -346,7 +347,17 @@ class InvoiceLineComposer
             ->where('is_billable', true)
             ->where('is_deferred', false)
             ->flatHourlySubcontractor()
-            ->whereBetween('worked_on', [$periodStart->toDateString(), $periodEnd->toDateString()])
+            ->where(fn ($window) => $window
+                ->whereBetween('worked_on', [$periodStart->toDateString(), $periodEnd->toDateString()])
+                // A dispute answered after its own period was invoiced bills on
+                // the next draft (docs/ux-overhaul.md 7b″), at its own date and
+                // rate: each of these lines is priced alone, so carrying it
+                // forward moves no pool. With no lower bound, so work from an
+                // agreement this one renewed is carried too; the absence of any
+                // allocation keeps it to one charge.
+                ->orWhere(fn ($carried) => $carried
+                    ->where('client_dispute_settlement', DisputeSettlement::Answered->value)
+                    ->whereDate('worked_on', '<', $periodStart->toDateString())))
             ->with('user:id,name')
             ->orderBy('worked_on')
             ->orderBy('id')

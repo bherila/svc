@@ -90,6 +90,7 @@ final class ServicePackageWorkflow
             $locked = $this->locked($workspace, $package);
             $this->assertVersion($locked, $expectedVersion);
 
+            $revision = $locked->lock_version;
             if ($fields !== []) {
                 if (isset($fields['link_name'])) {
                     $this->refuseTakenLinkName($workspace, (string) $fields['link_name'], $locked->id);
@@ -105,7 +106,12 @@ final class ServicePackageWorkflow
                     ...$termInput,
                 ]);
                 $this->writeDraft($locked, $draft, $draft->number ?? $this->nextNumber($locked), $terms);
-                if ($fields === []) {
+                // The terms live on the draft, so the package row may not have
+                // changed - and package fields sent with their current values
+                // save nothing. Either way the package's revision must move,
+                // or a second editor holding the old version would not be
+                // refused (Codex P1 on #665).
+                if ($locked->lock_version === $revision) {
                     $locked->advanceAgentRevision();
                 }
             }

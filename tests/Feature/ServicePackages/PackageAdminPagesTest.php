@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\ServicePackages;
 
+use App\Services\Packages\ServicePackageReadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\Concerns\BootsServicePackages;
@@ -42,6 +43,28 @@ final class PackageAdminPagesTest extends TestCase
             ->where('urls.update', "/api/v1/workspaces/{$workspace->public_id}/packages/{$package->public_id}")
             ->where('urls.publish', null)
             ->where('urls.retire', "/api/v1/workspaces/{$workspace->public_id}/packages/{$package->public_id}/retire"));
+    }
+
+    public function test_a_long_list_pages_with_finished_urls(): void
+    {
+        [$workspace, $owner] = $this->packageWorkspace();
+        $first = $this->createPackage($workspace, $owner, ['link_name' => 'first-package']);
+        $this->createPackage($workspace, $owner, ['link_name' => 'second-package']);
+        $this->actingAs($owner);
+        $next = null;
+
+        $this->get("/workspaces/{$workspace->public_id}/packages")->assertOk()->assertInertia(function (AssertableInertia $page) use (&$next) {
+            $page->where('first_page_url', null);
+            $next = $page->toArray()['props']['next_page_url'];
+        });
+        $this->assertNull($next, 'two packages fit on one page');
+
+        $cursor = app(ServicePackageReadService::class)->list($owner, $workspace, limit: 1)['meta']['next_cursor'];
+        $this->get("/workspaces/{$workspace->public_id}/packages?cursor=".urlencode((string) $cursor))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('packages', 1)
+            ->where('packages.0.link_name', 'second-package')
+            ->where('first_page_url', "/workspaces/{$workspace->public_id}/packages"));
+        $this->assertNotNull($first);
     }
 
     #[Requirement('PKG-1')]

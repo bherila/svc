@@ -22,7 +22,7 @@ final class InvoiceDeferredWorkDisclosure
 {
     /**
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
-     * @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null}>}|null
+     * @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null, disputed: bool}>}|null
      */
     public static function documentData(ClientInvoice $invoice, string $audience): ?array
     {
@@ -39,7 +39,7 @@ final class InvoiceDeferredWorkDisclosure
      *
      * @param  InvoiceLineDetail::OPERATOR|InvoiceLineDetail::CLIENT  $audience
      * @param  callable(): bool  $clientOptedIn
-     * @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null}>}|null
+     * @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null, disputed: bool}>}|null
      */
     public static function forAudience(?InvoiceDeferredWorkSnapshot $snapshot, string $audience, callable $clientOptedIn): ?array
     {

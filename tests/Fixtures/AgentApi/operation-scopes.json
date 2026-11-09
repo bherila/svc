@@ -1005,6 +1005,19 @@
             "mcp.switch:expenses.receipts.upload_url"
         ]
     },
+    "expenses.settle_dispute": {
+        "scopes": [
+            "expenses:read",
+            "expenses:write"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.expenses",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:expenses.settle_dispute"
+        ]
+    },
     "expenses.unapprove": {
         "scopes": [
             "expenses:read",
@@ -2635,6 +2648,19 @@
             "mcp",
             "mcp.switch:mcp.write",
             "mcp.switch:time_entries.log"
+        ]
+    },
+    "time_entries.settle_dispute": {
+        "scopes": [
+            "time:write",
+            "time:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.time_entries",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:time_entries.settle_dispute"
         ]
     },
     "time_entries.unapprove": {

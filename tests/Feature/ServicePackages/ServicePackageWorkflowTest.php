@@ -125,6 +125,28 @@ final class ServicePackageWorkflowTest extends TestCase
         $this->assertNotSame($before, AgentApiVersion::for($updated));
     }
 
+    public function test_unchanged_package_fields_sent_with_term_edits_still_advance_the_version(): void
+    {
+        [$workspace, $owner] = $this->packageWorkspace();
+        $package = $this->createPackage($workspace, $owner);
+        $before = AgentApiVersion::for($package);
+
+        // What the editor sends: every package field, unchanged, with the edited terms.
+        $updated = $this->workflow()->update($owner, $workspace, $package, [
+            'link_name' => $package->link_name, 'is_listed' => $package->is_listed, 'portal_addable' => $package->portal_addable,
+            'summary' => 'Edited',
+        ], $before);
+
+        $this->assertNotSame($before, AgentApiVersion::for($updated));
+        try {
+            $this->workflow()->update($owner, $workspace, $package, ['summary' => 'Second editor'], $before);
+            $this->fail('A stale version overwrote an edit.');
+        } catch (HttpException $exception) {
+            $this->assertSame(409, $exception->getStatusCode());
+        }
+        $this->assertSame('Edited', ServicePackageVersion::query()->value('summary'));
+    }
+
     public function test_a_stale_expected_version_is_refused_with_409(): void
     {
         [$workspace, $owner] = $this->packageWorkspace();

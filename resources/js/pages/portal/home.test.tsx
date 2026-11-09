@@ -400,6 +400,9 @@ describe('portal home', () => {
                                 project: 'Synthetic Project',
                                 state: 'pending',
                                 dispute_note: null,
+                                settlement: null,
+                                settlement_label: null,
+                                reply: null,
                                 invoice: {
                                     number: 'SYN-1042',
                                     href: '/portal/company-1/invoices/invoice-2',
@@ -413,6 +416,9 @@ describe('portal home', () => {
                                 project: null,
                                 state: 'pending',
                                 dispute_note: null,
+                                settlement: null,
+                                settlement_label: null,
+                                reply: null,
                                 invoice: null,
                             },
                             {
@@ -423,6 +429,9 @@ describe('portal home', () => {
                                 project: null,
                                 state: 'disputed',
                                 dispute_note: 'Too long',
+                                settlement: null,
+                                settlement_label: null,
+                                reply: null,
                                 invoice: null,
                             },
                         ],
@@ -441,6 +450,9 @@ describe('portal home', () => {
                                 project: null,
                                 state: 'pending',
                                 dispute_note: null,
+                                settlement: null,
+                                settlement_label: null,
+                                reply: null,
                                 invoice: null,
                             },
                         ],
@@ -562,6 +574,61 @@ describe('portal home', () => {
                 screen.queryByRole('button', {
                     name: 'Approve Already questioned',
                 }),
+            ).toBeNull();
+        });
+
+        it("shows the provider's reply to an answered row, and a written-off row with no controls", () => {
+            const [group] = toApprove.groups;
+            const [first, second] = group.hours.entries;
+            render(
+                <PortalHome
+                    {...props({
+                        to_approve: {
+                            ...toApprove,
+                            groups: [
+                                {
+                                    ...group,
+                                    hours: {
+                                        ...group.hours,
+                                        entries: [
+                                            {
+                                                ...first,
+                                                settlement: 'answered',
+                                                settlement_label: 'Answered',
+                                                reply: 'Synthetic: the call ran long.',
+                                            },
+                                            {
+                                                ...second,
+                                                state: 'written_off',
+                                                settlement: 'written_off',
+                                                settlement_label: 'Written off',
+                                                reply: 'Synthetic: no charge.',
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    })}
+                />,
+            );
+
+            expect(
+                screen.getByText('Synthetic: the call ran long.'),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole('button', {
+                    name: 'Approve Synthetic client text',
+                }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByText(/you will not be billed for it/),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByText(/Synthetic: no charge\./),
+            ).toBeInTheDocument();
+            expect(
+                screen.queryByRole('button', { name: 'Approve Second entry' }),
             ).toBeNull();
         });
 

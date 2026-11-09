@@ -182,6 +182,10 @@ class TimeEntrySplitter
                 'client_disputed_at' => $entry->client_disputed_at,
                 'client_disputed_by_user_id' => $entry->client_disputed_by_user_id,
                 'client_dispute_note' => $entry->client_dispute_note,
+                'client_dispute_settlement' => $entry->client_dispute_settlement,
+                'client_dispute_reply' => $entry->client_dispute_reply,
+                'client_dispute_settled_at' => $entry->client_dispute_settled_at,
+                'client_dispute_settled_by_user_id' => $entry->client_dispute_settled_by_user_id,
                 // The overflow starts unbilled. Here that is the absence of a pivot
                 // row rather than a null column, so there is nothing to set.
             ]);

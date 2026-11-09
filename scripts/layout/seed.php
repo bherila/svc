@@ -372,6 +372,15 @@ foreach ([
         'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 7500, 'subcontractor_cost_currency' => 'USD'],
     ['description' => 'Synthetic unapproved work', 'status' => 'draft', 'minutes' => 30],
     ['description' => 'Synthetic deferred work', 'status' => 'approved', 'minutes' => 30, 'is_deferred' => true],
+    // A client's open dispute and a settled one (docs/ux-overhaul.md 7b″), with
+    // a note and a reply that will not break.
+    ['description' => 'Synthetic disputed work', 'status' => 'approved', 'minutes' => 45,
+        'client_visible_description' => 'Synthetic disputed client text', 'is_visible_to_client' => true,
+        'client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic operator-side question '.str_repeat('UnbrokenDisputeNote', 12)],
+    ['description' => 'Synthetic written-off work', 'status' => 'approved', 'minutes' => 15, 'is_billable' => false,
+        'client_visible_description' => 'Synthetic written-off client text', 'is_visible_to_client' => true,
+        'client_dispute_settlement' => 'written_off', 'client_dispute_reply' => 'Synthetic reply '.str_repeat('UnbrokenDisputeReply', 12),
+        'client_dispute_settled_at' => now(), 'client_dispute_settled_by_user_id' => $owner->id],
 ] as $attributes) {
     ClientTimeEntry::query()->create($attributes + [
         'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
@@ -391,6 +400,14 @@ foreach (['USD', 'EUR'] as $currency) {
     ), $owner);
     $expenseBoundary->approve($expense, $owner);
 }
+// One approved expense the client disputed, before anything claims it.
+$disputedExpense = $expenseBoundary->record($company, $project, new NewExpense(
+    CarbonImmutable::parse($date), 3300, 'USD', 'Synthetic disputed expense '.str_repeat('UnbrokenExpense', 8),
+), $owner);
+$expenseBoundary->approve($disputedExpense, $owner);
+ClientExpense::query()->whereKey($disputedExpense->id)->update([
+    'client_disputed_at' => now(), 'client_dispute_note' => 'Synthetic expense dispute '.str_repeat('UnbrokenDisputeNote', 12),
+]);
 $expenseBoundary->record($company, $project, new NewExpense(
     CarbonImmutable::parse($date), 2500, 'USD', $description,
 ), $owner);
@@ -1262,7 +1279,6 @@ if (getenv('SVC_LAYOUT_PALETTE') === '1') {
     ];
 }
 
-
 // Service packages (--packages): a list, the editor, and the two public pages,
 // all with deliberately oversized names, summaries, link names, descriptions
 // and questions. One package is live and listed, one live and unlisted, one a
@@ -1277,7 +1293,7 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $oversized = [
         'name' => $word,
         'summary' => str_repeat('Unbroken', 30),
-        'body_markdown' => "- ".str_repeat('LongBulletWithoutSpaces', 8)."\n- Managed hosting, SSL and daily backups\n\nhttps://example.test/".str_repeat('very-long-path-segment-', 6)."\n\n".str_repeat('A paragraph that wraps normally. ', 6),
+        'body_markdown' => '- '.str_repeat('LongBulletWithoutSpaces', 8)."\n- Managed hosting, SSL and daily backups\n\nhttps://example.test/".str_repeat('very-long-path-segment-', 6)."\n\n".str_repeat('A paragraph that wraps normally. ', 6),
         'components' => [
             ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1, 'is_taxable' => false],
             ['kind' => 'recurring', 'description' => str_repeat('Unbroken', 50), 'cadence' => 'monthly', 'amount' => 12900, 'quantity' => 2, 'is_taxable' => true],
