@@ -195,9 +195,10 @@ final class ServicePackageOperations
                     default => $requests ? 'Sign-up request' : 'Service package',
                 },
                 'errors' => match (true) {
-                    $id === 'package_requests.approve' => $approveErrors,
-                    $requests => $read ? $requestErrors : $decisionErrors,
-                    default => $read ? $errors : $writeErrors,
+                    ! $requests => $read ? $errors : $writeErrors,
+                    $read => $requestErrors,
+                    // Approving is the one decision that reaches the identity provider.
+                    default => ['package_requests.approve' => $approveErrors][$id] ?? $decisionErrors,
                 },
             ] + ($read ? [] : ['request' => $body]);
         }
