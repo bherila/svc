@@ -56,7 +56,54 @@ final class PackageEnrollmentPresenter
             'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
             'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopayLimit, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
                 : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
+            'invoicing' => self::invoicing($workspace, $enrollment, $company, $agreement, $accepted ?? $offered),
             'version' => AgentApiVersion::for($enrollment),
+        ];
+    }
+
+    /**
+     * How the service's recurring invoices are made (INV-1, INV-2): issued
+     * automatically or drafted for review, when its next billing period
+     * begins, and what automatic invoicing last did - with the refusal an
+     * owner should act on, or the invoice it issued and its page.
+     *
+     * @return array{issuing: string, next_period_start: string|null, last_automatic: array<string, mixed>|null}
+     */
+    public static function invoicing(Workspace $workspace, ServicePackageEnrollment $enrollment, ClientCompany $company, ClientAgreement $agreement, ServicePackageVersion $carried): array
+    {
+        $outcome = $enrollment->autoInvoiceOutcome();
+        $last = null;
+        if ($outcome !== null) {
+            $refusal = $enrollment->auto_invoice_refusal === null ? null : AutoInvoiceRefusal::from($enrollment->auto_invoice_refusal);
+            $invoice = null;
+            if ($enrollment->auto_invoice_id !== null) {
+                $invoice = $enrollment->autoInvoice;
+                if (! $invoice instanceof ClientInvoice) {
+                    throw new LogicException('An enrollment names an automatic invoice outside its workspace, or was presented without it loaded.');
+                }
+            }
+            $last = [
+                'outcome' => $outcome->value,
+                'period_start' => $enrollment->auto_invoice_period_start?->toDateString(),
+                'recorded_at' => $enrollment->auto_invoice_recorded_at?->toIso8601String(),
+                'refusal' => $refusal === null ? null : [
+                    'code' => $refusal->value,
+                    'message' => $refusal->message(),
+                    'detail' => $enrollment->auto_invoice_detail,
+                ],
+                'invoice' => $invoice === null ? null : [
+                    'id' => $invoice->public_id,
+                    'number' => $invoice->invoice_number,
+                    'status' => $invoice->status,
+                    'url' => rtrim((string) config('app.url'), '/').route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false),
+                ],
+            ];
+        }
+
+        return [
+            'issuing' => PackageInvoiceIssuing::from($carried->invoice_issuing)->value,
+            'next_period_start' => PackageBillingPeriods::nextPeriodStart($enrollment->enrollmentStatus(), $agreement, (new WorkspaceClock)->today($workspace)),
+            'last_automatic' => $last,
         ];
     }
 
@@ -135,6 +182,9 @@ final class PackageEnrollmentPresenter
             'agreement_url' => $agreementUrl,
             'payment' => self::payment($enrollment, $terms, $clientAutopayLimit, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
                 : $base.route('portal.invoice', [$company, $invoice], false)),
+            // When the next billing period, and so its invoice, begins; not how
+            // that invoice is made, which is the operator's setting.
+            'next_period_start' => PackageBillingPeriods::nextPeriodStart($status, $agreement, (new WorkspaceClock)->today($timezone)),
             'url' => $url,
         ];
     }

@@ -1,0 +1,369 @@
+<?php
+
+namespace App\Services\Packages;
+
+use App\Models\ClientAgreement;
+use App\Models\ClientInvoice;
+use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageVersion;
+use App\Models\Workspace;
+use App\Services\Billing\Balances\BillingCycle;
+use App\Services\Billing\BillingMaintenance;
+use App\Services\Billing\CadencePeriodGuard;
+use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\UncoveredCadencePeriods;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\EmptyCadenceDraft;
+use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
+use App\Support\Packages\AutoInvoiceOutcome;
+use App\Support\Packages\AutoInvoiceRefusal;
+use App\Support\Packages\AutoInvoiceResult;
+use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\PackageInvoiceIssuing;
+use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
+use DomainException;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use LogicException;
+use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
+
+/**
+ * Automatic recurring invoices for package agreements (INV-1, INV-3).
+ *
+ * A package version set to issue automatically - only a fixed-price one may be
+ * (PKG-5) - has each billing period of its agreements invoiced and issued
+ * without anyone pressing a button. Nothing here is a second billing path: a
+ * period goes through exactly what `invoices.generate_period` and the
+ * scheduled cadence drafts go through - {@see UncoveredCadencePeriods} to find
+ * it, {@see CadencePeriodGuard} to lock and check it, the cadence engine
+ * ({@see ClientInvoicingService::generateCadencePeriod()}) to write it,
+ * {@see EmptyCadenceDraft} to drop one that asks for nothing - and is then
+ * issued through {@see InvoiceLifecycleService::issue()}, so automatic client
+ * delivery and autopay follow the company's own settings.
+ *
+ * Draft-mode packages (INV-2) are never touched here: their periods are
+ * ordinary cadence periods, drafted by `svc:billing:generate-cadence-drafts`
+ * like any other agreement's and issued only by an owner or admin.
+ *
+ * **Idempotent per agreement and period.** Each period is invoiced in its own
+ * transaction, under the billing maintenance share lock, then the enrollment's
+ * row lock, then the guard's agreement lock and its locking read of every
+ * invoice claiming the period. A second run - or a concurrent one, which waits
+ * on the agreement lock - finds the claim and invoices nothing. Generating and
+ * issuing commit together, so there is never a claimed-but-unissued period
+ * left behind by a crash.
+ *
+ * **Refusals reach an owner.** A refused period is rolled back and recorded on
+ * the enrollment (outcome `refused`, its code and the engine's own words),
+ * which Needs you lists and `enrollments.*` returns. Each run tries it again;
+ * once it is invoiced - by this or by hand - the record says so and the row
+ * goes. A refusal never stops another agreement's period.
+ */
+final class PackageRecurringInvoices
+{
+    public function __construct(
+        private readonly UncoveredCadencePeriods $uncovered,
+        private readonly CadencePeriodGuard $guard,
+        private readonly ClientInvoicingService $cadence,
+        private readonly InvoiceLifecycleService $invoices,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
+
+    /**
+     * Workspaces with at least one active enrollment that issues automatically.
+     *
+     * @return list<int>
+     */
+    public function workspaceIds(): array
+    {
+        return array_values(array_map('intval', ServicePackageEnrollment::query()
+            ->where('status', EnrollmentStatus::Active->value)
+            ->whereExists(self::automaticVersion(...))
+            ->distinct()
+            ->orderBy('workspace_id')
+            ->pluck('workspace_id')
+            ->all()));
+    }
+
+    /**
+     * The agreements of this workspace whose periods this issues: those of an
+     * active enrollment whose signed version is set to issue automatically.
+     * `svc:billing:generate-cadence-drafts` leaves these alone, as it leaves an
+     * agreement with a billing schedule to that schedule: a draft there would
+     * claim the period without issuing it.
+     *
+     * @return array<int, ServicePackageEnrollment> keyed by agreement id
+     */
+    public function automaticEnrollments(Workspace $workspace): array
+    {
+        $enrollments = [];
+        foreach (ServicePackageEnrollment::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('status', EnrollmentStatus::Active->value)
+            ->whereExists(self::automaticVersion(...))
+            ->orderBy('id')
+            ->get(['id', 'public_id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'status', 'accepted_version_id', 'auto_invoice_outcome', 'auto_invoice_period_start']) as $enrollment) {
+            $enrollments[$enrollment->client_agreement_id] = $enrollment;
+        }
+
+        return $enrollments;
+    }
+
+    /**
+     * Each automatic agreement's current period that has begun with nothing
+     * billed for it - the periods the audit reports missing, held to these
+     * agreements. Only the period containing today, as for the scheduled
+     * drafts: an older gap is an owner's to reopen.
+     *
+     * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
+     * @return list<array{ServicePackageEnrollment, ClientAgreement, BillingCycle}>
+     */
+    public function due(Workspace $workspace, array $enrollments): array
+    {
+        if ($enrollments === []) {
+            return [];
+        }
+        $due = [];
+        $this->uncovered->each($workspace, $this->clock->today($workspace), function (ClientAgreement $agreement, BillingCycle $cycle) use ($enrollments, &$due): void {
+            $enrollment = $enrollments[$agreement->id] ?? null;
+            if ($enrollment !== null) {
+                $due[] = [$enrollment, $agreement, $cycle];
+            }
+        });
+
+        return $due;
+    }
+
+    /**
+     * Invoice and issue one agreement's billing period, or record why not.
+     *
+     * Commits only an issued invoice. Everything else rolls back, and an
+     * outcome an owner should know of is then recorded on the enrollment in
+     * a transaction of its own.
+     */
+    public function invoice(Workspace $workspace, ServicePackageEnrollment $enrollment, ClientAgreement $agreement, BillingCycle $cycle): AutoInvoiceResult
+    {
+        $periodStart = $cycle->start->toDateString();
+        DB::beginTransaction();
+        $committed = false;
+        try {
+            $result = $this->attempt($workspace, $enrollment, $agreement, $periodStart);
+            if ($result->outcome === AutoInvoiceOutcome::Issued) {
+                DB::commit();
+                $committed = true;
+
+                return $result;
+            }
+        } catch (HttpExceptionInterface $claimed) {
+            // The guard's 409: a non-void invoice already claims the period -
+            // an earlier or concurrent run, or an owner, invoiced it first.
+            if ($claimed->getStatusCode() === 409) {
+                $result = AutoInvoiceResult::skipped(AutoInvoiceResult::ALREADY_INVOICED);
+            } else {
+                report($claimed);
+                $result = AutoInvoiceResult::refused(AutoInvoiceRefusal::Failed);
+            }
+        } catch (ValidationException) {
+            // The agreement stopped being an active recurring one, or the
+            // period one it bills, between the scan and the lock.
+            $result = AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
+        } catch (AutoInvoiceRefused $refused) {
+            $result = $refused->result;
+        } catch (Throwable $failure) {
+            report($failure);
+            $result = AutoInvoiceResult::refused(AutoInvoiceRefusal::Failed);
+        } finally {
+            if (! $committed) {
+                DB::rollBack();
+            }
+        }
+
+        if ($result->outcome !== null) {
+            if ($result->outcome === AutoInvoiceOutcome::Refused) {
+                Log::warning('A package agreement\'s period was not invoiced automatically.', [
+                    'workspace_id' => $workspace->public_id, 'enrollment_id' => $enrollment->public_id, 'period_start' => $periodStart,
+                    'refusal' => $result->refusal?->value, 'detail' => $result->detail,
+                ]);
+            }
+            $this->recordApart($workspace, $enrollment, $periodStart, $result);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Mark each recorded refusal whose period has since been invoiced another
+     * way as covered, so Needs you stops asking. Asked of the invoices only;
+     * a period still open is left as refused.
+     *
+     * @param  array<int, ServicePackageEnrollment>  $enrollments  keyed by agreement id
+     * @return list<ServicePackageEnrollment> the enrollments marked
+     */
+    public function settleCovered(Workspace $workspace, array $enrollments): array
+    {
+        $refused = array_filter($enrollments, static fn (ServicePackageEnrollment $enrollment): bool => $enrollment->autoInvoiceOutcome() === AutoInvoiceOutcome::Refused && $enrollment->auto_invoice_period_start !== null);
+        if ($refused === []) {
+            return [];
+        }
+        $claims = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereIn('client_agreement_id', array_keys($refused))
+            ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+            ->whereIn('status', InvoiceStatus::live())
+            ->whereIn('cycle_start', array_values(array_unique(array_map(static fn (ServicePackageEnrollment $enrollment): string => (string) $enrollment->auto_invoice_period_start?->toDateString(), $refused))))
+            ->get(['client_agreement_id', 'cycle_start', 'status']);
+        $settled = [];
+        foreach ($refused as $agreementId => $enrollment) {
+            $period = (string) $enrollment->auto_invoice_period_start?->toDateString();
+            $covered = $claims->contains(static fn (ClientInvoice $claim): bool => (int) $claim->client_agreement_id === $agreementId
+                && $claim->cycle_start?->toDateString() === $period && InvoiceStatus::claimsPeriod($claim->status));
+            if ($covered) {
+                $this->recordApart($workspace, $enrollment, $period, AutoInvoiceResult::covered());
+                $settled[] = $enrollment;
+            }
+        }
+
+        return $settled;
+    }
+
+    /**
+     * Inside the caller's transaction: lock, check, generate, issue, record.
+     *
+     * @throws AutoInvoiceRefused when the period cannot be invoiced
+     */
+    private function attempt(Workspace $workspace, ServicePackageEnrollment $enrollment, ClientAgreement $agreement, string $periodStart): AutoInvoiceResult
+    {
+        // Generation locks time and tasks, which only a transaction that began
+        // with the maintenance share lock may; then the enrollment, which ranks
+        // before the agreement the guard locks next. No ordinary read comes
+        // before the guard's agreement lock, so the snapshot every later
+        // ordinary read sees is no older than that lock.
+        BillingMaintenance::share($workspace->id);
+        $locked = ServicePackageEnrollment::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($enrollment->getKey())
+            ->tap(Locks::forUpdate())
+            ->first();
+        if (! $locked instanceof ServicePackageEnrollment || $locked->enrollmentStatus() !== EnrollmentStatus::Active || $locked->client_agreement_id !== $agreement->id) {
+            return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
+        }
+
+        [$company, $record, $start] = $this->guard->lock($workspace, $agreement->public_id, $periodStart, null);
+        if ($record->id !== $locked->client_agreement_id) {
+            throw new LogicException('The agreement locked is not the enrollment\'s.');
+        }
+        $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($locked->accepted_version_id)->first(['id', 'invoice_issuing']);
+        if (! $version instanceof ServicePackageVersion || PackageInvoiceIssuing::from($version->invoice_issuing) !== PackageInvoiceIssuing::Automatic) {
+            return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
+        }
+        // INV-3, X-2: an agreement carrying the billed-in-Square marker is
+        // Square's to collect. Nothing is generated, so nothing can be issued.
+        if ($record->square_series_key !== null) {
+            throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::CollectedInSquare));
+        }
+
+        try {
+            $draft = $this->cadence->generateCadencePeriod($company, $record, $start);
+        } catch (RuntimeException $refused) {
+            throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::PeriodUnbillable, $refused->getMessage()));
+        }
+        $draft = EmptyCadenceDraft::load($workspace, $draft);
+        if (EmptyCadenceDraft::billsNothing($draft)) {
+            return AutoInvoiceResult::nothingToBill();
+        }
+
+        try {
+            $issued = $this->invoices->issue($this->dueNotBeforeToday($workspace, $draft), $workspace);
+        } catch (DomainException $refused) {
+            throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::IssueRefused, $refused->getMessage()));
+        }
+        $result = AutoInvoiceResult::issued($issued);
+        $this->write($workspace, $locked, $periodStart, $result);
+
+        return $result;
+    }
+
+    /**
+     * A cadence invoice is dated the first day of the period it sells and,
+     * with no due date of its own, falls due that day. Issued later than that
+     * - a refusal fixed mid-month - it is due the day it is issued, not
+     * overdue from the moment the client receives it.
+     */
+    private function dueNotBeforeToday(Workspace $workspace, ClientInvoice $draft): ClientInvoice
+    {
+        $today = $this->clock->today($workspace)->toDateString();
+        $issueDay = $draft->issue_date?->toDateString() ?? $today;
+        if ($draft->due_date !== null || $issueDay >= $today) {
+            return $draft;
+        }
+
+        return $this->invoices->updateDraftDetails($draft, $workspace, AgentApiVersion::for($draft), ['due_date' => $today]);
+    }
+
+    /** Record an outcome in a transaction of its own, under the enrollment's lock, while it is still active. */
+    private function recordApart(Workspace $workspace, ServicePackageEnrollment $enrollment, string $periodStart, AutoInvoiceResult $result): void
+    {
+        DB::transaction(function () use ($workspace, $enrollment, $periodStart, $result): void {
+            $locked = ServicePackageEnrollment::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($enrollment->getKey())
+                ->tap(Locks::forUpdate())
+                ->first();
+            if (! $locked instanceof ServicePackageEnrollment || $locked->enrollmentStatus() !== EnrollmentStatus::Active) {
+                return;
+            }
+            // Covered only settles a refusal of that same period; it never
+            // overwrites what this command did since.
+            if ($result->outcome === AutoInvoiceOutcome::Covered
+                && ($locked->autoInvoiceOutcome() !== AutoInvoiceOutcome::Refused || $locked->auto_invoice_period_start?->toDateString() !== $periodStart)) {
+                return;
+            }
+            $this->write($workspace, $locked, $periodStart, $result);
+        });
+    }
+
+    /**
+     * Write a result on a locked enrollment. The same result again changes
+     * nothing, so an hourly retry of one refusal neither moves the row's
+     * version nor its recorded time.
+     */
+    private function write(Workspace $workspace, ServicePackageEnrollment $locked, string $periodStart, AutoInvoiceResult $result): void
+    {
+        $outcome = $result->outcome ?? throw new LogicException('A skipped attempt records nothing.');
+        $values = [
+            'auto_invoice_outcome' => $outcome->value,
+            'auto_invoice_period_start' => $periodStart,
+            'auto_invoice_refusal' => $result->refusal?->value,
+            'auto_invoice_detail' => $result->detail,
+            'auto_invoice_id' => $result->invoice?->id,
+        ];
+        $current = [
+            'auto_invoice_outcome' => $locked->auto_invoice_outcome,
+            'auto_invoice_period_start' => $locked->auto_invoice_period_start?->toDateString(),
+            'auto_invoice_refusal' => $locked->auto_invoice_refusal,
+            'auto_invoice_detail' => $locked->auto_invoice_detail,
+            'auto_invoice_id' => $locked->auto_invoice_id,
+        ];
+        if ($values === $current) {
+            return;
+        }
+        $locked->forceFill($values + ['auto_invoice_recorded_at' => $this->clock->now($workspace)->utc()])->save();
+    }
+
+    /** The enrollment's signed version issues automatically, in the enrollment's workspace. */
+    private static function automaticVersion(QueryBuilder $version): QueryBuilder
+    {
+        return $version->selectRaw('1')->from('service_package_versions')
+            ->whereColumn('service_package_versions.workspace_id', 'service_package_enrollments.workspace_id')
+            ->whereColumn('service_package_versions.id', 'service_package_enrollments.accepted_version_id')
+            ->where('service_package_versions.invoice_issuing', PackageInvoiceIssuing::Automatic->value);
+    }
+}
