@@ -22,6 +22,7 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoicePaymentOptionsReader;
 use App\Services\Collaboration\CollaborationAccess;
 use App\Services\Collaboration\CollaborationAudience;
+use App\Services\Engagement\PortalCancellationPanel;
 use App\Services\Files\AttachmentReader;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Review\ReviewerGrants;
@@ -269,6 +270,8 @@ class ClientPortalController extends Controller
                 'show_deferred_backlog_to_client' => null,
             ],
             'recurring_items' => $items->map(fn ($item): array => AgreementReadPresenter::recurringItem($item))->values()->all(),
+            // Ending it from the portal (CAN-3, EDGE-9): the panel, finished, or null.
+            'cancellation' => app(PortalCancellationPanel::class)->for($fileActor, $clientCompany, $clientAgreement),
             // Not shown to a client until the agreement opts in (#366, a
             // later slice). Null rather than omitted: one payload shape.
             'deferred_backlog' => $clientAgreement->show_deferred_backlog_to_client

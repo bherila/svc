@@ -1583,7 +1583,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.update',
                 'Update agreement',
-                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here.',
+                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here. The cancellation terms (notice_days, minimum_term_months, cancellation_mode: none, request or self_serve) are terms like any other; ends_on is refused with cancellation_end_scheduled while a cancellation\'s end is scheduled (undo it first).',
                 [AgentMcpClientWriteTools::class, 'agreementsUpdate'],
                 Effect::LocalWrite,
                 true,
@@ -2017,18 +2017,25 @@ final class AgentOperationCatalog
         $operations = [];
         foreach (ServicePackageOperations::DEFINITIONS as $id => [$handler, $title, , $response, $request]) {
             $write = $request !== null;
+            // Cancellation sits beside agreements.terminate: clients:write, behind the clients cutover.
+            $cancelling = in_array($id, ServicePackageOperations::CANCELLATION_OPERATIONS, true);
             $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpPackageTools::class, $handler],
                 match ($id) {
                     // Erasing a request's contact details cannot be undone.
                     'packages.retire', 'package_requests.erase' => Effect::Destructive,
                     // Approving invites through the identity provider or emails the contact; declining emails the visitor;
-                    // activating emails the client.
-                    'package_requests.approve', 'package_requests.decline', 'enrollments.activate' => Effect::ExternalWrite,
+                    // activating emails the client; a cancellation decision, scheduled end or undo emails the client.
+                    'package_requests.approve', 'package_requests.decline', 'enrollments.activate',
+                    'cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end' => Effect::ExternalWrite,
                     'packages.list', 'packages.get', 'package_requests.list', 'package_requests.get',
-                    'enrollments.list', 'enrollments.get', 'client_services.list', 'client_services.get' => Effect::Read,
+                    'enrollments.list', 'enrollments.get', 'client_services.list', 'client_services.get',
+                    'cancellation_requests.list', 'cancellation_requests.get' => Effect::Read,
                     default => Effect::LocalWrite,
-                }, true, $write ? 'mcp.write' : 'mcp.read',
-                cutovers: $write ? [AgentDeploymentFlags::PACKAGES] : [],
+                }, true, match (true) {
+                    $cancelling => $write ? 'mcp.write.clients' : 'mcp.read.agreements',
+                    default => $write ? 'mcp.write' : 'mcp.read',
+                },
+                cutovers: $write ? [$cancelling ? AgentDeploymentFlags::CLIENTS : AgentDeploymentFlags::PACKAGES] : [],
                 // A client's contacts read their own services (API-5); everything else is the workspace's managers'.
                 manager: ! in_array($id, ServicePackageOperations::CLIENT_OPERATIONS, true),
                 input: $write ? SchemaRef::openApi($request) : null,

@@ -46,6 +46,10 @@ export type AgreementTerms = CompanyAgreement & {
      * every location. Operators only.
      */
     square_location_id?: string | null;
+    /** Cancellation terms (CAN-1): the agreement's own copy, for both audiences. */
+    notice_days: number;
+    minimum_term_months: number | null;
+    cancellation_mode: string;
 };
 
 /**

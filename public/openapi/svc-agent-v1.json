@@ -332,6 +332,139 @@
                 "x-mcp-tool": "agreements.list"
             }
         },
+        "/workspaces/{workspace}/agreements/{agreement}/scheduled-end": {
+            "post": {
+                "operationId": "agreements.schedule_end",
+                "description": "Only after explicit user confirmation, schedule an active agreement's end on end_date, in any portal cancellation mode: one of the agreement's cancellation.offered_end_dates (agreements.get), or of offered_end_dates_without_notice with waive_notice true; the minimum term always holds. The agreement stays active with that end date and is terminated on the date; until then agreements.undo_scheduled_end undoes it. The client is emailed the end date. Refused with cancellation_request_pending while a client's request waits (decide it instead), cancellation_already_scheduled, cancellation_agreement_not_active, cancellation_not_recurring, or cancellation_date_not_offered. Use agreements.terminate to end an agreement today or on a date that is not a period close. The agreement's current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AgreementScheduleEndRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The agreement, with its cancellation state",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AgreementResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "agreements.schedule_end",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "agreements.schedule_end"
+            }
+        },
         "/workspaces/{workspace}/agreements/{agreement}/square-series": {
             "delete": {
                 "operationId": "agreements.square_series.clear",
@@ -544,6 +677,139 @@
                     "AGENT_API_CLIENT_WRITES_ENABLED"
                 ],
                 "x-mcp-tool": "agreements.terminate"
+            }
+        },
+        "/workspaces/{workspace}/agreements/{agreement}/scheduled-end/undo": {
+            "post": {
+                "operationId": "agreements.undo_scheduled_end",
+                "description": "Only after explicit user confirmation, undo an agreement's scheduled end before its date, in any mode: the end date it had before is restored, and the workspace's owners and admins and the client are emailed. Refused with cancellation_not_scheduled when nothing is scheduled (or it has already been carried out) and cancellation_end_reached once the date has passed. The agreement's current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageConfirmRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "agreement",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The agreement, with its cancellation state",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AgreementResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "agreements.undo_scheduled_end",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "agreements.undo_scheduled_end"
             }
         },
         "/workspaces/{workspace}/attachments/{attachment}": {
@@ -2108,6 +2374,486 @@
                 "x-mcp-tool": "billing_schedules.get"
             }
         },
+        "/workspaces/{workspace}/cancellation-requests/{cancellation}/approve": {
+            "post": {
+                "operationId": "cancellation_requests.approve",
+                "description": "Only after explicit user confirmation, approve a pending cancellation request: schedule the agreement's end on end_date (by default the date the client asked for), which must be one of offered_end_dates, or of offered_end_dates_without_notice with waive_notice true. The agreement stays active with that end date until the date, when it is terminated; until then agreements.undo_scheduled_end undoes it. The client is emailed the end date and the optional note. A balance owed is untouched and stays owed. Refused with cancellation_request_not_pending once decided or withdrawn, cancellation_date_not_offered for any other date, and cancellation_agreement_not_active, cancellation_not_recurring or cancellation_already_scheduled when the agreement cannot take an end now. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancellationRequestApproveRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "cancellation",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancellation request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancellationRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "cancellation_requests.approve",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "cancellation_requests.approve"
+            }
+        },
+        "/workspaces/{workspace}/cancellation-requests/{cancellation}/decline": {
+            "post": {
+                "operationId": "cancellation_requests.decline",
+                "description": "Only after explicit user confirmation, decline a pending cancellation request with an optional note, which the client reads in an email. The agreement is unchanged. Refused with cancellation_request_not_pending once decided or withdrawn. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_CLIENT_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "clients:write",
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CancellationRequestDeclineRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "cancellation",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancellation request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancellationRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace, cancellation request or agreement is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "external_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "cancellation_requests.decline",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_CLIENT_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "cancellation_requests.decline"
+            }
+        },
+        "/workspaces/{workspace}/cancellation-requests/{cancellation}": {
+            "get": {
+                "operationId": "cancellation_requests.get",
+                "description": "Read one cancellation request with its client, agreement, dates, reason, decision and, while pending, the end dates it may be approved on, and the version to send with a decision. Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "cancellation",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancellation request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancellationRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or cancellation request is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "cancellation_requests.get",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "cancellation_requests.get"
+            }
+        },
+        "/workspaces/{workspace}/cancellation-requests": {
+            "get": {
+                "operationId": "cancellation_requests.list",
+                "description": "List the cancellation requests the workspace's clients made from the portal, newest first, optionally by status (pending, approved, declined or withdrawn). A request is made in an agreement's request mode; in self-serve mode a client's cancellation schedules the end at once and makes no request. Each names its client and agreement with the agreement's page, the end date asked for, the client's reason, who asked and when, and the decision: who decided, when, the end date chosen, whether notice was waived and the note the client reads. A pending one also carries offered_end_dates (the period closes it may be approved on, with the notice period) and offered_end_dates_without_notice (with notice waived). Workspace owners and admins only: anyone else, a client's own contacts included (they cancel in the portal), and any other workspace's request or agreement, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "billing:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "approved",
+                                "declined",
+                                "withdrawn"
+                            ]
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancellation requests",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancellationRequestListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or cancellation request is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "cancellation_requests.list",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "cancellation_requests.list"
+            }
+        },
         "/workspaces/{workspace}/agreements/{agreement}/capacity-ledger": {
             "get": {
                 "operationId": "capacity_ledger.get",
@@ -2171,7 +2917,7 @@
         "/workspaces/{workspace}/client-services/{service}": {
             "get": {
                 "operationId": "client_services.get",
-                "description": "For a client's portal contact: read one of your company's services with its terms, status, acceptance, next_period_start and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "description": "For a client's portal contact: read one of your company's services with its terms, status, acceptance, next_period_start, cancellation and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
                 "security": [
                     {
                         "oauth2": [
@@ -2273,7 +3019,7 @@
         "/workspaces/{workspace}/client-services": {
             "get": {
                 "operationId": "client_services.list",
-                "description": "For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date), next_period_start (the day the next billing period, and its invoice, begins) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "description": "For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date), next_period_start (the day the next billing period, and its invoice, begins), cancellation (the agreement's own cancellation terms, the end dates you could choose now, and any pending request or scheduled end) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing, paying and cancelling happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
                 "security": [
                     {
                         "oauth2": [
@@ -22648,7 +23394,11 @@
                     "project_id",
                     "square_series_key",
                     "square_location_id",
-                    "show_deferred_backlog_to_client"
+                    "show_deferred_backlog_to_client",
+                    "notice_days",
+                    "minimum_term_months",
+                    "cancellation_mode",
+                    "cancellation"
                 ],
                 "properties": {
                     "version": {
@@ -22803,6 +23553,162 @@
                     "show_deferred_backlog_to_client": {
                         "type": "boolean",
                         "description": "Whether this agreement exposes its deferred backlog in the client portal; off by default."
+                    },
+                    "notice_days": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365,
+                        "description": "Days of notice a client gives before a cancellation may take effect (CAN-1)."
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 120,
+                        "description": "Months from starts_on before an end may fall; null for none."
+                    },
+                    "cancellation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ],
+                        "description": "What a company-wide portal contact may do: none (no cancellation in the portal), request (an owner or admin decides) or self_serve (the end is scheduled at once)."
+                    },
+                    "cancellation": {
+                        "$ref": "#/components/schemas/AgreementCancellation"
+                    }
+                }
+            },
+            "AgreementCancellation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "earliest_end_on",
+                    "offered_end_dates",
+                    "offered_end_dates_without_notice",
+                    "pending_request",
+                    "scheduled_end"
+                ],
+                "properties": {
+                    "earliest_end_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "offered_end_dates": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    "offered_end_dates_without_notice": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    "pending_request": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "version",
+                                    "requested_end_on",
+                                    "reason",
+                                    "requested_at",
+                                    "requested_by"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/components/schemas/Uuid"
+                                    },
+                                    "version": {
+                                        "$ref": "#/components/schemas/Version"
+                                    },
+                                    "requested_end_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "requested_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    },
+                                    "requested_by": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "scheduled_end": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "ends_on",
+                                    "previous_ends_on",
+                                    "source",
+                                    "scheduled_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/components/schemas/Uuid"
+                                    },
+                                    "ends_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "previous_ends_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "source": {
+                                        "type": "string",
+                                        "enum": [
+                                            "self_serve",
+                                            "request",
+                                            "operator"
+                                        ]
+                                    },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 }
             },
@@ -22890,6 +23796,36 @@
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/Agreement"
+                    }
+                }
+            },
+            "AgreementScheduleEndRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm",
+                    "end_date"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "end_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "waive_notice": {
+                        "type": "boolean"
                     }
                 }
             },
@@ -23741,6 +24677,265 @@
                     }
                 }
             },
+            "CancellationRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "version",
+                    "status",
+                    "client",
+                    "agreement",
+                    "requested_end_on",
+                    "reason",
+                    "requested_by",
+                    "requested_at",
+                    "decided_by",
+                    "decided_at",
+                    "decided_end_on",
+                    "notice_waived",
+                    "decision_note",
+                    "offered_end_dates",
+                    "offered_end_dates_without_notice"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "approved",
+                            "declined",
+                            "withdrawn"
+                        ]
+                    },
+                    "client": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "name"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "agreement": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "title",
+                            "status",
+                            "ends_on",
+                            "url"
+                        ],
+                        "properties": {
+                            "id": {
+                                "$ref": "#/components/schemas/Uuid"
+                            },
+                            "title": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "ends_on": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "format": "date"
+                            },
+                            "url": {
+                                "type": "string",
+                                "format": "uri"
+                            }
+                        }
+                    },
+                    "requested_end_on": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "reason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "requested_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "requested_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "decided_by": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "decided_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "decided_end_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "notice_waived": {
+                        "type": "boolean"
+                    },
+                    "decision_note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "offered_end_dates": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    "offered_end_dates_without_notice": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    }
+                }
+            },
+            "CancellationRequestApproveRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "end_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "waive_notice": {
+                        "type": "boolean"
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1000
+                    }
+                }
+            },
+            "CancellationRequestDeclineRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 1000
+                    }
+                }
+            },
+            "CancellationRequestListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/CancellationRequest"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "CancellationRequestResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/CancellationRequest"
+                    }
+                }
+            },
             "CapacityLedger": {
                 "type": "object",
                 "additionalProperties": false,
@@ -24369,6 +25564,7 @@
                     "agreement_url",
                     "payment",
                     "next_period_start",
+                    "cancellation",
                     "url"
                 ],
                 "properties": {
@@ -24473,9 +25669,142 @@
                         ],
                         "format": "date"
                     },
+                    "cancellation": {
+                        "$ref": "#/components/schemas/ClientServiceCancellation"
+                    },
                     "url": {
                         "type": "string",
                         "format": "uri"
+                    }
+                }
+            },
+            "ClientServiceCancellation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "mode",
+                    "notice_days",
+                    "minimum_term_months",
+                    "earliest_end_on",
+                    "offered_end_dates",
+                    "pending_request",
+                    "scheduled_end"
+                ],
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ]
+                    },
+                    "notice_days": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "earliest_end_on": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date"
+                    },
+                    "offered_end_dates": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    "pending_request": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "requested_end_on",
+                                    "reason",
+                                    "requested_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/components/schemas/Uuid"
+                                    },
+                                    "requested_end_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "reason": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ]
+                                    },
+                                    "requested_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "scheduled_end": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "id",
+                                    "ends_on",
+                                    "previous_ends_on",
+                                    "source",
+                                    "scheduled_at"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "$ref": "#/components/schemas/Uuid"
+                                    },
+                                    "ends_on": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "previous_ends_on": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "date"
+                                    },
+                                    "source": {
+                                        "type": "string",
+                                        "enum": [
+                                            "self_serve",
+                                            "request",
+                                            "operator"
+                                        ]
+                                    },
+                                    "scheduled_at": {
+                                        "type": "string",
+                                        "format": "date-time"
+                                    }
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 }
             },
@@ -42627,6 +43956,27 @@
                     },
                     "show_deferred_backlog_to_client": {
                         "type": "boolean"
+                    },
+                    "notice_days": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 120
+                    },
+                    "cancellation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ]
                     }
                 }
             },

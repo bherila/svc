@@ -7,6 +7,7 @@ use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Engagement\CancellationRecords;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageEnrollmentPresenter;
@@ -85,7 +86,9 @@ final class PackageEnrollmentReadService
             ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)]);
 
         return $query->with([
-            'clientCompany' => $scoped, 'project' => $scoped, 'agreement' => $scoped, 'package' => $scoped,
+            'clientCompany' => $scoped, 'project' => $scoped, 'package' => $scoped,
+            // With its pending cancellation request and scheduled end (CAN-4, EDGE-9).
+            'agreement' => static fn ($agreement) => $agreement->where('workspace_id', $workspace->id)->with(CancellationRecords::openRelations($workspace->id)),
             'version' => $withComponents, 'acceptedVersion' => $withComponents, 'packageRequest' => $scoped,
             'signupInvoice' => $scoped, 'autoInvoice' => $scoped,
         ]);

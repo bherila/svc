@@ -2,6 +2,8 @@
 
 namespace App\Services\AgentApi;
 
+use App\Models\AgreementCancellationRequest;
+use App\Models\ClientAgreement;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
@@ -9,6 +11,8 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Engagement\AgreementCancellations;
+use App\Services\Engagement\CancellationRequestReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestReadService;
@@ -22,7 +26,8 @@ use InvalidArgumentException;
 
 /**
  * The agent API's way into {@see ServicePackageWorkflow},
- * {@see PackageRequestWorkflow} and {@see PackageEnrollmentWorkflow}: an idempotency receipt, the closed body its
+ * {@see PackageRequestWorkflow}, {@see PackageEnrollmentWorkflow} and
+ * {@see AgreementCancellations}: an idempotency receipt, the closed body its
  * contract publishes, `expected_version` wherever that body names one, and
  * `confirm: true` wherever it names that (API-2). Everything about the package
  * or the request itself - authorization, validation, locking, versions and
@@ -39,6 +44,8 @@ final class AgentPackageMutationAction
         private readonly AgentAccess $access,
         private readonly PackageEnrollmentWorkflow $enrollmentWorkflow,
         private readonly PackageEnrollmentReadService $enrollmentReads,
+        private readonly AgreementCancellations $cancellations,
+        private readonly CancellationRequestReadService $cancellationReads,
     ) {}
 
     /** @param array<string, mixed> $payload */
@@ -99,6 +106,61 @@ final class AgentPackageMutationAction
             fn (string $id): ServicePackageEnrollment => $this->enrollmentReads->find($actor, $workspace, $id));
 
         return $this->enrollmentReads->find($actor, $workspace, $id);
+    }
+
+    /**
+     * Approve or decline a cancellation request (`cancellation_requests.*`, CAN-4).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function decideCancellation(User $actor, Workspace $workspace, string $clientId, string $key, string $operation, string $requestId, array $payload): AgreementCancellationRequest
+    {
+        $id = $this->execute($actor, $workspace, $clientId, $key, $operation, ['cancellation_id' => $requestId, 'body' => $payload],
+            function (array $fields, ?string $version) use ($actor, $workspace, $operation, $requestId): string {
+                $request = $this->cancellationReads->find($actor, $workspace, $requestId);
+                match ($operation) {
+                    'cancellation_requests.approve' => $this->cancellations->approve($actor, $workspace, $request, self::text($fields['end_date'] ?? null), (bool) ($fields['waive_notice'] ?? false), self::text($fields['note'] ?? null), $version),
+                    'cancellation_requests.decline' => $this->cancellations->decline($actor, $workspace, $request, self::text($fields['note'] ?? null), $version),
+                    default => throw new InvalidArgumentException("Unsupported cancellation decision [{$operation}]."),
+                };
+
+                return $request->public_id;
+            },
+            fn (string $id): AgreementCancellationRequest => $this->cancellationReads->find($actor, $workspace, $id));
+
+        return $this->cancellationReads->find($actor, $workspace, $id);
+    }
+
+    /**
+     * Schedule or undo an agreement's end (`agreements.schedule_end`,
+     * `agreements.undo_scheduled_end`, EDGE-9), against the agreement's version.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function agreementEnd(User $actor, Workspace $workspace, string $clientId, string $key, string $operation, string $agreementId, array $payload): string
+    {
+        return $this->execute($actor, $workspace, $clientId, $key, $operation, ['agreement_id' => $agreementId, 'body' => $payload],
+            function (array $fields, ?string $version) use ($actor, $workspace, $operation, $agreementId): string {
+                $agreement = $this->agreement($workspace, $agreementId);
+                match ($operation) {
+                    'agreements.schedule_end' => $this->cancellations->schedule($actor, $workspace, $agreement,
+                        Validator::make($fields, ['end_date' => ['required']])->validate()['end_date'], (bool) ($fields['waive_notice'] ?? false), $version),
+                    'agreements.undo_scheduled_end' => $this->cancellations->undo($actor, $workspace, $agreement, $version),
+                    default => throw new InvalidArgumentException("Unsupported agreement end [{$operation}]."),
+                };
+
+                return $agreement->public_id;
+            },
+            fn (string $id): ClientAgreement => $this->agreement($workspace, $id));
+    }
+
+    private function agreement(Workspace $workspace, string $publicId): ClientAgreement
+    {
+        return ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('public_id', $publicId)
+            ->whereHas('clientCompany', fn ($company) => $company->where('workspace_id', $workspace->id))
+            ->firstOrFail();
     }
 
     /**

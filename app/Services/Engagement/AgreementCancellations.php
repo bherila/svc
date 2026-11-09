@@ -7,7 +7,6 @@ use App\Models\AgreementCancellationRequest;
 use App\Models\AgreementScheduledTermination;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
-use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
@@ -63,6 +62,7 @@ final class AgreementCancellations
         private readonly CancellationRecords $records,
         private readonly ClientActivityRecorder $activities,
         private readonly PackageNotifier $notifier,
+        private readonly PortalCancellationPanel $panel,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -412,14 +412,7 @@ final class AgreementCancellations
     /** Where the client reads it: the service's page for a package agreement, the agreement's otherwise. */
     private function portalUrl(Workspace $workspace, ClientCompany $company, ClientAgreement $agreement): string
     {
-        $enrollment = ServicePackageEnrollment::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_agreement_id', $agreement->id)
-            ->value('public_id');
-
-        return is_string($enrollment)
-            ? route('portal.services.show', [$company, $enrollment], absolute: true)
-            : route('portal.agreement', [$company, $agreement], absolute: true);
+        return $this->panel->pageUrl($company, $agreement, absolute: true);
     }
 
     /** The present instant in UTC, for an event's timestamp; dates stay the workspace's. */
