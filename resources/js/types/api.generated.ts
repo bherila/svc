@@ -8880,7 +8880,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9054,7 +9054,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10039,7 +10039,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -10123,7 +10123,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: cancellation_not_offered, cancellation_not_recurring, cancellation_agreement_not_active, cancellation_date_not_offered, cancellation_no_dates_offered, cancellation_already_scheduled, cancellation_request_pending, cancellation_request_not_pending, cancellation_not_scheduled, cancellation_undo_not_self_serve, cancellation_end_reached, cancellation_end_scheduled, cancellation_undo_overlaps. */
             422: {
                 headers: {
                     [name: string]: unknown;
