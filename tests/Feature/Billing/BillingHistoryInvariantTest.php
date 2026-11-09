@@ -262,6 +262,41 @@ final class BillingHistoryInvariantTest extends TestCase
     }
 
     /**
+     * Codex's late predecessor: the successor's draft is generated while it
+     * stands alone, charging June 10 at its $100; then the agreement it took
+     * over from is recorded, January 1 to May 15 at $200. The unchanged draft
+     * is refused; regenerated, it leaves June 10 to the predecessor, whose walk
+     * reaches the gap and bills it once at its own rate.
+     */
+    public function test_a_predecessor_added_after_the_successors_draft_takes_back_its_work(): void
+    {
+        Carbon::setTestNow('2026-07-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('late-predecessor');
+        $successor = $this->agreement($workspace, $company, [
+            'starts_on' => '2026-06-16', 'billing_cadence' => 'monthly', 'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+        ]);
+        $june = $this->hours($workspace, $company, $project, $owner, '2026-06-10', 120);
+        $after = $this->hours($workspace, $company, $project, $owner, '2026-06-20', 60);
+        $this->period($company, $successor, '2026-07-01');
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($june), 'Alone, the successor\'s draft charges June 10.');
+
+        $predecessor = $this->agreement($workspace, $company, [
+            'billing_cadence' => 'monthly', 'ends_on' => '2026-05-15', 'status' => 'terminated',
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 20000,
+        ]);
+        $this->assertInvariants($company, 'the predecessor recorded, no rebuild');
+        $this->issueEveryDraft($company, $workspace);
+        app(ClientInvoicingService::class)->generateAllInvoices($company);
+        $this->assertInvariants($company, 'the predecessor generated');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+
+        $this->assertSame([[$predecessor->id, 20000]], $this->chargesOf($june), 'June 10 is the predecessor\'s, once, at its rate.');
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($after));
+    }
+
+    /**
      * The post-merge review's history: the outgoing draft is generated while
      * the agreement is open, then the agreement is terminated backdated and a
      * successor starts the next day at another rate. The unchanged draft is

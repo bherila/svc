@@ -157,10 +157,11 @@ final class DeferredBacklogReader
      * scope - its own start - or null when it succeeds nobody. Work before it
      * is the predecessor's to bill.
      */
-    public function tookOverOn(int $workspaceId, ClientAgreement $agreement): ?CarbonImmutable
+    /** @param  Collection<int, ClientAgreement>|null  $segments  as for {@see self::handedOverAfter()} */
+    public function tookOverOn(int $workspaceId, ClientAgreement $agreement, ?Collection $segments = null): ?CarbonImmutable
     {
         $companyId = (int) $agreement->client_company_id;
-        $segments = $this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection;
+        $segments ??= $this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection;
         foreach ($segments as $candidate) {
             $successor = $this->agreements->successorAgreementForGeneration($segments, $candidate);
             if ($successor instanceof ClientAgreement && $successor->id === $agreement->id) {

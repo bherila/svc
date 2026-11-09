@@ -957,11 +957,13 @@ final class InvoiceLifecycleService
         if (! $agreement instanceof ClientAgreement) {
             return;
         }
-        $handedOver = app(DeferredBacklogReader::class)->handedOverAfter((int) $draft->workspace_id, $agreement, $segments);
-        if (! $handedOver instanceof CarbonImmutable) {
+        $reader = app(DeferredBacklogReader::class);
+        $handedOver = $reader->handedOverAfter((int) $draft->workspace_id, $agreement, $segments);
+        $tookOver = $reader->tookOverOn((int) $draft->workspace_id, $agreement, $segments);
+        if (! $handedOver instanceof CarbonImmutable && ! $tookOver instanceof CarbonImmutable) {
             return;
         }
-        $late = DB::table('client_invoice_lines as line')
+        $charged = fn () => DB::table('client_invoice_lines as line')
             ->join('client_invoice_line_time_entries as allocation', function ($join) use ($draft): void {
                 $join->on('allocation.client_invoice_line_id', '=', 'line.id')->where('allocation.workspace_id', '=', $draft->workspace_id);
             })
@@ -969,11 +971,17 @@ final class InvoiceLifecycleService
             ->where('line.workspace_id', $draft->workspace_id)
             ->where('line.client_invoice_id', $draft->id)
             ->where(fn ($mode) => $mode->whereNull('entry.subcontractor_billing_mode')
-                ->orWhere('entry.subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value))
-            ->whereDate('entry.worked_on', '>', $handedOver->toDateString())
-            ->exists();
-        if ($late) {
-            throw new WorkOutsideAgreementSegment($handedOver->addDay()->toDateString());
+                ->orWhere('entry.subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value));
+        if ($handedOver instanceof CarbonImmutable
+            && $charged()->whereDate('entry.worked_on', '>', $handedOver->toDateString())->exists()) {
+            throw new WorkOutsideAgreementSegment(sprintf('from %s, when a successor agreement took over', $handedOver->addDay()->toDateString()));
+        }
+        // And the other side of a handover: ordinary work before this
+        // agreement took over from a predecessor - one added, say, after this
+        // draft was generated - is the predecessor's.
+        if ($tookOver instanceof CarbonImmutable
+            && $charged()->where('entry.is_deferred', false)->whereDate('entry.worked_on', '<', $tookOver->toDateString())->exists()) {
+            throw new WorkOutsideAgreementSegment(sprintf('before %s, when this agreement took over from its predecessor', $tookOver->toDateString()));
         }
     }
 
