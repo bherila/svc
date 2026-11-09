@@ -172,6 +172,8 @@ final class ServicePackageOperations
         $operations = [];
         foreach (self::DEFINITIONS as $id => [, $title, $method, $response, $body]) {
             $requests = str_starts_with($id, 'package_requests.');
+            // Approving is the one decision that reaches the identity provider.
+            $decisionErrorsFor = $id === 'package_requests.approve' ? $approveErrors : $decisionErrors;
             $target = $requests ? $request : $package;
             $parameters = match ($id) {
                 'packages.list' => ['WorkspaceId', $status, 'Limit', 'Cursor'],
@@ -197,8 +199,7 @@ final class ServicePackageOperations
                 'errors' => match (true) {
                     ! $requests => $read ? $errors : $writeErrors,
                     $read => $requestErrors,
-                    // Approving is the one decision that reaches the identity provider.
-                    default => ['package_requests.approve' => $approveErrors][$id] ?? $decisionErrors,
+                    default => $decisionErrorsFor,
                 },
             ] + ($read ? [] : ['request' => $body]);
         }
