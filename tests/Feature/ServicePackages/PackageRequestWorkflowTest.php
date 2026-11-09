@@ -14,14 +14,20 @@ use App\Models\ClientProject;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
+use App\Services\Authorization\PortalAccess;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use App\Support\Concurrency\LockAcquisition;
+use App\Support\Concurrency\LockMode;
+use App\Support\Concurrency\LockOrderRecorder;
+use App\Support\Concurrency\LockResource;
 use App\Support\Packages\PackageRefusal;
 use BWH\Auth\OAuth\Invitations\ApplicationInvitationError;
 use BWH\Auth\Testing\FakeApplicationInvitations;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -261,6 +267,101 @@ final class PackageRequestWorkflowTest extends TestCase
         $this->assertSame($package->published_version_id, $enrollment->service_package_version_id);
         $this->assertNotSame($request->service_package_version_id, $enrollment->service_package_version_id);
         $this->assertSame('Web hosting · Plus', ClientAgreement::query()->sole()->title);
+    }
+
+    public function test_approval_reads_the_package_and_its_terms_under_locks_before_the_request(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner);
+        $request = $this->packageRequest($workspace, $package);
+
+        LockOrderRecorder::start();
+        try {
+            $this->workflow()->approve($owner, $workspace, $request);
+            $sequence = collect(LockOrderRecorder::acquisitions())
+                ->first(fn (array $locks): bool => collect($locks)->contains(fn (LockAcquisition $lock): bool => $lock->resource === LockResource::ServicePackageRequest));
+        } finally {
+            LockOrderRecorder::stop();
+        }
+
+        $this->assertIsArray($sequence);
+        $resources = array_map(static fn (LockAcquisition $lock): LockResource => $lock->resource, $sequence);
+        $this->assertSame(
+            [LockResource::ServicePackage, LockResource::ServicePackageVersion, LockResource::ServicePackageComponent, LockResource::ServicePackageRequest],
+            array_slice($resources, 0, 4),
+            'the package and the terms offered now are read current, in registry order, before the request',
+        );
+        $this->assertSame(LockMode::Share, $sequence[0]->mode, 'a shared lock: approvals of one package need not wait for each other');
+    }
+
+    public function test_a_quarterly_retainer_keeps_its_advertised_price_and_hours_per_cycle(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner, [
+            'billing_cadence' => 'quarterly',
+            'invoice_issuing' => 'draft',
+            'retainer_amount' => 120000,
+            'retainer_minutes' => 300,
+            'components' => [['kind' => 'setup_fee', 'description' => 'Setup', 'amount' => 15000]],
+        ]);
+
+        $enrollment = $this->workflow()->approve($owner, $workspace, $this->packageRequest($workspace, $package));
+
+        $agreement = ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->sole();
+        $this->assertSame(120000, $agreement->period_retainer_amount);
+        $this->assertSame(300, $agreement->period_retainer_minutes);
+        $this->assertSame(40000, $agreement->retainer_amount, 'the monthly share agrees with the cycle figure');
+        $this->assertSame(100, $agreement->retainer_minutes);
+        $this->assertSame(1200.0, $agreement->periodRetainerFee());
+        $this->assertSame(5.0, $agreement->periodRetainerHours());
+    }
+
+    public function test_a_monthly_retainer_is_written_to_the_monthly_columns_only(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner, ['retainer_amount' => 50000, 'retainer_minutes' => 120, 'invoice_issuing' => 'draft']);
+
+        $enrollment = $this->workflow()->approve($owner, $workspace, $this->packageRequest($workspace, $package));
+
+        $agreement = ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->sole();
+        $this->assertSame([50000, 120, null, null], [$agreement->retainer_amount, $agreement->retainer_minutes, $agreement->period_retainer_amount, $agreement->period_retainer_minutes]);
+    }
+
+    public function test_a_project_limited_contact_is_widened_to_the_company_on_approval(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $package = $this->publishedPackage($workspace, $owner);
+        $known = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Known Synthetic Client', 'slug' => 'known-synthetic']);
+        $existing = User::factory()->create(['email' => 'morgan.lakeside@example.com']);
+        $existing->forceFill(['oauth_provider' => 'test-provider', 'oauth_subject' => '4200'])->save();
+        $membership = new ClientCompanyMembership;
+        $membership->forceFill(['workspace_id' => $workspace->id, 'client_company_id' => $known->id, 'user_id' => $existing->id, 'role' => 'member', 'access_scope' => 'projects'])->save();
+        $request = $this->packageRequest($workspace, $package);
+
+        $enrollment = $this->workflow()->approve($owner, $workspace, $request, $known->public_id);
+
+        $this->assertSame('company', $membership->refresh()->access_scope);
+        $this->assertTrue(app(PortalAccess::class)->canViewProject($existing, ClientProject::query()->whereKey($enrollment->client_project_id)->sole()));
+    }
+
+    public function test_presenting_requests_loads_components_once_for_every_version(): void
+    {
+        [$workspace, $owner] = $this->boundPackageWorkspace();
+        $packages = app(ServicePackageWorkflow::class);
+        $package = $this->publishedPackage($workspace, $owner);
+        foreach (['a', 'b', 'c'] as $n) {
+            $this->packageRequest($workspace, $package, ['email' => "visitor-{$n}@example.com"]);
+            $package = $packages->publish($owner, $workspace, $packages->update($owner, $workspace, $package, ['name' => "Web hosting · {$n}"]));
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $page = app(PackageRequestReadService::class)->list($owner, $workspace);
+        $componentQueries = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'service_package_components'));
+        DB::disableQueryLog();
+
+        $this->assertCount(3, $page['data']);
+        $this->assertCount(1, $componentQueries);
     }
 
     #[Requirement('EDGE-8')]

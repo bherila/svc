@@ -92,6 +92,7 @@ final class PackagePublishRulesTest extends TestCase
     {
         $this->assertSame([PackageRefusal::AutopayNeedsLimit], PackagePublishRules::refusals($this->terms(['require_autopay' => true]), true));
         $this->assertSame([PackageRefusal::AutopayNeedsLimit], PackagePublishRules::refusals($this->terms(['require_autopay' => true, 'autopay_limit_amount' => 0]), true));
+        $this->assertSame([], PackagePublishRules::refusals($this->terms(['require_autopay' => true, 'autopay_limit_amount' => 1]), true));
     }
 
     public function test_paying_before_activation_needs_something_charged_at_sign_up(): void
@@ -128,6 +129,12 @@ final class PackagePublishRulesTest extends TestCase
     {
         $this->assertSame([PackageRefusal::FirstPeriodNeedsRecurringCadence], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'one_time', 'charge_first_period' => true]), true));
         $this->assertSame([], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'quarterly', 'charge_first_period' => true]), true));
+    }
+
+    public function test_a_one_time_package_without_a_minimum_term_publishes(): void
+    {
+        $this->assertSame([], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'one_time']), true));
+        $this->assertSame([], PackagePublishRules::refusals($this->terms(['billing_cadence' => 'one_time', 'minimum_term_months' => 0]), true));
     }
 
     public function test_every_refusal_that_applies_is_reported_in_a_stable_order(): void

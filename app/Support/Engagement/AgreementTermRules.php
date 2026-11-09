@@ -38,7 +38,7 @@ final class AgreementTermRules
             'retainer_amount' => ['integer', 'min:0'],
             'retainer_minutes' => ['integer', 'min:0'],
             'rollover_months' => ['integer', 'min:0', 'max:120'],
-            'first_cycle_proration' => [Rule::in(array_map(static fn (FirstCycleProration $case): string => $case->value, FirstCycleProration::cases()))],
+            'first_cycle_proration' => [Rule::in(FirstCycleProration::cases())],
         ];
     }
 

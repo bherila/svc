@@ -3,6 +3,7 @@
 namespace Tests\Feature\ServicePackages;
 
 use App\Exceptions\ServicePackageRefused;
+use App\Mail\AutopayEnabledNoticeMail;
 use App\Mail\ServicePackageNoticeMail;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
@@ -24,9 +25,14 @@ use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Services\Engagement\AgreementWorkflow;
+use App\Services\Packages\PackageAgreementActivations;
+use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\Autopay\AutopayActorRole;
+use App\Support\Billing\Autopay\AutopayConsentAction;
 use App\Support\Billing\Autopay\AutopayConsentRequest;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Packages\LapseOutcome;
@@ -47,6 +53,7 @@ use Inertia\Testing\AssertableInertia;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
+use Tests\Concerns\BootsServicePackages;
 use Tests\Concerns\BuildsServicePackages;
 use Tests\Concerns\FakesStripeApi;
 use Tests\Support\Requirement;
@@ -62,6 +69,7 @@ use Tests\TestCase;
  */
 final class PackageSignupPaymentTest extends TestCase
 {
+    use BootsServicePackages;
     use BuildsServicePackages;
     use FakesStripeApi;
     use RefreshDatabase;
@@ -604,7 +612,7 @@ final class PackageSignupPaymentTest extends TestCase
     {
         [, , $package, $company, $contact] = $this->world(['charge_first_period' => true]);
         $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
-        DB::table('client_agreements')->where('id', $offer->client_agreement_id)->update(['square_series_key' => '000901']);
+        DB::table('client_agreements')->where('id', $offer->client_agreement_id)->update(['square_series_key' => '000777']);
 
         try {
             app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
@@ -642,6 +650,257 @@ final class PackageSignupPaymentTest extends TestCase
         $this->assertSame(1, ClientInvoice::query()->count());
     }
 
+    // ── Review fixes: activation boundary, instants, lapsing, autopay ───────
+
+    /**
+     * ACC-5: a sign-up's draft agreement starts with its service. The
+     * Agreements screen offers it no activation of its own, and the endpoint
+     * behind that control refuses it with a code, so an unpaid sign-up cannot
+     * be started from there.
+     */
+    #[Requirement('ACC-5')]
+    public function test_an_unpaid_sign_ups_agreement_cannot_be_activated_from_the_agreements_screen(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['charge_first_period' => true, 'pay_before_activation' => true]);
+        $enrollment = $this->accept($contact, $company, $package);
+        $agreement = $this->agreement($enrollment);
+        $this->assertSame('awaiting_payment', $enrollment->status);
+
+        $this->actingAs($owner)->get(route('clients.agreements', [$workspace, $company]))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->has('agreements', 1)
+            ->where('agreements.0.id', $agreement->public_id)
+            ->where('agreements.0.activate_href', null)
+            ->where('agreements.0.activate_enrollment', null));
+
+        $this->withCredentials()->withUnencryptedCookie((string) config('session.cookie'), Str::random(40))->withHeader('Idempotency-Key', 'synthetic-package-agreement-activate')
+            ->postJson(route('agent-api.v1.agreements.activate', [$workspace, $agreement->public_id], absolute: false), ['expected_version' => AgentApiVersion::for($agreement), 'confirm' => true])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', PackageRefusal::AgreementStartsWithService->value);
+        try {
+            app(AgreementWorkflow::class)->activate($agreement);
+            $this->fail('A sign-up\'s agreement was activated on its own.');
+        } catch (ServicePackageRefused $refused) {
+            $this->assertSame(PackageRefusal::AgreementStartsWithService->value, $refused->refusalCode());
+        }
+
+        $this->assertSame('draft', $this->agreement($enrollment)->status);
+        $this->assertSame('awaiting_payment', $enrollment->refresh()->status);
+        Mail::assertNotSent(ServicePackageNoticeMail::class);
+    }
+
+    /**
+     * ACC-5, ACC-7: through the agent API too. An agreement waiting for review
+     * is started by enrollments.activate - which the Agreements screen offers
+     * with the enrollment's version - and never by agreements.activate.
+     */
+    #[Requirement('ACC-5', 'ACC-7')]
+    public function test_the_agent_api_starts_a_sign_ups_agreement_only_through_its_enrollment(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['activation_mode' => 'review']);
+        $enrollment = $this->accept($contact, $company, $package);
+        $agreement = $this->agreement($enrollment);
+        $this->assertSame('awaiting_review', $enrollment->status);
+
+        $this->actingAs($owner)->get(route('clients.agreements', [$workspace, $company]))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('agreements.0.activate_href', null)
+            ->where('agreements.0.activate_enrollment.href', route('agent-api.v1.enrollments.activate', [$workspace, $enrollment->public_id], absolute: false))
+            ->where('agreements.0.activate_enrollment.version', AgentApiVersion::for($enrollment)));
+
+        config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+        $this->actingAsMcp($owner, ['clients:read', 'clients:write', 'billing:read']);
+        $this->withHeader('Idempotency-Key', 'synthetic-agent-package-activate')
+            ->postJson('/api/v1/workspaces/'.$workspace->public_id.'/agreements/'.$agreement->public_id.'/activate', ['expected_version' => AgentApiVersion::for($agreement), 'confirm' => true])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', PackageRefusal::AgreementStartsWithService->value);
+        $this->assertSame(['draft', 'awaiting_review'], [$this->agreement($enrollment)->status, $enrollment->refresh()->status]);
+
+        app(PackageEnrollmentWorkflow::class)->activate($owner, $workspace, $enrollment);
+        $this->assertSame(['active', 'active'], [$this->agreement($enrollment)->status, $enrollment->refresh()->status]);
+        Mail::assertSent(ServicePackageNoticeMail::class, 1);
+    }
+
+    /**
+     * Every event an enrollment records is an instant stored in UTC; the day
+     * its service starts is the workspace's. In Auckland at 01:00 on the 16th
+     * it is still the 15th in UTC.
+     */
+    #[Requirement('ACC-2', 'ACC-6')]
+    public function test_enrollment_events_are_stored_as_utc_instants_in_a_workspace_far_from_utc(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world();
+        $workspace->forceFill(['timezone' => 'Pacific/Auckland'])->save();
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 12:00:00', 'UTC'));
+
+        $enrollment = $this->accept($contact, $company, $package);
+        $this->assertSame('active', $enrollment->status);
+        $this->assertSame(
+            ['offered_at' => '2026-11-15 12:00:00', 'accepted_at' => '2026-11-15 12:00:00', 'activated_at' => '2026-11-15 12:00:00'],
+            (array) DB::table('service_package_enrollments')->where('id', $enrollment->id)->first(['offered_at', 'accepted_at', 'activated_at']),
+        );
+        $this->assertSame('2026-11-15T12:00:00+00:00', $enrollment->accepted_at?->toIso8601String());
+        $this->assertSame('2026-11-16', $this->agreement($enrollment)->starts_on->toDateString(), 'the workspace\'s day');
+
+        $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $this->publishedPackage($workspace, $owner, ['link_name' => 'second-hosting', 'invoice_issuing' => 'draft']));
+        // Offered on the 16th in Auckland: it lapses at the start of the 30th there.
+        $this->travelTo(CarbonImmutable::parse('2026-11-29 10:30:00', 'UTC'));
+        $this->assertSame(LapseOutcome::NotDue, app(PackageEnrollmentWorkflow::class)->lapse($workspace, $offer));
+        $this->travelTo(CarbonImmutable::parse('2026-11-29 11:30:00', 'UTC'));
+        $this->assertSame(LapseOutcome::Lapsed, app(PackageEnrollmentWorkflow::class)->lapse($workspace, $offer));
+        $this->assertSame('2026-11-29 11:30:00', DB::table('service_package_enrollments')->where('id', $offer->id)->value('lapsed_at'));
+    }
+
+    /** ACC-6: autopay required, nothing charged at sign-up, never turned on: it lapses at its date. */
+    #[Requirement('ACC-6', 'ACC-4')]
+    public function test_an_unfinished_autopay_only_sign_up_lapses_and_one_whose_autopay_is_on_moves_on(): void
+    {
+        [$workspace, , $package, $company, $contact] = $this->world(['require_autopay' => true, 'autopay_limit_amount' => 120000]);
+        $abandoned = $this->accept($contact, $company, $package);
+        $this->assertSame(['awaiting_payment', null], [$abandoned->status, $abandoned->signup_invoice_id]);
+
+        // Autopay turned on, but the step that moves the sign-up on never ran.
+        $other = $this->company($workspace, 'Harbour Synthetic Deli');
+        $otherContact = $this->contact($other);
+        $stranded = $this->accept($otherContact, $other, $package);
+        $this->saveCard($other, 'pm_synthetic_harbour');
+        $consents = app(AutopayConsentService::class);
+        $consents->turnOn($workspace, $other, new AutopayConsentRequest(AutopayActorRole::Client, $otherContact, 120000, wording: (string) $consents->authorizationWording($workspace, $other, 120000)));
+        $this->assertSame('awaiting_payment', $stranded->refresh()->status);
+
+        $this->travelTo(CarbonImmutable::parse('2026-11-29 00:30:00', 'UTC'));
+        $run = $this->lapseRun();
+        $this->assertEqualsCanonicalizing(
+            [[$abandoned->public_id, 'lapsed'], [$stranded->public_id, 'continued']],
+            array_map(static fn (array $outcome): array => [$outcome['enrollment_id'], $outcome['outcome']], $run['outcomes']),
+        );
+        $this->assertSame(['lapsed', 'draft'], [$abandoned->refresh()->status, $this->agreement($abandoned)->status]);
+        $this->assertSame(['active', 'active'], [$stranded->refresh()->status, $this->agreement($stranded)->status]);
+        $this->assertSame([], $this->lapseRun()['outcomes']);
+    }
+
+    /**
+     * ACC-6: an enrollment lapses on its workspace's calendar day, which can
+     * come less than 24 hours after the offer - a one-day offer made at 23:30
+     * in Auckland lapses at midnight there - and the run reaches it.
+     */
+    #[Requirement('ACC-6')]
+    public function test_the_lapse_run_reaches_a_one_day_offer_due_less_than_a_day_after_it_was_made(): void
+    {
+        [$workspace, $owner, , $company, $contact] = $this->world();
+        $workspace->forceFill(['timezone' => 'Pacific/Auckland'])->save();
+        $package = $this->publishedPackage($workspace, $owner, ['link_name' => 'one-day-hosting', 'invoice_issuing' => 'draft', 'payment_lapse_days' => 1]);
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:30:00', 'UTC'));
+        $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
+
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 10:50:00', 'UTC'));
+        $this->assertSame([], $this->lapseRun()['outcomes'], 'still the 15th in Auckland');
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 11:10:00', 'UTC'));
+        $this->assertSame([[$offer->public_id, 'lapsed']], array_map(static fn (array $outcome): array => [$outcome['enrollment_id'], $outcome['outcome']], $this->lapseRun()['outcomes']));
+        $this->assertSame('lapsed', $offer->refresh()->status);
+    }
+
+    /** ACC-6: one run walks every open enrollment a page at a time, so the oldest never starve a newer one. */
+    #[Requirement('ACC-6')]
+    public function test_one_lapse_run_walks_every_open_enrollment_a_page_at_a_time(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world();
+        $workflow = app(PackageEnrollmentWorkflow::class);
+        $due = [$workflow->addFromPortal($contact, $company, $package)];
+        foreach (['second', 'third'] as $name) {
+            $due[] = $workflow->addFromPortal($contact, $company, $this->publishedPackage($workspace, $owner, ['link_name' => $name.'-hosting', 'invoice_issuing' => 'draft']));
+        }
+        $this->travelTo(CarbonImmutable::parse('2026-11-20 10:00:00', 'UTC'));
+        $notYet = $workflow->addFromPortal($contact, $company, $this->publishedPackage($workspace, $owner, ['link_name' => 'fourth-hosting', 'invoice_issuing' => 'draft']));
+
+        $this->travelTo(CarbonImmutable::parse('2026-11-29 00:30:00', 'UTC'));
+        Artisan::call('svc:packages:lapse-enrollments', ['--apply' => true, '--page' => 1, '--format' => 'json']);
+        $run = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertSame(array_map(static fn (ServicePackageEnrollment $enrollment): string => $enrollment->public_id, $due), array_column($run['outcomes'], 'enrollment_id'));
+        $this->assertSame(['lapsed', 'lapsed', 'lapsed'], array_map(static fn (ServicePackageEnrollment $enrollment): string => (string) $enrollment->refresh()->status, $due));
+        $this->assertSame('offered', $notYet->refresh()->status);
+    }
+
+    /**
+     * ACC-4: autopay's limit is in the company's billing currency. A version
+     * in another currency is refused at acceptance, says why on the review
+     * page, and a consent in another currency never meets it.
+     */
+    #[Requirement('ACC-4')]
+    public function test_required_autopay_in_another_currency_is_never_met(): void
+    {
+        [$workspace, , $package, $company, $contact] = $this->world(['require_autopay' => true, 'autopay_limit_amount' => 120000]);
+        $euros = $this->company($workspace, 'Canal Synthetic Bistro');
+        $euros->forceFill(['currency' => 'EUR'])->save();
+        $eurosContact = $this->contact($euros);
+        $this->saveCard($euros, 'pm_synthetic_canal');
+        $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($eurosContact, $euros, $package);
+
+        $this->actingAs($eurosContact)->get("/portal/{$euros->public_id}/services/{$offer->public_id}")->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('checkout.autopay.satisfied', false)
+            ->where('checkout.autopay.unavailable', PackageRefusal::AutopayCurrencyMismatch->message())
+            ->where('checkout.autopay.wording', null)
+            ->where('checkout.autopay.enable_url', null));
+        try {
+            app(PackageEnrollmentWorkflow::class)->accept($eurosContact, $euros, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            $this->fail('A sign-up whose autopay could never be met was accepted.');
+        } catch (ServicePackageRefused $refused) {
+            $this->assertSame(PackageRefusal::AutopayCurrencyMismatch->value, $refused->refusalCode());
+        }
+        $this->assertSame(['offered', null], [$offer->refresh()->status, $offer->accepted_at]);
+
+        // A dollar consent at the package's number, while the company now bills in euros.
+        $enrollment = $this->accept($contact, $company, $package);
+        $this->saveCard($company);
+        $consents = app(AutopayConsentService::class);
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Client, $contact, 120000, wording: (string) $consents->authorizationWording($workspace, $company, 120000)));
+        $company->forceFill(['currency' => 'EUR'])->save();
+        app(PackageEnrollmentWorkflow::class)->autopayChanged($workspace, $company);
+        $this->assertSame('awaiting_payment', $enrollment->refresh()->status);
+        $this->assertSame(['autopay'], app(PackageEnrollmentReadService::class)->get($this->ownerOf($workspace), $workspace, $enrollment->public_id)['payment']['waiting_for']);
+
+        // Back in dollars, the client's consent stands and meets it.
+        $company->forceFill(['currency' => null])->save();
+        app(PackageEnrollmentWorkflow::class)->autopayChanged($workspace, $company);
+        $this->assertSame('active', $enrollment->refresh()->status);
+    }
+
+    /**
+     * ACC-4: the provider turned autopay on at exactly the package's limit.
+     * The client's own authorization of that limit is recorded - once, with
+     * no second notice - and meets the package.
+     */
+    #[Requirement('ACC-4')]
+    public function test_the_clients_consent_is_recorded_when_a_provider_already_set_the_packages_limit(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['require_autopay' => true, 'autopay_limit_amount' => 120000]);
+        $this->saveCard($company);
+        $consents = app(AutopayConsentService::class);
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Provider, $owner, 120000, attestation: 'Synthetic: the client agreed on a call.'));
+        Mail::assertSent(AutopayEnabledNoticeMail::class, 1);
+        $enrollment = $this->accept($contact, $company, $package);
+        $this->assertSame('awaiting_payment', $enrollment->status);
+
+        $wording = (string) $consents->authorizationWording($workspace, $company, 120000);
+        $page = "/portal/{$company->public_id}/services/{$enrollment->public_id}";
+        $this->actingAs($contact)->get($page)->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('checkout.autopay.satisfied', false)
+            ->where('checkout.autopay.enable_url', "/portal/{$company->public_id}/autopay"));
+        $this->post("/portal/{$company->public_id}/autopay", ['limit_amount' => 120000, 'wording' => $wording, 'authorized' => true, 'service' => $enrollment->public_id])
+            ->assertRedirect($page);
+
+        $records = ClientAutopayConsent::query()->where('client_company_id', $company->id)->orderBy('id')->get();
+        $this->assertSame([AutopayActorRole::Provider, AutopayActorRole::Client], $records->pluck('actor_role')->all());
+        $this->assertSame([AutopayConsentAction::Enabled, 120000, $wording], [$records[1]->action, $records[1]->limit_amount, $records[1]->wording]);
+        $this->assertSame(120000, $company->refresh()->autopay_limit_amount);
+        $this->assertSame('active', $enrollment->refresh()->status);
+
+        // Replays by either side record nothing more, and nobody is told twice.
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Client, $contact, 120000, wording: $wording));
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Provider, $owner, 120000, attestation: 'Synthetic: the client agreed again.'));
+        $this->assertSame(2, ClientAutopayConsent::query()->where('client_company_id', $company->id)->count());
+        Mail::assertSent(AutopayEnabledNoticeMail::class, 1);
+    }
+
     // ── Isolation ───────────────────────────────────────────────────────────
 
     /** A paid invoice of another workspace, with the same id, moves nothing here: every read names the workspace. */
@@ -657,6 +916,10 @@ final class PackageSignupPaymentTest extends TestCase
         app(PackageEnrollmentWorkflow::class)->autopayChanged($other, $company);
         $this->assertSame('awaiting_payment', $enrollment->refresh()->status);
         $this->assertSame(LapseOutcome::NotDue, app(PackageEnrollmentWorkflow::class)->lapse($workspace, $enrollment));
+        // Which agreements a sign-up owns is read in the workspace only.
+        $agreementId = (int) $enrollment->client_agreement_id;
+        $this->assertArrayHasKey($agreementId, app(PackageAgreementActivations::class)->forAgreements($workspace, [$agreementId]));
+        $this->assertSame([], app(PackageAgreementActivations::class)->forAgreements($other, [$agreementId]));
     }
 
     // ── Fixtures ────────────────────────────────────────────────────────────

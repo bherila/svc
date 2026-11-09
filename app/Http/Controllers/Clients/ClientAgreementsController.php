@@ -10,6 +10,7 @@ use App\Models\ClientProposal;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Packages\PackageAgreementActivations;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
@@ -41,6 +42,7 @@ final class ClientAgreementsController extends Controller
         private readonly BillingScheduleReadPresenter $schedules,
         private readonly WorkspaceAuthorization $authorization,
         private readonly ProjectAccess $access,
+        private readonly PackageAgreementActivations $packageActivations,
     ) {}
 
     public function __invoke(Request $request, Workspace $workspace, ClientCompany $clientCompany): Response
@@ -66,6 +68,9 @@ final class ClientAgreementsController extends Controller
             ->where('client_company_id', $clientCompany->id)
             ->latest('id')
             ->get();
+        // A sign-up's draft agreement starts with its service, never through
+        // agreements.activate (ACC-5): its control is the enrollment's.
+        $packageActivations = $manages ? $this->packageActivations->forAgreements($workspace, array_values($agreements->map(static fn (ClientAgreement $agreement): int => (int) $agreement->id)->all())) : [];
         $schedules = ClientBillingSchedule::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $clientCompany->id)
@@ -90,8 +95,11 @@ final class ClientAgreementsController extends Controller
                 ...AgreementReadPresenter::summary($agreement),
                 'version' => AgentApiVersion::for($agreement),
                 'href' => route('clients.agreement', [$workspace, $clientCompany, $agreement], absolute: false),
-                'activate_href' => $manages && $agreement->status === 'draft'
+                'activate_href' => $manages && $agreement->status === 'draft' && ! array_key_exists((int) $agreement->id, $packageActivations)
                     ? route('agent-api.v1.agreements.activate', [$workspace, $agreement->public_id], absolute: false) : null,
+                // The enrollment's activation, with its own version, while the
+                // service the client signed waits for review.
+                'activate_enrollment' => $agreement->status === 'draft' ? ($packageActivations[(int) $agreement->id] ?? null) : null,
                 'create_schedule_href' => $manages && $agreement->status === 'active' && ! $schedules->contains('client_agreement_id', $agreement->id)
                     ? route('agent-api.v1.billing-schedules.store', [$workspace], absolute: false) : null,
                 'currency' => $agreement->currency,

@@ -22,17 +22,17 @@ use LogicException;
  * Reads only what the caller loaded - the company, project, agreement,
  * package, the version offered and the version accepted with their
  * components, the sign-up invoice - and the company's client-consented
- * autopay limit the caller read for the page, so it issues no queries. URLs are finished here, after the caller's authorization: an owner
+ * autopay the caller read for the page, so it issues no queries. URLs are finished here, after the caller's authorization: an owner
  * is pointed at the operator screens and a client at the portal, never at a
  * page their route family does not serve.
  */
 final class PackageEnrollmentPresenter
 {
     /**
-     * @param  int|null  $clientAutopayLimit  the limit the company's autopay stands at on the client's own consent, if it does
+     * @param  ClientAutopay|null  $clientAutopay  where the company's autopay stands on the client's own consent, if it does
      * @return array<string, mixed>
      */
-    public static function forManager(Workspace $workspace, ServicePackageEnrollment $enrollment, ?int $clientAutopayLimit = null): array
+    public static function forManager(Workspace $workspace, ServicePackageEnrollment $enrollment, ?ClientAutopay $clientAutopay = null): array
     {
         [$company, $project, $agreement, $package, $offered, $accepted] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
@@ -54,7 +54,7 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
-            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopayLimit, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
+            'payment' => self::payment($enrollment, $accepted ?? $offered, $clientAutopay, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
                 : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
             'invoicing' => self::invoicing($workspace, $enrollment, $company, $agreement, $accepted ?? $offered),
             'version' => AgentApiVersion::for($enrollment),
@@ -115,16 +115,17 @@ final class PackageEnrollmentPresenter
      * secret (API-4).
      *
      * @param  ServicePackageVersion  $carried  the version whose terms apply, components loaded
+     * @param  ClientAutopay|null  $clientAutopay  where the company's autopay stands on the client's own consent, if it does
      * @param  string|null  $invoiceUrl  the sign-up invoice's page for this reader, finished
      * @return array{state: string, waiting_for: list<string>, signup_invoice: array<string, mixed>|null, requires_autopay: bool, autopay_limit_amount: int|null, pay_before_activation: bool, lapses_on: string|null}
      */
-    public static function payment(ServicePackageEnrollment $enrollment, ServicePackageVersion $carried, ?int $clientAutopayLimit, string $timezone, ?string $invoiceUrl): array
+    public static function payment(ServicePackageEnrollment $enrollment, ServicePackageVersion $carried, ?ClientAutopay $clientAutopay, string $timezone, ?string $invoiceUrl): array
     {
         $terms = PackageTerms::fromVersion($carried);
         $invoice = self::signupInvoice($enrollment);
         $status = $enrollment->enrollmentStatus();
         $waiting = $status === EnrollmentStatus::AwaitingPayment
-            ? SignupGate::waitingFor($terms, SignupGate::invoiceSettled($invoice), $terms->requireAutopay && $clientAutopayLimit === $terms->autopayLimitAmount)
+            ? SignupGate::waitingFor($terms, SignupGate::invoiceSettled($invoice), ClientAutopay::meets($clientAutopay, $terms))
             : [];
 
         return [
@@ -152,10 +153,10 @@ final class PackageEnrollmentPresenter
      *
      * @param  ServicePackageVersion  $terms  the version whose terms to show, components loaded
      * @param  string  $url  the service's own portal page: review and sign while offered, its record after
-     * @param  int|null  $clientAutopayLimit  the limit the company's autopay stands at on the client's own consent, if it does
+     * @param  ClientAutopay|null  $clientAutopay  where the company's autopay stands on the client's own consent, if it does
      * @return array<string, mixed>
      */
-    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, string $url, ?int $clientAutopayLimit = null, string $timezone = 'UTC'): array
+    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, string $url, ?ClientAutopay $clientAutopay = null, string $timezone = 'UTC'): array
     {
         [$company, $project, $agreement] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
@@ -180,7 +181,7 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'agreement_url' => $agreementUrl,
-            'payment' => self::payment($enrollment, $terms, $clientAutopayLimit, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
+            'payment' => self::payment($enrollment, $terms, $clientAutopay, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
                 : $base.route('portal.invoice', [$company, $invoice], false)),
             // When the next billing period, and so its invoice, begins; not how
             // that invoice is made, which is the operator's setting.

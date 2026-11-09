@@ -110,6 +110,8 @@ final class PackageAdminController extends Controller
     public function requests(Request $request, Workspace $workspace): Response
     {
         $user = $this->manager($request, $workspace);
+        $cursor = $request->query('cursor');
+        $page = $this->requestReads->list($user, $workspace, limit: self::PAGE_SIZE, cursor: is_string($cursor) ? $cursor : null);
 
         return Inertia::render('packages/requests', [
             ...$this->workspaceProps($workspace),
@@ -125,7 +127,10 @@ final class PackageAdminController extends Controller
                         'erase' => ! $open && $packageRequest['erased_at'] === null ? route('agent-api.v1.package-requests.erase', $parameters, absolute: false) : null,
                     ],
                 ];
-            }, $this->requestReads->list($user, $workspace, limit: 100)['data']),
+            }, $page['data']),
+            // Older requests are a page link away (Codex P2 on #666).
+            'next_page_url' => $page['meta']['next_cursor'] === null ? null : route('packages.requests.index', ['workspace' => $workspace, 'cursor' => $page['meta']['next_cursor']], absolute: false),
+            'first_page_url' => is_string($cursor) ? route('packages.requests.index', $workspace, absolute: false) : null,
             // Existing clients a request may be attached to instead of creating one (EDGE-4).
             'clients' => ClientCompany::query()->where('workspace_id', $workspace->id)->orderBy('name')->get(['public_id', 'name'])
                 ->map(static fn (ClientCompany $company): array => ['id' => $company->public_id, 'name' => $company->name])->values()->all(),

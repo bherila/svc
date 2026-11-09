@@ -33,6 +33,7 @@ use App\Support\Packages\PackageTerms;
 use App\Support\Packages\PortalAddRule;
 use App\Support\Packages\SignupGate;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -132,9 +133,11 @@ final class PackageEnrollmentWorkflow
      * here, on the draft agreement (ACC-3), and the enrollment then waits
      * `awaiting_payment` for what {@see SignupGate} says it must (ACC-4).
      * Refused with `package_payment_unavailable` once the Stripe connection
-     * has gone, `package_collected_in_square` for an agreement Square bills
-     * (X-2), and `package_first_period_unbillable` when the engine refuses the
-     * first cycle; each leaves nothing behind.
+     * has gone, `package_autopay_currency_mismatch` when the version requires
+     * autopay in a currency other than the company's billing currency (the
+     * one autopay's limit is in), `package_collected_in_square` for an
+     * agreement Square bills (X-2), and `package_first_period_unbillable` when
+     * the engine refuses the first cycle; each leaves nothing behind.
      *
      * @param  array<string, mixed>  $input  signer_name, signer_title, accepted_terms
      */
@@ -174,6 +177,11 @@ final class PackageEnrollmentWorkflow
             if ($terms->involvesPayment() && $this->payments->stripe($workspace) === null) {
                 throw ServicePackageRefused::because(PackageRefusal::PaymentUnavailable);
             }
+            // ACC-4: autopay in another currency could never meet the version,
+            // so the sign-up would only wait and lapse.
+            if ($terms->requireAutopay && ! $this->autopay->currencyMatches($workspace, $company, $terms)) {
+                throw ServicePackageRefused::because(PackageRefusal::AutopayCurrencyMismatch);
+            }
             $agreement = $this->agreementOf($workspace, $locked);
             if ($agreement->status !== 'draft') {
                 throw ServicePackageRefused::because(PackageRefusal::OfferNotOpen);
@@ -184,7 +192,7 @@ final class PackageEnrollmentWorkflow
             $agreement = $this->agreements->update($workspace, $agreement, ['starts_on' => $this->clock->today($workspace)->toDateString()]);
 
             $locked->forceFill([
-                'accepted_at' => $this->clock->now($workspace),
+                'accepted_at' => $this->instant(),
                 'accepted_by_user_id' => $contact->id,
                 'signer_name' => $signer->name,
                 'signer_title' => $signer->title,
@@ -285,10 +293,12 @@ final class PackageEnrollmentWorkflow
      * agreement stays a draft, never activated.
      *
      * Decided under the enrollment's lock against the invoice as it is now, so
-     * a payment and the lapse cannot both win: a sign-up invoice already paid
-     * moves the enrollment on instead, and one with money received or still in
+     * a payment and the lapse cannot both win: a sign-up whose wait is over
+     * (its invoice paid, autopay on) moves on instead, a paid invoice still
+     * waiting for autopay is held, and one with money received or still in
      * flight is not voided (the void refuses it) and is held for a later run.
-     * Running it again changes nothing.
+     * A sign-up with no invoice that still waits for autopay lapses. Running
+     * it again changes nothing.
      */
     public function lapse(Workspace $workspace, ServicePackageEnrollment $enrollment): LapseOutcome
     {
@@ -307,10 +317,19 @@ final class PackageEnrollmentWorkflow
             }
 
             $invoice = $this->signupInvoiceOf($workspace, $locked);
-            if ($status === EnrollmentStatus::AwaitingPayment && SignupGate::invoiceSettled($invoice)) {
-                $moved = $this->continueSignup($workspace, $locked);
-
-                return $moved->enrollmentStatus() === EnrollmentStatus::AwaitingPayment ? LapseOutcome::Held : LapseOutcome::Continued;
+            if ($status === EnrollmentStatus::AwaitingPayment) {
+                // What it waited for may be in place with its after-commit
+                // step never run: move it on instead.
+                if ($this->continueSignup($workspace, $locked)->enrollmentStatus() !== EnrollmentStatus::AwaitingPayment) {
+                    return LapseOutcome::Continued;
+                }
+                // A sign-up invoice actually paid is never voided under the
+                // client; it waits for the rest (autopay) in a later run. No
+                // invoice at all is nothing paid: an autopay-only sign-up
+                // left unfinished lapses.
+                if ($invoice instanceof ClientInvoice && SignupGate::invoiceSettled($invoice)) {
+                    return LapseOutcome::Held;
+                }
             }
             if ($invoice instanceof ClientInvoice && $invoice->status !== InvoiceStatus::Void->value) {
                 try {
@@ -323,7 +342,7 @@ final class PackageEnrollmentWorkflow
             }
 
             $this->assertMove($status, EnrollmentStatus::Lapsed);
-            $locked->forceFill(['status' => EnrollmentStatus::Lapsed->value, 'lapsed_at' => $this->clock->now($workspace)])->save();
+            $locked->forceFill(['status' => EnrollmentStatus::Lapsed->value, 'lapsed_at' => $this->instant()])->save();
 
             return LapseOutcome::Lapsed;
         });
@@ -373,7 +392,7 @@ final class PackageEnrollmentWorkflow
         $this->assertMove($enrollment->enrollmentStatus(), EnrollmentStatus::Active);
         DB::transaction(function () use ($workspace, $company, $enrollment, $agreement, $version, $activatedBy): void {
             try {
-                $active = $this->agreements->activate($agreement);
+                $active = $this->agreements->activate($agreement, enrollment: $enrollment);
             } catch (EngagementException) {
                 throw ServicePackageRefused::because(PackageRefusal::ActivationConflict);
             }
@@ -381,7 +400,7 @@ final class PackageEnrollmentWorkflow
             $this->agreements->sign($active, $signer, (string) $enrollment->signer_name, $enrollment->signer_title);
             $enrollment->forceFill([
                 'status' => EnrollmentStatus::Active->value,
-                'activated_at' => $this->clock->now($workspace),
+                'activated_at' => $this->instant(),
                 'activated_by_user_id' => $activatedBy?->id,
             ])->save();
 
@@ -413,9 +432,20 @@ final class PackageEnrollmentWorkflow
         $enrollment->forceFill(['status' => $next->value])->save();
     }
 
+    /**
+     * The present instant in UTC, for an event's timestamp. The workspace's
+     * clock reads local time, and a datetime column keeps the wall time
+     * without its offset, so a local instant would be stored shifted by the
+     * zone. Dates the workspace's calendar decides (starts_on) stay local.
+     */
+    private function instant(): CarbonImmutable
+    {
+        return $this->clock->now()->utc();
+    }
+
     private function autopayReady(Workspace $workspace, ClientCompany $company, PackageTerms $terms): bool
     {
-        return ! $terms->requireAutopay || $this->autopay->satisfied($workspace, $company, (int) $terms->autopayLimitAmount);
+        return ! $terms->requireAutopay || $this->autopay->satisfied($workspace, $company, $terms);
     }
 
     /** Whether the sign-up invoice is the agreement's first cycle invoice, which fixes the day its service began. */

@@ -190,6 +190,8 @@ export function requestsProps(
 ): PackageRequestsProps {
     return {
         requests: [requestRow()],
+        next_page_url: null,
+        first_page_url: null,
         clients: [
             { id: 'client-1', name: 'Pine Street Dental' },
             { id: 'client-2', name: 'Harbor Yoga' },

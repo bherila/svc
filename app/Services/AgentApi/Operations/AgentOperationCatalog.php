@@ -1595,7 +1595,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.activate',
                 'Activate agreement',
-                'Activate a draft or paused agreement so it governs billing. Requires explicit user confirmation and the current version. Overlapping active agreements are refused.',
+                'Activate a draft or paused agreement so it governs billing. Requires explicit user confirmation and the current version. Overlapping active agreements are refused. A draft agreement a service package sign-up created is refused with package_agreement_starts_with_service: it starts with its service, through enrollments.activate when it waits for review.',
                 [AgentMcpClientWriteTools::class, 'agreementsActivate'],
                 Effect::LocalWrite,
                 true,
@@ -2388,7 +2388,7 @@ final class AgentOperationCatalog
     private static function requestBody(string $id): array
     {
         if (isset(ServicePackageOperations::ROUTES[$id])) {
-            return ServicePackageOperations::schema((string) ServicePackageOperations::DEFINITIONS[$id][4]);
+            return ServicePackageOperations::requestSchema($id);
         }
 
         return AgentApiResponseSchemaCatalog::requestForOperation($id);

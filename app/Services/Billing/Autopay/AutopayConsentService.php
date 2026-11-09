@@ -64,7 +64,9 @@ final class AutopayConsentService
 
     /**
      * Turn autopay on, or change its limit when it is already on. Asking for
-     * the state it is already in changes and records nothing.
+     * the state it is already in changes and records nothing - except a
+     * client authorizing, in their own words, the limit a provider turned on:
+     * that records the client's consent, with no notice.
      *
      * @throws DomainException when the request is not one autopay can honour
      * @throws AutopayVersionConflict
@@ -107,10 +109,19 @@ final class AutopayConsentService
             }
 
             $on = $locked->autopay_enabled_at !== null && $locked->autopay_limit_amount !== null;
-            if ($on && (int) $locked->autopay_limit_amount === $request->limit) {
-                return $this->latest($workspace, $locked) ?? throw new DomainException('Autopay is on without a consent record.');
+            $sameLimit = $on && (int) $locked->autopay_limit_amount === $request->limit;
+            if ($sameLimit) {
+                $standing = $this->latest($workspace, $locked) ?? throw new DomainException('Autopay is on without a consent record.');
+                // A replay - or a provider asking for what already stands -
+                // changes nothing. A client authorizing the limit a provider
+                // turned on is not a replay: it is the client's own consent,
+                // which a service package may require (ACC-4), so it is
+                // recorded. The provider's turn-on was announced already.
+                if ($request->role !== AutopayActorRole::Client || $standing->actor_role === AutopayActorRole::Client) {
+                    return $standing;
+                }
             }
-            $action = $on ? AutopayConsentAction::LimitChanged : AutopayConsentAction::Enabled;
+            $action = $on && ! $sameLimit ? AutopayConsentAction::LimitChanged : AutopayConsentAction::Enabled;
             $now = $this->clock->now($workspace)->utc();
             $before = ['enabled' => $on, 'limit' => $locked->autopay_limit_amount];
             $locked->forceFill([

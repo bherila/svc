@@ -41,6 +41,7 @@ final class WebApiParityTest extends TestCase
         'workspaces.payments.webhook.fix' => 'deliberate:subscribing the Stripe webhook endpoint to the events SVC needs, or creating it and storing the new signing secret, uses the workspace\'s payment key and is confirmed in the browser by a signed-in owner or admin; payment connections have no agent writes',
         'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
         'logout' => 'web-only:sign-out',
+        'packages.public.request' => 'deliberate:an anonymous visitor requesting a service package from its public page (docs/service-packages.md PUB-4); there is no signed-in principal and the request creates nothing until an owner or admin decides it through package_requests.* on the agent API',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',
         'svc.billing.invoices.stripe-payment-intent' => 'web-only:payment processor hand-off',
         'svc.billing.stripe.webhook' => 'web-only:inbound webhook',
@@ -56,6 +57,8 @@ final class WebApiParityTest extends TestCase
         'portal.payment-methods.confirm' => 'deliberate:reads back the setup the client contact just completed in Stripe\'s form, in the portal, so the saved method appears without waiting for the webhook',
         'portal.payment-methods.default' => 'deliberate:a client contact choosing which of their own saved payment methods autopay charges is their own act in the portal; the provider side is companies.autopay.set',
         'portal.payment-methods.destroy' => 'deliberate:a client contact removing their own saved payment method is their own act in the portal, and turns autopay off if it was the default',
+        'portal.services.accept' => 'deliberate:a client contact accepting a service package offer is their own signature on the agreement, given in the portal, which holds no agent credential; client agents read services through client_services.* only (docs/service-packages.md ACC-1, API-5)',
+        'portal.services.add' => 'deliberate:a client contact adding a portal-addable package for their own company is their own act in the portal (ACC-8); the provider side offers through package_requests.approve',
         'portal.approvals.dispute' => 'deliberate:a client contact disputing a row, with a note, is an interactive decision by the payer in the portal, which holds no agent credential',
         // Sharing a project crosses a workspace boundary, so only a signed-in
         // owner or admin of each side may open, accept, end or relink it (#631).

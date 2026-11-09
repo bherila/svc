@@ -234,6 +234,10 @@ export type PackageRequestRow = {
 
 export type PackageRequestsProps = {
     requests: PackageRequestRow[];
+    /** The next page of requests, when there is one. */
+    next_page_url: string | null;
+    /** Back to the first page, when this is a later one. */
+    first_page_url: string | null;
     clients: { id: string; name: string }[];
     catalog_url: string | null;
     stripe_connected: boolean;
@@ -357,6 +361,8 @@ export type PortalCheckout = {
         currency: string;
         limit_label: string;
         satisfied: boolean;
+        /** Why autopay cannot meet this service here (its currency differs from the account's); null when it can. */
+        unavailable: string | null;
         /** The exact sentence the client authorizes; null until a default card is saved. */
         wording: string | null;
         /** The existing autopay enable endpoint; null until it may be used. */
