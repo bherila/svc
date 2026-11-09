@@ -536,7 +536,7 @@ final class BillingHistoryInvariantTest extends TestCase
                 ->whereIn('client_invoice_lines.type', ['retainer', 'recurring_item'])->where('client_invoice_lines.total_amount', '>', 0)
                 ->orderBy('client_invoice_lines.line_date')->get(['client_invoice_lines.type', 'client_invoice_lines.line_date', 'client_invoice_lines.total_amount'])
                 ->map(fn (ClientInvoiceLine $line): array => [(string) $line->type, $line->line_date?->toDateString(), (int) $line->total_amount])->all();
-            $periods = $cadence === 'monthly' ? 11 : 4;
+            $periods = $cadence === 'monthly' ? 11 : 5;
             foreach (['retainer', 'recurring_item'] as $type) {
                 $lines = array_values(array_filter($sold, static fn (array $line): bool => $line[0] === $type));
                 $this->assertCount($periods, $lines, "{$world}: every period's {$type} once, none skipped.");
@@ -562,15 +562,17 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertNotEmpty(array_filter($hourly['moved'], static fn (array $row): bool => $row[0] < $effective && $row[0] >= '2026-06-01'), 'The history must settle the last old period\'s overage after the move.');
     }
 
-    /** What the move does, done by hand: the old agreement ended the day before, a new one from the new version started on the date. */
+    /**
+     * What the move does, done by hand: the old agreement ended the day
+     * before, its invoice for the first new period rebuilt to settle its last
+     * period's work, and a new agreement from the new version started on the date.
+     */
     private function renewByHand(Workspace $workspace, ClientCompany $company, ClientProject $project, ClientAgreement $old, ServicePackage $package, string $effective): void
     {
         $version = ServicePackageVersion::query()->with('components')->findOrFail($package->refresh()->published_version_id);
-        foreach (ClientInvoice::query()->where('client_agreement_id', $old->id)->where('status', InvoiceStatus::Draft->value)->whereDate('cycle_start', '>=', $effective)->orderByDesc('cycle_start')->get() as $draft) {
-            app(InvoiceLifecycleService::class)->discardDraft($draft, $workspace, 'Synthetic renewal');
-        }
         $agreements = app(AgreementWorkflow::class);
         $agreements->terminate($old, CarbonImmutable::parse($effective)->subDay()->toDateString());
+        app(ClientInvoicingService::class)->generateCadencePeriod($company, $old->refresh(), Carbon::parse($effective));
         $renewal = app(PackageAgreementTerms::class)->createDraft($workspace, $company, $project, $version, CarbonImmutable::parse($effective));
         $agreements->activate($renewal);
     }

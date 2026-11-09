@@ -14,9 +14,11 @@ use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\AgreementSelector;
 use App\Services\Billing\BillingMaintenance;
+use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\CancellationRecords;
+use App\Support\Billing\EmptyCadenceDraft;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\Packages\EnrollmentStatus;
@@ -27,11 +29,14 @@ use App\Support\Packages\Migration\MigrationRunOutcome;
 use App\Support\Packages\Migration\MigrationStatus;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\WorkspaceClock;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -88,6 +93,7 @@ final class PackageMigrationApplier
         private readonly PackageAgreementTerms $terms,
         private readonly CancellationRecords $cancellations,
         private readonly InvoiceLifecycleService $invoices,
+        private readonly ClientInvoicingService $invoicing,
         private readonly ClientActivityRecorder $activities,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
@@ -176,14 +182,7 @@ final class PackageMigrationApplier
             $scheduled->forceFill(['client_agreement_id' => $successor->id])->save();
         }
         $this->agreements->terminate($old, $effective->subDay()->toDateString());
-        // Latest first: an earlier draft a later one relies on is discarded after it.
-        foreach ($claims as $draft) {
-            try {
-                $this->invoices->discardDraft($draft, $workspace, 'Priced on terms replaced by a move to a new package version from '.$effective->toDateString().'.');
-            } catch (DomainException $kept) {
-                throw new MigrationHeld(MigrationHold::DraftKept, $kept->getMessage());
-            }
-        }
+        $this->settleLastOldPeriod($workspace, $company, $old, $claims, $effective);
         // The service names its new agreement before starting it, so the
         // activation sees the enrollment that owns it.
         $enrollment->forceFill(['client_agreement_id' => $successor->id, 'current_version_id' => $migration->to_version_id])->save();
@@ -198,6 +197,42 @@ final class PackageMigrationApplier
         ], occurrence: (string) Str::uuid());
 
         return MigrationRunOutcome::Applied;
+    }
+
+    /**
+     * The old term's own invoice for the first period from the effective date:
+     * the agreement has ended, so it sells nothing, and it reconciles the
+     * last old period's work (December's time, on January's invoice) on the
+     * terms that work was done under. Written now, before the new agreement
+     * starts, so no generator of the new agreement can reach that work first
+     * and price it on the new terms. A draft already made for that period is
+     * rebuilt into it; drafts for later periods are discarded; one that bills
+     * nothing (a fixed-price service has nothing to settle) is discarded too.
+     *
+     * @param  Collection<int, ClientInvoice>  $drafts  the old agreement's drafts from the effective date on, latest first
+     *
+     * @throws MigrationHeld
+     */
+    private function settleLastOldPeriod(Workspace $workspace, ClientCompany $company, ClientAgreement $old, Collection $drafts, CarbonImmutable $effective): void
+    {
+        try {
+            foreach ($drafts as $draft) {
+                if ($draft->cycle_start?->toDateString() !== $effective->toDateString()) {
+                    $this->invoices->discardDraft($draft, $workspace, 'A period after the agreement ended, on a move to a new package version from '.$effective->toDateString().'.');
+                }
+            }
+        } catch (DomainException $kept) {
+            throw new MigrationHeld(MigrationHold::DraftKept, $kept->getMessage());
+        }
+        $ended = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($old->id)->tap(Locks::forUpdate())->firstOrFail();
+        try {
+            $settlement = EmptyCadenceDraft::load($workspace, $this->invoicing->generateCadencePeriod($company, $ended, Carbon::parse($effective->toDateString())));
+            if (EmptyCadenceDraft::billsNothing($settlement)) {
+                $this->invoices->discardDraft($settlement, $workspace, 'Nothing to settle on the terms a move to a new package version replaced from '.$effective->toDateString().'.');
+            }
+        } catch (RuntimeException|DomainException $refused) {
+            throw new MigrationHeld(MigrationHold::SettlementRefused, $refused->getMessage());
+        }
     }
 
     /**
