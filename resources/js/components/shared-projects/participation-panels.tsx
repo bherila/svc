@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { LogOutIcon, PlusIcon, UserMinusIcon } from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -40,6 +41,7 @@ export function ConfirmedAction({
     description,
     confirmLabel,
     run,
+    children,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -47,6 +49,8 @@ export function ConfirmedAction({
     description: string;
     confirmLabel: string;
     run: () => Promise<string | null>;
+    /** Fields the decision needs, shown between the explanation and the buttons. */
+    children?: ReactNode;
 }) {
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -62,6 +66,7 @@ export function ConfirmedAction({
                         {description}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
+                {children}
                 {error !== null && (
                     <p role="alert" className="text-sm text-destructive">
                         {error}

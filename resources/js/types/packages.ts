@@ -166,6 +166,77 @@ export type PublicPackageProps = {
     package: PublicPackageDetails;
     catalog_url: string | null;
     sign_in_url: string;
-    /** The request form arrives with sign-up requests; null in this slice. */
-    request: null;
+    request: PublicRequestForm;
+};
+
+export type PublicRequestQuestion = {
+    key: string;
+    label: string;
+    kind: string;
+    required: boolean;
+    max_length: number;
+};
+
+/** What the visitor's request form is built from; the server sends it finished. */
+export type PublicRequestForm = {
+    submit_url: string;
+    /** Opaque; sent back with the submission. */
+    form_token: string;
+    /** The name of a field people never see; a robot fills it in. */
+    honeypot_field: string;
+    questions: PublicRequestQuestion[];
+    /** A signed-in visitor's own name and email, to start from. */
+    prefill: { contact_name: string; email: string } | null;
+};
+
+export type PackageRequestUrls = {
+    approve: string | null;
+    decline: string | null;
+    erase: string | null;
+};
+
+export type PackageRequestAnswer = {
+    key: string;
+    question: string;
+    answer: string | null;
+};
+
+/** Everything the visitor typed: text to show, never markup to interpret (PUB-6). */
+export type PackageRequestUntrusted = {
+    company_name: string;
+    contact_name: string;
+    email: string;
+    phone: string | null;
+    answers: PackageRequestAnswer[];
+};
+
+export type PackageRequestRow = {
+    id: string;
+    status: string;
+    package: {
+        id: string;
+        name: string;
+        link_name: string;
+        version_number: number;
+    };
+    submitted_at: string;
+    decided_at: string | null;
+    decline_reason: string | null;
+    client: { id: string; name: string } | null;
+    suggested_client: { id: string; name: string } | null;
+    erased_at: string | null;
+    /** Null once the request was erased. */
+    untrusted: PackageRequestUntrusted | null;
+    /** Opaque; sent back as expected_version. */
+    version: string;
+    urls: PackageRequestUrls;
+};
+
+export type PackageRequestsProps = {
+    requests: PackageRequestRow[];
+    clients: { id: string; name: string }[];
+    catalog_url: string | null;
+    stripe_connected: boolean;
+    requests_url: string;
+    open_requests_count: number;
 };

@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { RequestForm } from '@/components/packages/request-form';
 import { PublicLayout } from '@/components/packages/public-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDuration } from '@/lib/duration';
@@ -62,6 +63,7 @@ export default function PublicPackageShow({
     package: pkg,
     catalog_url: catalogUrl,
     sign_in_url: signInUrl,
+    request,
 }: PublicPackageProps) {
     const blocks = textBlocks(pkg.body_markdown);
     const signup = signupSentences(pkg);
@@ -190,6 +192,8 @@ export default function PublicPackageShow({
                     </dl>
                 </CardContent>
             </Card>
+
+            <RequestForm form={request} />
 
             <p className="text-sm text-muted-foreground">
                 Already a client?{' '}

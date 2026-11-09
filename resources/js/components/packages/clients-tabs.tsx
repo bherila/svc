@@ -3,18 +3,29 @@ import { cn } from '@/lib/utils';
 import type { WorkspaceNavigation } from '@/types/navigation';
 
 /**
- * The second-level row under Clients: "All clients" | "Packages".
+ * The second-level row under Clients: "All clients" | "Packages" | "Sign-up requests".
  *
  * Packages sit beside the roster rather than adding a sixth top-level tab.
  * Both destinations are finished URLs from the shared navigation; with the
  * feature off (or for anyone who does not manage the workspace) `packages_href`
  * is null and the row is not rendered at all.
  */
-export function ClientsTabs({ active }: { active: 'clients' | 'packages' }) {
+export function ClientsTabs({
+    active,
+}: {
+    active: 'clients' | 'packages' | 'requests';
+}) {
     const navigation = usePage().props
         .workspaceNavigation as WorkspaceNavigation | null;
     const packages = navigation?.packages_href ?? null;
     const clients = navigation?.workspace_destinations?.clients ?? null;
+    // Only the package pages are sent these; the roster shows two tabs.
+    const props = usePage().props as {
+        requests_url?: string | null;
+        open_requests_count?: number | null;
+    };
+    const requests = props.requests_url ?? null;
+    const open = props.open_requests_count ?? 0;
 
     if (packages === null || clients === null) {
         return null;
@@ -23,6 +34,18 @@ export function ClientsTabs({ active }: { active: 'clients' | 'packages' }) {
     const items = [
         { key: 'clients', label: 'All clients', href: clients },
         { key: 'packages', label: 'Packages', href: packages },
+        ...(requests === null
+            ? []
+            : [
+                  {
+                      key: 'requests',
+                      label:
+                          open > 0
+                              ? `Sign-up requests · ${open}`
+                              : 'Sign-up requests',
+                      href: requests,
+                  },
+              ]),
     ] as const;
 
     return (
