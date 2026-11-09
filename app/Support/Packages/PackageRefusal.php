@@ -19,6 +19,12 @@ enum PackageRefusal: string
     case PackageNotOffered = 'package_not_offered';
     case InvitationsOff = 'package_invitations_off';
     case AddressHeldElsewhere = 'package_address_held_elsewhere';
+    case NotAddable = 'package_not_addable';
+    case OfferNotOpen = 'package_offer_not_open';
+    case AlreadyAccepted = 'package_already_accepted';
+    case PaymentNotAvailableYet = 'package_payment_not_available_yet';
+    case NotAwaitingReview = 'package_enrollment_not_awaiting_review';
+    case ActivationConflict = 'package_activation_conflict';
 
     case NothingToPublish = 'package_nothing_to_publish';
     case NothingPriced = 'package_nothing_priced';
@@ -42,6 +48,13 @@ enum PackageRefusal: string
             self::PackageNotOffered => 'This package is not published, so it cannot be offered. Publish it again first.',
             self::InvitationsOff => 'Portal invitations are switched off, so someone without an account here cannot be invited.',
             self::AddressHeldElsewhere => 'That email address belongs to an account that does not sign in through the identity provider, so it cannot be given portal access.',
+            self::NotAddable => 'This service can\'t be added from the portal.',
+            self::OfferNotOpen => 'This offer is no longer open.',
+            self::AlreadyAccepted => 'This service has already been accepted by someone else.',
+            // Slice 3b takes the payment; until then nothing half-works.
+            self::PaymentNotAvailableYet => 'This service takes a payment at sign-up, and signing up for it online is not available yet.',
+            self::NotAwaitingReview => 'Only a service the client has accepted, and that is waiting for review, can be activated.',
+            self::ActivationConflict => 'This service\'s agreement would overlap another active agreement on its project. End or correct that agreement, then activate again.',
             self::NothingToPublish => 'There is no draft to publish.',
             self::NothingPriced => 'Add a component, a retainer or an hourly rate before publishing.',
             self::PaymentNeedsStripe => 'This package takes a payment at sign-up, so the workspace needs a Stripe connection before it can be published.',
