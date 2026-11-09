@@ -19,6 +19,8 @@ enum MigrationRefusal: string
     case CurrencyChanged = 'package_migration_currency_changed';
     case NotScheduled = 'package_migration_not_scheduled';
     case BillsByUsage = 'package_migration_bills_by_usage';
+    case ChangesCadence = 'package_migration_changes_cadence';
+    case SquareCollected = 'package_migration_square_collected';
 
     public function message(): string
     {
@@ -33,6 +35,8 @@ enum MigrationRefusal: string
             self::CurrencyChanged => 'The new version bills in another currency. A move keeps a subscriber\'s currency; offer the new version as a new service instead.',
             self::NotScheduled => 'This move is no longer scheduled: it has completed or was cancelled.',
             self::BillsByUsage => 'This agreement bills by usage (an hourly rate or a retainer). Its last period\'s work is invoiced after the period ends, on the invoice that also opens the next period, so the billing engine cannot yet settle it on the old terms beside a new agreement on the same project. End it and offer the new version instead.',
+            self::ChangesCadence => 'The new version bills on another cadence than this agreement. The first longer or shorter period would claim work periods the current terms already invoiced, so the billing engine could not invoice it. A move keeps a subscriber\'s billing cadence; end the agreement and offer the new version as a new service instead.',
+            self::SquareCollected => 'Square collects this agreement\'s invoices, and SVC never reshapes what Square collects. Change it in Square, or end it and offer the new version as a new service instead.',
         };
     }
 }

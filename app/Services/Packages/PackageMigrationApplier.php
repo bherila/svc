@@ -29,6 +29,7 @@ use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationRunOutcome;
 use App\Support\Packages\Migration\MigrationStatus;
 use App\Support\Packages\Migration\MigrationTargetStatus;
+use App\Support\Packages\PackageTerms;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -66,8 +67,16 @@ use Throwable;
  * version signed is never changed). What is the client's own carries over:
  * its end date, what is left of its minimum term (a move never starts a new
  * one), a pending cancellation request and a scheduled end from the date on,
- * the portal settings and the Square marker. Unused retainer hours do not:
- * the engine's ledger ends with its agreement.
+ * and the portal settings. Unused retainer hours do not: the engine's ledger
+ * ends with its agreement. Nor does a setup fee: the successor continues the
+ * service, so the version's setup fee is not on it.
+ *
+ * Scheduling refuses an agreement Square collects (INV-3, X-2: SVC never
+ * reshapes it, and its series marker is unique to one agreement) and one
+ * billing on another cadence than the new version (a successor's first
+ * period of another length would claim work periods the old agreement's
+ * invoices already did). Either can change after scheduling - a Square link,
+ * an operator's edit - so both are asked again here and hold the move.
  *
  * ## Nothing billed twice, nothing skipped
  *
@@ -155,6 +164,8 @@ final class PackageMigrationApplier
             ->tap(Locks::forUpdate())
             ->get();
 
+        $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($migration->to_version_id)
+            ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])->firstOrFail();
         $decision = MigrationRules::decide(
             enrollmentActive: $enrollment->enrollmentStatus() === EnrollmentStatus::Active,
             carriesFromVersion: $enrollment->carriedVersionId() === $migration->from_version_id && $enrollment->client_agreement_id === $old->id,
@@ -163,6 +174,8 @@ final class PackageMigrationApplier
             effectiveOn: $effective,
             pendingEndOn: $pending?->requested_end_on,
             periodInvoiced: $claims->contains(static fn (ClientInvoice $claim): bool => $claim->status !== InvoiceStatus::Draft->value),
+            squareCollected: $old->square_series_key !== null,
+            cadenceChanged: $old->effectiveBillingCadence()->value !== PackageTerms::fromVersion($version)->billingCadence->value,
         );
         if ($decision->hold !== null) {
             throw new MigrationHeld($decision->hold);
@@ -175,7 +188,7 @@ final class PackageMigrationApplier
             return MigrationRunOutcome::Skipped;
         }
 
-        $successor = $this->succeed($workspace, $company, $enrollment, $old, $migration, $effective);
+        $successor = $this->succeed($workspace, $company, $enrollment, $old, $version, $effective);
         if ($pending !== null) {
             $pending->forceFill(['client_agreement_id' => $successor->id])->save();
         }
@@ -272,12 +285,12 @@ final class PackageMigrationApplier
      * as a draft on the same project, with what is the client's own carried
      * over from the agreement it follows.
      */
-    private function succeed(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, ClientAgreement $old, ServicePackageMigration $migration, CarbonImmutable $effective): ClientAgreement
+    private function succeed(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, ClientAgreement $old, ServicePackageVersion $version, CarbonImmutable $effective): ClientAgreement
     {
         $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey($enrollment->client_project_id)->firstOrFail();
-        $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($migration->to_version_id)
-            ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])->firstOrFail();
-        $successor = $this->terms->createDraft($workspace, $company, $project, $version, $effective);
+        // A move continues the service: the client set up when they signed, so
+        // the version's setup fee is not charged again.
+        $successor = $this->terms->createDraft($workspace, $company, $project, $version, $effective, continuing: true);
 
         $successor = $this->agreements->update($workspace, $successor, [
             'ends_on' => $old->ends_on?->toDateString(),
@@ -287,10 +300,6 @@ final class PackageMigrationApplier
             'bill_overage_interim' => $old->bill_overage_interim,
             'rollover_policy' => $old->rollover_policy,
         ]);
-        if ($old->square_series_key !== null) {
-            // INV-3: what Square collects stays Square's.
-            $successor->forceFill(['square_series_key' => $old->square_series_key, 'square_location_id' => $old->square_location_id])->save();
-        }
 
         return $successor;
     }

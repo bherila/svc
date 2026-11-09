@@ -794,9 +794,17 @@ Slice 6 (moving subscribers to a new version) settled these:
   notice period and portal mode of the new version, a pending cancellation
   request and a scheduled end from the date on (re-pointed, so the client's
   request is still answered and their end still happens), the client-visibility
-  settings, interim overage and rollover policy, and the Square marker (INV-3).
+  settings, interim overage and rollover policy.
   **Unused retainer hours do not** - the engine's ledger ends with its
-  agreement - which is moot today because of the next point.
+  agreement - which is moot today because of the usage refusal below. **Nor
+  does a setup fee**: the successor continues a service the client already set
+  up, so `PackageAgreementTerms::createDraft(..., continuing: true)` leaves the
+  new version's setup fee off its recurring items even when the version bills
+  it with a new sign-up's first cycle (`charge_setup_fee_at_signup` false;
+  Codex P1 on #674: the successor's first invoice charged it again). A sign-up
+  of that version still pays it; the owner's preview lists it as "new sign-ups
+  only" and the client's notice not at all. `BillingHistoryInvariantTest` has
+  the history.
 - **Agreements that bill by usage are refused** (`package_migration_bills_by_usage`).
   An hourly rate or a retainer means the last old period's work is settled on
   the invoice that opens the next period; the new agreement's first invoice
@@ -813,6 +821,29 @@ Slice 6 (moving subscribers to a new version) settled these:
   the day before, so their own record says so), so nothing is written and
   no invoice number spent; anything to bill (work or expenses that reached a
   fixed-price service) holds the move (`last_period_to_settle`).
+- **A move keeps the billing cadence** (`package_migration_changes_cadence`).
+  The engine places a successor's first period on its own period grid: monthly
+  to quarterly on Jan 1, with November and December issued, puts the first
+  quarterly invoice on the work period October-December, which the old
+  agreement's issued invoices on the same project already claim, so the overlap
+  guard refuses it and January-March is never invoiced while the move reports
+  applied (Codex P1 on #674). A shorter cadence has the mirror problem from a
+  quarter boundary. No narrower rule was proven safe for every pair of monthly,
+  quarterly, semi-annual and annual, so a version on another cadence refuses
+  the whole move (`packageRefusal()`), and a subscriber whose own agreement was
+  set to another cadence than the new version's is refused by name. Offer the
+  new cadence as a new service instead.
+- **Square-collected agreements are refused** (`package_migration_square_collected`).
+  Square collects them and SVC never reshapes them (INV-3, X-2); carrying the
+  series marker over to the successor would also break its uniqueness per
+  workspace and location (`ca_ws_square_location_series_unique`), and clearing
+  it on the old agreement would orphan its Square linkage (Codex P2 on #674).
+- **Both are asked again on the date.** The version is fixed at scheduling,
+  but an operator can change an active agreement's cadence and a Square series
+  can be linked to it after scheduling, so the applier reads both under the
+  agreement's lock and holds the move (`cadence_changed`, `square_collected`)
+  rather than apply it, retried every run and shown in Needs you until the
+  cadence is restored or the move cancelled for that subscriber.
 - **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
   after the earliest end a cancellation made today could choose (the close of
   the period in which today plus the agreement's own notice falls), so a client
@@ -825,8 +856,8 @@ Slice 6 (moving subscribers to a new version) settled these:
   refused by name (`package_migration_date_not_offered`), and the preview
   offers every subscriber's dates with how many each suits, suggesting the
   earliest that suits the most. Only to the package's published version, from
-  an older one, in the same currency, both billing in periods; a subscriber in
-  one scheduled move at a time.
+  an older one, in the same currency, both billing in periods on the same
+  cadence; a subscriber in one scheduled move at a time.
 - **Records.** `service_package_migrations` (package, from/to version, date,
   message, `scheduled`/`completed`/`cancelled`) and
   `service_package_migration_targets` (enrollment, company, the agreement moved

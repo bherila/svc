@@ -70,20 +70,21 @@ final class PackageMigrationPlanner
             ],
             'effective_dates' => array_map(static fn (string $day, int $count): array => ['date' => $day, 'subscribers' => $count], array_keys($dates), array_values($dates)),
             'effective_on' => $suggested,
-            'subscribers' => array_map(static fn (MigrationSubscriber $subscriber): array => self::subscriber($subscriber, $date, $price, $toTerms?->currency), $subscribers),
+            'subscribers' => $toTerms === null ? [] : array_map(static fn (MigrationSubscriber $subscriber): array => self::subscriber($subscriber, $date, $price, $toTerms), $subscribers),
         ];
     }
 
     /**
      * Why no subscriber of `$from` can move to `$to` at all, or null: only to
      * the published version of a published package, from an older one, both
-     * billing in periods and in the same currency.
+     * billing in periods, on the same cadence and in the same currency.
      */
     public static function packageRefusal(ServicePackage $package, ServicePackageVersion $from, ?ServicePackageVersion $to, PackageTerms $fromTerms, ?PackageTerms $toTerms): ?MigrationRefusal
     {
         return match (true) {
             $package->packageStatus() !== PackageStatus::Published, $to === null, $toTerms === null, $to->number <= $from->number => MigrationRefusal::NotNewer,
             ! $fromTerms->isRecurring() || ! $toTerms->isRecurring() => MigrationRefusal::NotRecurring,
+            $fromTerms->billingCadence !== $toTerms->billingCadence => MigrationRefusal::ChangesCadence,
             strtoupper($fromTerms->currency) !== strtoupper($toTerms->currency) => MigrationRefusal::CurrencyChanged,
             default => null,
         };
@@ -137,9 +138,10 @@ final class PackageMigrationPlanner
     }
 
     /** @return array<string, mixed> */
-    private static function subscriber(MigrationSubscriber $subscriber, ?CarbonImmutable $date, ?int $price, ?string $currency): array
+    private static function subscriber(MigrationSubscriber $subscriber, ?CarbonImmutable $date, ?int $price, PackageTerms $toTerms): array
     {
-        $refusal = $subscriber->refusal($date);
+        $refusal = $subscriber->refusal($date, $toTerms->billingCadence);
+        $currency = $toTerms->currency;
         $company = $subscriber->company;
         $agreement = $subscriber->agreement;
 

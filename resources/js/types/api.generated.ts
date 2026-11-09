@@ -2053,7 +2053,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Before moving a package's subscribers to its published version, read what the move would do and change nothing: the terms that change (old and new value of each), the new price, each subscriber of from_version_id (active services carrying that version) with its earliest effective date, the dates it may move on, its autopay limit and whether that is below the new price (SVC never raises a limit), any pending cancellation or scheduled end, and refusal: why it cannot move on effective_on (or the suggested date). effective_dates lists every date some subscriber may move on with how many it suits; a date is the start of a billing period, after the subscriber's notice period and after every period already invoiced. A subscriber whose agreement bills by usage (an hourly rate or a retainer) is refused with package_migration_bills_by_usage. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        /** @description Before moving a package's subscribers to its published version, read what the move would do and change nothing: the terms that change (old and new value of each), the new price, each subscriber of from_version_id (active services carrying that version) with its earliest effective date, the dates it may move on, its autopay limit and whether that is below the new price (SVC never raises a limit), any pending cancellation or scheduled end, and refusal: why it cannot move on effective_on (or the suggested date). effective_dates lists every date some subscriber may move on with how many it suits; a date is the start of a billing period, after the subscriber's notice period and after every period already invoiced. A subscriber whose agreement bills by usage (an hourly rate or a retainer) is refused with package_migration_bills_by_usage, one Square collects with package_migration_square_collected, and one billing on another cadence than the published version with package_migration_changes_cadence (a version on another cadence refuses the whole move). Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
         get: operations['package_migrations.preview'];
         put?: never;
         post?: never;
@@ -2072,7 +2072,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Only after explicit user confirmation, schedule moving the chosen subscribers (enrollment_ids, from package_migrations.preview) from from_version_id to the package's published version on effective_on, which must suit every one of them. Each client is emailed the old and new terms, the date and the optional message (which they read), and sees a notice in the portal; a client whose autopay limit is below the new price is told it will not be raised. On the date the agreement ends the day before and an agreement carrying the new terms starts that day, unless the client has ended it first. Refused with package_migration_not_newer, package_migration_date_not_offered, package_migration_already_scheduled, package_migration_bills_by_usage and the other package_migration_* codes, naming the client. The package's current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        /** @description Only after explicit user confirmation, schedule moving the chosen subscribers (enrollment_ids, from package_migrations.preview) from from_version_id to the package's published version on effective_on, which must suit every one of them. Each client is emailed the old and new terms, the date and the optional message (which they read), and sees a notice in the portal; a client whose autopay limit is below the new price is told it will not be raised. On the date the agreement ends the day before and an agreement carrying the new terms starts that day, unless the client has ended it first. Refused with package_migration_not_newer, package_migration_date_not_offered, package_migration_already_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected and the other package_migration_* codes, naming the client. The package's current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
         post: operations['package_migrations.schedule'];
         delete?: never;
         options?: never;
@@ -5906,6 +5906,8 @@ export interface components {
                         | 'draft_kept'
                         | 'last_period_to_settle'
                         | 'settlement_refused'
+                        | 'cadence_changed'
+                        | 'square_collected'
                         | 'failed';
                     message: string;
                     detail: string | null;
@@ -5949,7 +5951,9 @@ export interface components {
                     | 'package_migration_date_not_offered'
                     | 'package_migration_currency_changed'
                     | 'package_migration_not_scheduled'
-                    | 'package_migration_bills_by_usage';
+                    | 'package_migration_bills_by_usage'
+                    | 'package_migration_changes_cadence'
+                    | 'package_migration_square_collected';
                 message: string;
             } | null;
             changes: components['schemas']['PackageMigrationTermChange'][];
@@ -6000,7 +6004,9 @@ export interface components {
                         | 'package_migration_date_not_offered'
                         | 'package_migration_currency_changed'
                         | 'package_migration_not_scheduled'
-                        | 'package_migration_bills_by_usage';
+                        | 'package_migration_bills_by_usage'
+                        | 'package_migration_changes_cadence'
+                        | 'package_migration_square_collected';
                     message: string;
                 } | null;
             }[];
@@ -6987,6 +6993,8 @@ export interface components {
                     | 'draft_kept'
                     | 'last_period_to_settle'
                     | 'settlement_refused'
+                    | 'cadence_changed'
+                    | 'square_collected'
                     | 'failed';
                 message: string;
                 detail: string | null;
@@ -16374,7 +16382,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -16671,7 +16679,7 @@ export interface operations {
                     'application/json': components['schemas']['Error'];
                 };
             };
-            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage. */
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_migration_not_newer, package_migration_not_recurring, package_migration_no_subscribers, package_migration_not_a_subscriber, package_migration_already_scheduled, package_migration_ends_first, package_migration_date_not_offered, package_migration_currency_changed, package_migration_not_scheduled, package_migration_bills_by_usage, package_migration_changes_cadence, package_migration_square_collected. */
             422: {
                 headers: {
                     [name: string]: unknown;

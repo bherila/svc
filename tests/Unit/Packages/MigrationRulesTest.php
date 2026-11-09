@@ -126,10 +126,10 @@ final class MigrationRulesTest extends TestCase
         $this->assertSame(MigrationRefusal::EndsFirst, MigrationRules::eligibility(true, false, $none, self::day('2027-01-01')));
     }
 
-    /** @return array<string, array{array{bool, bool, string, string|null, string|null, bool}, MigrationSkip|MigrationHold|null}> */
+    /** @return array<string, array{array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool}, MigrationSkip|MigrationHold|null}> */
     public static function decisions(): array
     {
-        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced
+        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced[, Square collects it, cadence changed]
         return [
             'an active subscriber moves' => [[true, true, 'active', null, null, false], null],
             'one ending after the date moves' => [[true, true, 'active', '2027-03-31', null, false], null],
@@ -142,16 +142,19 @@ final class MigrationRulesTest extends TestCase
             'ends the day before' => [[true, true, 'active', '2026-12-31', null, true], MigrationSkip::EndsBeforeEffective],
             'asks to leave the day before' => [[true, true, 'active', null, '2026-12-31', true], MigrationHold::CancellationPending],
             'the new period already invoiced' => [[true, true, 'active', null, null, true], MigrationHold::PeriodInvoiced],
+            'Square came to collect it' => [[true, true, 'active', null, '2026-12-31', true, true, true], MigrationHold::SquareCollected],
+            'its cadence was changed' => [[true, true, 'active', null, '2026-12-31', true, false, true], MigrationHold::CadenceChanged],
+            'a Square agreement that ended is still skipped' => [[true, true, 'terminated', null, null, false, true, true], MigrationSkip::AgreementEnded],
         ];
     }
 
-    /** @param array{bool, bool, string, string|null, string|null, bool} $facts */
+    /** @param array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool} $facts */
     #[DataProvider('decisions')]
     #[Requirement('MIG-3')]
     public function test_on_the_date_each_subscriber_is_moved_skipped_or_held(array $facts, MigrationSkip|MigrationHold|null $expected): void
     {
-        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced] = $facts;
-        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced);
+        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced, $square, $cadence] = $facts + [6 => false, 7 => false];
+        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced, $square, $cadence);
 
         $this->assertSame($expected === null, $decision->applies());
         $this->assertSame($expected instanceof MigrationSkip ? $expected : null, $decision->skip);
@@ -191,6 +194,19 @@ final class MigrationRulesTest extends TestCase
         $dates = new MigrationEffectiveDates(self::day('2027-01-01'), [self::day('2027-01-01')]);
         $this->assertSame(MigrationRefusal::BillsByUsage, MigrationRules::eligibility(true, false, $dates, null, true));
         $this->assertSame(MigrationRefusal::AlreadyScheduled, MigrationRules::eligibility(true, true, $dates, null, true));
+    }
+
+    #[Requirement('MIG-1', 'INV-3')]
+    public function test_an_agreement_square_collects_or_billing_on_another_cadence_is_not_moved(): void
+    {
+        $dates = new MigrationEffectiveDates(self::day('2027-01-01'), [self::day('2027-01-01')]);
+        $this->assertSame(MigrationRefusal::SquareCollected, MigrationRules::eligibility(true, false, $dates, null, squareCollected: true));
+        $this->assertSame(MigrationRefusal::SquareCollected, MigrationRules::eligibility(true, false, $dates, null, true, true, true), 'Square is named first: SVC leaves it alone whatever else holds');
+        $this->assertSame(MigrationRefusal::ChangesCadence, MigrationRules::eligibility(true, false, $dates, null, changesCadence: true));
+        $this->assertSame(MigrationRefusal::ChangesCadence, MigrationRules::eligibility(true, false, $dates, self::day('2027-01-15'), changesCadence: true));
+        $this->assertSame(MigrationRefusal::NotRecurring, MigrationRules::eligibility(true, false, null, null, changesCadence: true));
+        $this->assertSame(MigrationRefusal::AlreadyScheduled, MigrationRules::eligibility(true, true, $dates, null, squareCollected: true, changesCadence: true));
+        $this->assertNull(MigrationRules::eligibility(true, false, $dates, null, false, false, false));
     }
 
     #[Requirement('MIG-4')]

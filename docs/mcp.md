@@ -2271,10 +2271,15 @@ a code naming the client: `package_migration_not_newer` (only to the published
 version, from an older one), `package_migration_not_a_subscriber`,
 `package_migration_already_scheduled`, `package_migration_date_not_offered`,
 `package_migration_ends_first`, `package_migration_not_recurring`,
-`package_migration_currency_changed` or `package_migration_bills_by_usage` (an
+`package_migration_currency_changed`, `package_migration_bills_by_usage` (an
 agreement with an hourly rate or a retainer: the billing engine settles its last
 period's work on the invoice that also opens the next, which a new agreement on
-the same project would claim too). Each client is emailed the date, the changes
+the same project would claim too), `package_migration_changes_cadence` (the new
+version, or this agreement, bills on another cadence: a first period of another
+length would claim work periods already invoiced) or
+`package_migration_square_collected` (Square collects the agreement; SVC never
+reshapes it). A setup fee on the new version is never charged to a subscriber
+who moves. Each client is emailed the date, the changes
 and the message, and sees the notice in the portal; a client whose autopay limit
 is below the new price is told SVC will not raise it, and Needs you lists it.
 
@@ -2287,8 +2292,10 @@ agreement and `current_version`; `accepted_version`, what the client signed,
 never changes, and automatic invoicing reads the carried version. A subscriber
 whose agreement has ended, or ends first, is `skipped` with its reason in
 `outcome`; one whose next period an issued invoice already sells, whose client
-asked to leave before the date, or whose last old period still has something to
-invoice waits `scheduled` with the reason in `outcome` and is retried every hour.
+asked to leave before the date, whose last old period still has something to
+invoice, or whose agreement changed cadence or came to be collected by Square
+since scheduling (`cadence_changed`, `square_collected`) waits `scheduled` with
+the reason in `outcome` and is retried every hour.
 A move (`package_migrations.get`) answers its versions, date, message, changes,
 new price, `counts` and each subscriber's `status`, `outcome`, agreement and,
 once moved, `successor_agreement`. `enrollments.*` carries `move` for a service

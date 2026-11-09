@@ -23,6 +23,14 @@ enum MigrationHold: string
     case LastPeriodToSettle = 'last_period_to_settle';
     /** The last period on the old terms could not be invoiced on the agreement that ends. */
     case SettlementRefused = 'settlement_refused';
+    /**
+     * The agreement's billing cadence was changed after the move was
+     * scheduled and no longer matches the new version's (a move keeps the
+     * cadence, so every period is billed once).
+     */
+    case CadenceChanged = 'cadence_changed';
+    /** The agreement was linked to a Square series after the move was scheduled; SVC never reshapes what Square collects. */
+    case SquareCollected = 'square_collected';
     /** Something unexpected; the error was reported. */
     case Failed = 'failed';
 
@@ -34,6 +42,8 @@ enum MigrationHold: string
             self::DraftKept => 'A draft invoice for a period from the effective date on could not be discarded. Discard it or let it be issued, then the move applies on the next run.',
             self::LastPeriodToSettle => 'The last period on the current terms still has work or expenses to invoice, on the invoice that would also open the new terms\' first period. Invoice them separately (an ad hoc invoice), or cancel the move for this subscriber; then the move applies on the next run.',
             self::SettlementRefused => 'The last period on the current terms could not be invoiced, so the move waits rather than leave that work to the new terms. Resolve what the billing engine reports, then the move applies on the next run.',
+            self::CadenceChanged => 'The agreement now bills on another cadence than the new version, so moving it would leave a period unbilled. Change its cadence back, or cancel the move for this subscriber.',
+            self::SquareCollected => 'Square now collects this agreement\'s invoices, and SVC never reshapes what Square collects. Cancel the move for this subscriber.',
             self::Failed => 'The move could not be applied. It is tried again every hour.',
         };
     }

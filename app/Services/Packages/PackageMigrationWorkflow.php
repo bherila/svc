@@ -101,7 +101,7 @@ final class PackageMigrationWorkflow
                 throw PackageMigrationRefused::because(MigrationRefusal::NotASubscriber);
             }
             foreach ($subscribers as $subscriber) {
-                $refused = $subscriber->refusal($date);
+                $refused = $subscriber->refusal($date, $toTerms->billingCadence);
                 if ($refused !== null) {
                     throw PackageMigrationRefused::because($refused, "({$subscriber->company->name})");
                 }

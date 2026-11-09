@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ServicePackageEnrollment;
 use App\Services\Packages\PackageMigrationRecords;
+use App\Support\Billing\ChargeCadence;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
@@ -34,12 +35,13 @@ final readonly class MigrationSubscriber
         public ?CarbonImmutable $scheduledEndOn,
     ) {}
 
-    public function refusal(?CarbonInterface $chosen): ?MigrationRefusal
+    /** Why it cannot move on `$chosen` to a version billing on `$toCadence`, or null. */
+    public function refusal(?CarbonInterface $chosen, ChargeCadence $toCadence): ?MigrationRefusal
     {
         $agreement = $this->agreement;
 
         return MigrationRules::eligibility($this->activeOnFromVersion, $this->alreadyScheduled, $this->dates, $chosen, MigrationRules::billsByUsage(
             $agreement->hourly_rate_amount, $agreement->retainer_amount, $agreement->retainer_minutes, $agreement->period_retainer_amount, $agreement->period_retainer_minutes,
-        ));
+        ), squareCollected: $agreement->square_series_key !== null, changesCadence: $agreement->effectiveBillingCadence()->value !== $toCadence->value);
     }
 }

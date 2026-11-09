@@ -16,10 +16,12 @@ final class MigrationRules
     /**
      * One subscriber on or after the effective date (MIG-3). In order: a
      * service or agreement that has stopped is skipped for good, as is one
-     * ending before the new terms would start; a client's request to leave
-     * before the date waits for its answer; and an issued invoice already
-     * selling a period from the date on waits for an owner, since applying
-     * would bill that period twice.
+     * ending before the new terms would start; an agreement Square came to
+     * collect, or whose cadence was changed away from the new version's,
+     * since it was scheduled waits for an owner (scheduling refuses both);
+     * a client's request to leave before the date waits for its answer; and
+     * an issued invoice already selling a period from the date on waits for
+     * an owner, since applying would bill that period twice.
      *
      * @param  CarbonInterface|null  $endsOn  the agreement's `ends_on`, a scheduled end included
      * @param  CarbonInterface|null  $pendingEndOn  the end a pending cancellation request asks for, if any
@@ -32,6 +34,8 @@ final class MigrationRules
         CarbonInterface $effectiveOn,
         ?CarbonInterface $pendingEndOn,
         bool $periodInvoiced,
+        bool $squareCollected,
+        bool $cadenceChanged,
     ): MigrationDecision {
         $effective = $effectiveOn->toDateString();
 
@@ -40,6 +44,8 @@ final class MigrationRules
             ! $carriesFromVersion => MigrationDecision::skip(MigrationSkip::VersionMoved),
             $agreementStatus !== 'active' => MigrationDecision::skip(MigrationSkip::AgreementEnded),
             $endsOn !== null && $endsOn->toDateString() < $effective => MigrationDecision::skip(MigrationSkip::EndsBeforeEffective),
+            $squareCollected => MigrationDecision::hold(MigrationHold::SquareCollected),
+            $cadenceChanged => MigrationDecision::hold(MigrationHold::CadenceChanged),
             $pendingEndOn !== null && $pendingEndOn->toDateString() < $effective => MigrationDecision::hold(MigrationHold::CancellationPending),
             $periodInvoiced => MigrationDecision::hold(MigrationHold::PeriodInvoiced),
             default => MigrationDecision::apply(),
@@ -49,16 +55,26 @@ final class MigrationRules
     /**
      * Why one subscriber cannot be part of a move on `$chosen`, or null when
      * it can (MIG-1): it must be an active service on the version moved from,
-     * in no other scheduled move, with the date among those its notice and
-     * its invoices allow. Without a date, only whether it could be moved at all.
+     * in no other scheduled move, not collected by Square (INV-3, X-2), not
+     * billing by usage, billing on the new version's cadence, with the date
+     * among those its notice and its invoices allow. Without a date, only
+     * whether it could be moved at all.
+     *
+     * The cadence stays because a successor's first period of another length
+     * is placed by the billing engine on its own period grid: a longer one
+     * (monthly to quarterly on Jan 1, Nov and Dec issued) is assigned the
+     * work period Oct-Dec, which the old agreement's issued invoices on the
+     * same project already claim, so it is refused and never invoiced.
      */
-    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen, bool $billsByUsage = false): ?MigrationRefusal
+    public static function eligibility(bool $activeOnFromVersion, bool $alreadyScheduled, ?MigrationEffectiveDates $dates, ?CarbonInterface $chosen, bool $billsByUsage = false, bool $squareCollected = false, bool $changesCadence = false): ?MigrationRefusal
     {
         return match (true) {
             ! $activeOnFromVersion => MigrationRefusal::NotASubscriber,
             $alreadyScheduled => MigrationRefusal::AlreadyScheduled,
+            $squareCollected => MigrationRefusal::SquareCollected,
             $billsByUsage => MigrationRefusal::BillsByUsage,
             $dates === null => MigrationRefusal::NotRecurring,
+            $changesCadence => MigrationRefusal::ChangesCadence,
             $dates->offered === [] => MigrationRefusal::EndsFirst,
             $chosen !== null && ! $dates->offers($chosen) => MigrationRefusal::DateNotOffered,
             default => null,

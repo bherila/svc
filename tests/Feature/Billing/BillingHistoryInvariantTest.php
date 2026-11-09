@@ -427,6 +427,16 @@ final class BillingHistoryInvariantTest extends TestCase
             ['billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'quarterly', 'amount' => 15000]]],
             5,
         ];
+        // The new version bills a setup fee with a new sign-up's first cycle;
+        // a subscriber who moves set up long ago and is never charged it.
+        yield 'monthly, to a version with a setup fee billed with the first cycle' => [
+            ['billing_cadence' => 'monthly', 'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]]],
+            ['billing_cadence' => 'monthly', 'charge_setup_fee_at_signup' => false, 'components' => [
+                ['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 5000],
+                ['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => 20000],
+            ]],
+            11,
+        ];
     }
 
     /**
@@ -444,9 +454,12 @@ final class BillingHistoryInvariantTest extends TestCase
      * The move bills exactly as the hand-made renewal, and every period before
      * the date exactly as the agreement never moved.
      *
-     * Fixed-price terms: a move refuses an agreement that bills by usage
-     * (MIG-1), whose last period's work the engine settles on the invoice that
-     * also opens the next.
+     * Fixed-price terms on one cadence: a move refuses an agreement that bills
+     * by usage (MIG-1), whose last period's work the engine settles on the
+     * invoice that also opens the next, and one that would change its cadence
+     * (a successor's first period of another length claims work periods the
+     * old agreement already sold). A setup fee on the new version is a new
+     * sign-up's, never charged to a subscriber who moves.
      *
      * @param  array<string, mixed>  $v1
      * @param  array<string, mixed>  $v2
@@ -542,7 +555,7 @@ final class BillingHistoryInvariantTest extends TestCase
         foreach (ClientInvoice::query()->where('client_agreement_id', $old->id)->where('status', InvoiceStatus::Draft->value)->whereDate('cycle_start', '>=', $effective)->orderByDesc('cycle_start')->get() as $draft) {
             app(InvoiceLifecycleService::class)->discardDraft($draft, $workspace, 'Synthetic renewal');
         }
-        $renewal = app(PackageAgreementTerms::class)->createDraft($workspace, $company, $project, $version, CarbonImmutable::parse($effective));
+        $renewal = app(PackageAgreementTerms::class)->createDraft($workspace, $company, $project, $version, CarbonImmutable::parse($effective), continuing: true);
         $agreements->activate($renewal);
     }
 

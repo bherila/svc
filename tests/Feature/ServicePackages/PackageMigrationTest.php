@@ -31,6 +31,8 @@ use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Packages\Migration\MigrationRefusal;
+use App\Support\Packages\Migration\MigrationTermChanges;
+use App\Support\Packages\PackageTerms;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -262,6 +264,39 @@ final class PackageMigrationTest extends TestCase
     }
 
     #[Requirement('MIG-3')]
+    public function test_a_setup_fee_billed_with_the_first_cycle_is_never_charged_again_on_a_move(): void
+    {
+        $withSetupFee = ['charge_setup_fee_at_signup' => false, 'components' => [
+            ['kind' => 'setup_fee', 'description' => 'Onboarding setup', 'amount' => 20000],
+            ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 5000],
+        ]];
+        [$workspace, $owner, $package, $from] = $this->world([], $withSetupFee);
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        $this->issueRun();
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        $this->travelTo(CarbonImmutable::parse('2026-12-01 00:30:00', 'UTC'));
+        $this->issueRun();
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['applied'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame(['issued'], array_column($this->issueRun()['outcomes'], 'outcome'));
+
+        // The subscriber set up long ago: the successor carries only what recurs.
+        $successor = $enrollment->refresh()->client_agreement_id;
+        $this->assertSame(['Managed hosting'], ClientAgreementRecurringItem::query()->where('client_agreement_id', $successor)->pluck('description')->all());
+        $january = ClientInvoice::query()->where('client_agreement_id', $successor)->sole();
+        $this->assertSame([['Managed hosting', 5000]], $january->lines->where('total_amount', '>', 0)->map(fn ($line): array => [$line->description, $line->total_amount])->values()->all());
+        $this->assertNotContains('Onboarding setup', $january->lines->pluck('description')->all());
+        $this->assertSame(5000, (int) $january->total_amount);
+        $this->assertArrayNotHasKey('setup_fee', array_column(MigrationTermChanges::forClient(
+            PackageTerms::fromVersion(ServicePackageVersion::query()->findOrFail($from->id)), PackageTerms::fromVersion(ServicePackageVersion::query()->findOrFail($package->refresh()->published_version_id)),
+        ), null, 'term'));
+
+        // A new client signing up to the same version still pays it, with its first cycle.
+        $newcomer = $this->subscriber($workspace, $package, 'Newcomer', onPublished: true);
+        $this->assertContains('Onboarding setup', ClientAgreementRecurringItem::query()->where('client_agreement_id', $newcomer->client_agreement_id)->pluck('description')->all());
+    }
+
+    #[Requirement('MIG-3')]
     public function test_a_client_who_cancels_before_the_date_is_skipped_and_the_skip_recorded(): void
     {
         [$workspace, $owner, $package, $from] = $this->world();
@@ -481,6 +516,78 @@ final class PackageMigrationTest extends TestCase
         $this->expectRefusal(MigrationRefusal::BillsByUsage, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
     }
 
+    #[Requirement('MIG-1')]
+    public function test_a_move_that_changes_the_billing_cadence_is_refused(): void
+    {
+        // Monthly to quarterly on Jan 1 with Nov and Dec issued: the successor's
+        // first quarter would be placed on Oct-Dec, already sold, and never invoiced.
+        foreach ([['monthly', 'quarterly'], ['monthly', 'semi_annual'], ['monthly', 'annual'], ['quarterly', 'monthly'], ['annual', 'quarterly']] as [$was, $becomes]) {
+            [$workspace, $owner, $package, $from] = $this->world(
+                ['billing_cadence' => $was, 'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => $was, 'amount' => 4500]]],
+                ['billing_cadence' => $becomes, 'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => $becomes, 'amount' => 5000]]],
+            );
+            $this->subscriber($workspace, $package, 'Lakeside '.$becomes);
+
+            $preview = $this->preview($owner, $workspace, $package, $from);
+            $this->assertSame(MigrationRefusal::ChangesCadence->value, $preview['refusal']['code'] ?? null, "{$was} to {$becomes}");
+            $this->assertSame([[], null], [$preview['subscribers'], $preview['effective_on']]);
+            $this->expectRefusal(MigrationRefusal::ChangesCadence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
+            $this->assertSame(0, ServicePackageMigration::query()->where('workspace_id', $workspace->id)->count());
+        }
+    }
+
+    #[Requirement('MIG-1', 'MIG-3')]
+    public function test_an_agreement_whose_own_cadence_differs_from_the_new_version_is_refused_and_held(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world();
+        $edited = $this->subscriber($workspace, $package, 'Edited');
+        // An operator moved this one agreement to quarterly billing by hand.
+        ClientAgreement::query()->whereKey($edited->client_agreement_id)->update(['billing_cadence' => 'quarterly']);
+
+        $this->assertSame(MigrationRefusal::ChangesCadence->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->expectRefusal(MigrationRefusal::ChangesCadence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
+
+        // Changed after scheduling, the move waits for an owner rather than leave a period unbilled.
+        ClientAgreement::query()->whereKey($edited->client_agreement_id)->update(['billing_cadence' => 'monthly']);
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        ClientAgreement::query()->whereKey($edited->client_agreement_id)->update(['billing_cadence' => 'quarterly']);
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $target = ServicePackageMigrationTarget::query()->sole();
+        $this->assertSame(['scheduled', 'cadence_changed', null], [$target->status, $target->outcome_code, $target->successor_agreement_id]);
+        $this->assertSame(['active', 1], [ClientAgreement::query()->findOrFail($edited->client_agreement_id)->status, ClientAgreement::query()->where('workspace_id', $workspace->id)->count()]);
+    }
+
+    #[Requirement('MIG-1', 'MIG-3', 'INV-3')]
+    public function test_an_agreement_square_collects_is_refused_and_one_linked_after_scheduling_is_held_untouched(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world();
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        $square = ['square_series_key' => '000901', 'square_location_id' => 'SYNTEST-LOCATION-1'];
+        ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->update($square);
+
+        $this->assertSame(MigrationRefusal::SquareCollected->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->expectRefusal(MigrationRefusal::SquareCollected, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
+        $this->assertSame(0, ServicePackageMigration::query()->count());
+
+        // Linked to Square after the move was scheduled: held, and nothing about the agreement changes.
+        ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->update(['square_series_key' => null, 'square_location_id' => null]);
+        $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->update($square);
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $target = ServicePackageMigrationTarget::query()->sole();
+        $recorded = $target->outcome_recorded_at;
+        $this->assertSame(['scheduled', 'square_collected'], [$target->status, $target->outcome_code]);
+        $agreement = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
+        $this->assertSame(['active', null, '000901'], [$agreement->status, $agreement->ends_on?->toDateString(), $agreement->square_series_key]);
+        $this->assertSame(1, ClientAgreement::query()->where('workspace_id', $workspace->id)->count());
+        // Every hourly run asks again and records nothing new.
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 01:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertEquals($recorded, $target->refresh()->outcome_recorded_at);
+    }
+
     // ── Isolation and concurrency ───────────────────────────────────────────
 
     #[Requirement('MIG-1', 'MIG-5')]
@@ -559,8 +666,8 @@ final class PackageMigrationTest extends TestCase
         return ServicePackageVersion::query()->findOrFail($published->published_version_id);
     }
 
-    /** A client on the package's first version, accepted and active from today. */
-    private function subscriber(Workspace $workspace, ServicePackage $package, string $name): ServicePackageEnrollment
+    /** A client on the package's first version (or, `$onPublished`, its published one), accepted and active from today. */
+    private function subscriber(Workspace $workspace, ServicePackage $package, string $name, bool $onPublished = false): ServicePackageEnrollment
     {
         $company = ClientCompany::query()->create([
             'workspace_id' => $workspace->id, 'name' => $name.' Synthetic Bakery', 'slug' => Str::slug($name).'-'.Str::uuid(),
@@ -571,7 +678,7 @@ final class PackageMigrationTest extends TestCase
         // Offered on the version current now, as a client who signed up before version 2.
         $current = $package->refresh()->published_version_id;
         $first = ServicePackageVersion::query()->where('service_package_id', $package->id)->orderBy('number')->firstOrFail();
-        $package->forceFill(['published_version_id' => $first->id])->save();
+        $package->forceFill(['published_version_id' => $onPublished ? $current : $first->id])->save();
         $workflow = app(PackageEnrollmentWorkflow::class);
         $enrollment = $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Morgan '.$name))->refresh();
         $package->forceFill(['published_version_id' => $current])->save();
