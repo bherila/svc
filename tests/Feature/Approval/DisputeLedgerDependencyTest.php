@@ -5,6 +5,7 @@ namespace Tests\Feature\Approval;
 use App\Exceptions\DisputedWorkChanged;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -373,5 +374,55 @@ final class DisputeLedgerDependencyTest extends TestCase
 
         $this->assertFalse((bool) $a->fresh()->is_deferred);
         $this->assertSame(0, $this->onAnyLine($a->fresh()));
+    }
+
+    /**
+     * Codex on a351996: time an issued invoice already charges was never
+     * held. Answering a dispute on it must not defer it - that would turn the
+     * capacity it used into a free draw and erase the debt March collects.
+     */
+    public function test_answering_a_dispute_on_already_charged_time_keeps_its_charge_and_later_debt(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('charged', 600);
+        $january = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 1200);
+        $invoice = $this->period($company, $agreement, '2026-02-01');
+        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        $issuedTotal = (int) $invoice->fresh()->total_amount;
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 1200);
+        $march = $this->period($company, $agreement, '2026-03-01');
+        $before = (int) $march->total_amount;
+
+        $this->stampDispute($january);
+        app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [$january->id], []);
+        $this->assertSame($before, (int) $march->fresh()->total_amount, 'A charged row is not held.');
+        $this->answer($workspace, $january, $owner);
+
+        $this->assertFalse((bool) $january->fresh()->is_deferred);
+        $this->assertSame($before, (int) $march->fresh()->total_amount);
+        $this->assertSame($issuedTotal, (int) $invoice->fresh()->total_amount);
+        app(InvoiceLifecycleService::class)->issue($march->fresh(), $workspace);
+        $this->assertSame($before, (int) $march->fresh()->total_amount);
+    }
+
+    /** Codex on a351996: an expense answered after its period was invoiced is claimed by a later draft. */
+    public function test_an_expense_answered_after_its_period_was_invoiced_is_claimed_by_a_later_draft(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('expense', 600);
+        $expense = ClientExpense::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'created_by_user_id' => $owner->id, 'spent_on' => '2026-01-15', 'amount' => 4200, 'currency' => 'USD',
+            'description' => 'Synthetic expense', 'status' => 'approved',
+        ])->refresh();
+        ClientExpense::query()->whereKey($expense->id)->update(['client_disputed_at' => now(), 'lock_version' => DB::raw('lock_version + 1')]);
+        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
+        $this->assertNull($expense->fresh()->client_invoice_line_id, 'Held while disputed.');
+        $march = $this->period($company, $agreement, '2026-03-01');
+
+        $fresh = $expense->fresh();
+        app(DisputeSettlements::class)->settleExpense($workspace, $fresh->public_id, $owner, DisputeSettlement::Answered, 'Synthetic reply', AgentApiVersion::for($fresh));
+
+        $line = $expense->fresh()->client_invoice_line_id;
+        $this->assertNotNull($line);
+        $this->assertSame($march->id, (int) DB::table('client_invoice_lines')->where('id', $line)->value('client_invoice_id'));
     }
 }

@@ -112,8 +112,11 @@ final class DisputedDraftRebuilder
                 ->where('status', InvoiceStatus::Draft->value)
                 ->where('invoice_kind', InvoiceKind::CadencePeriod->value)
                 ->whereNotNull('client_agreement_id')
-                ->whereDate('service_period_start', '<=', $expense->spent_on->toDateString())
+                // Claims take historical expenses through the draft's end, with
+                // no lower bound, so an expense answered after its own period
+                // was invoiced is claimed by any later draft.
                 ->whereDate('service_period_end', '>=', $expense->spent_on->toDateString())
+                ->orderBy('service_period_start')
                 ->orderBy('id')
                 ->get();
             foreach ($drafts as $draft) {

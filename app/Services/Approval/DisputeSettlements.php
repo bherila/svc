@@ -88,15 +88,16 @@ final class DisputeSettlements
                 : 'Only the person who logged this time, or a workspace owner or admin, can answer the dispute.');
 
             $this->assertOpen($entry, $expectedVersion);
-            abort_if($outcome === DisputeSettlement::WrittenOff
-                && ! ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)->heldForDispute()->exists(),
-                409, self::CHARGED_MESSAGE);
+            // Disputed and charged by no issued invoice; otherwise the charge stands.
+            $held = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)->heldForDispute()->exists();
+            abort_if($outcome === DisputeSettlement::WrittenOff && ! $held, 409, self::CHARGED_MESSAGE);
             $this->write(ClientTimeEntry::query(), $workspace, $entry, $actor, $outcome, $reply, match ($outcome) {
                 // Answered after its own period was reconciled: it can no
                 // longer bill there, so it becomes deferred work.
                 DisputeSettlement::Answered => LateAnswer::defers(
                     is_string($mode = $entry->getRawOriginal('subcontractor_billing_mode')) ? $mode : null,
                     $this->periodCharged($workspace, $entry),
+                    ! $held,
                 ) ? ['is_deferred' => true] : [],
                 DisputeSettlement::WrittenOff => ['is_billable' => false],
             });
