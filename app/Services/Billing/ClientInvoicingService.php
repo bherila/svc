@@ -2281,9 +2281,12 @@ final class ClientInvoicingService
 
             if ($successorAgreement instanceof ClientAgreement && $terminationDate instanceof Carbon) {
                 // Leave room for the final catch-up invoice: the month after
-                // termination, or the month before the successor starts,
-                // whichever reaches further.
-                $successorCatchUpStart = $this->agreementStart($successorAgreement)->copy()->startOfMonth()->subMonth();
+                // termination, or the one reconciling the day before the
+                // successor starts, whichever reaches further. Ordinary work
+                // up to that day is this agreement's to bill, a gap between
+                // the two agreements included
+                // ({@see self::unbilledEntriesBetween()}).
+                $successorCatchUpStart = $this->agreementStart($successorAgreement)->copy()->subDay()->startOfMonth()->addMonth();
                 $terminationSegmentEnd = $terminationDate->copy()->startOfMonth()->addMonth();
                 $segmentEnd = $successorCatchUpStart->gt($terminationSegmentEnd) ? $successorCatchUpStart : $terminationSegmentEnd;
 

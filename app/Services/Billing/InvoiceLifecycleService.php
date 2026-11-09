@@ -47,6 +47,7 @@ use App\Support\Finance\ReconciliationReviewReason;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
@@ -330,6 +331,12 @@ final class InvoiceLifecycleService
             // first: from the caller's copy of the invoice, because nothing may
             // be read or locked ahead of it, and then checked against the
             // locked row below.
+            // The client's agreements, for the handover check below: read
+            // with row locks, which see a successor added after the caller's
+            // snapshot, and taken first, where agreements rank - from the
+            // caller's copy of the invoice, which the locked row is checked
+            // against before anything is issued.
+            $handoverSegments = $this->lockHandoverSegments($invoice);
             $agreement = $this->lockInterimAgreement($invoice);
             // A monthly draft recording the catch-up it was sized against is
             // checked against other invoices of its agreement, read with row
@@ -474,7 +481,7 @@ final class InvoiceLifecycleService
                     verifySnapshot: $spendsCredit,
                 );
                 $this->assertSnapshotHoldsTheLockedLines($locked);
-                $this->assertChargesOnlyItsAgreementsSegment($locked);
+                $this->assertChargesOnlyItsAgreementsSegment($locked, $handoverSegments);
             }
 
             // Re-read even when the caller supplied the authorized workspace.
@@ -910,22 +917,47 @@ final class InvoiceLifecycleService
      * already locked and the snapshot agrees with them, and the agreements are
      * the ones generation reads.
      */
-    private function assertChargesOnlyItsAgreementsSegment(ClientInvoice $draft): void
+    /**
+     * The agreements of the invoice's client, locked, when its kind is bounded
+     * by an agreement's segment; null otherwise.
+     *
+     * @return SupportCollection<int, ClientAgreement>|null
+     */
+    private function lockHandoverSegments(ClientInvoice $invoice): ?SupportCollection
     {
-        $bounded = match (InvoiceKind::from($draft->invoiceKindValue())) {
+        if ($invoice->client_agreement_id === null || ! self::boundedBySegment($invoice)) {
+            return null;
+        }
+
+        return app(DeferredBacklogReader::class)->lockedSegments((int) $invoice->workspace_id, (int) $invoice->client_company_id);
+    }
+
+    private static function boundedBySegment(ClientInvoice $invoice): bool
+    {
+        return match (InvoiceKind::from($invoice->invoiceKindValue())) {
             InvoiceKind::CadencePeriod, InvoiceKind::InterimOverage, InvoiceKind::Terminal, InvoiceKind::DeferredBuyDown => true,
             // Hand-picked time is priced at each entry's own terms, under no
             // agreement's segment.
             InvoiceKind::AdHoc => false,
         };
-        if (! $bounded || $draft->client_agreement_id === null) {
+    }
+
+    /** @param SupportCollection<int, ClientAgreement>|null $segments the client's agreements, locked */
+    private function assertChargesOnlyItsAgreementsSegment(ClientInvoice $draft, ?SupportCollection $segments): void
+    {
+        if (! self::boundedBySegment($draft) || $draft->client_agreement_id === null) {
             return;
         }
-        $agreement = ClientAgreement::query()->where('workspace_id', $draft->workspace_id)->find($draft->client_agreement_id);
+        // Locked from the caller's copy; a draft that has since changed
+        // client or kind is read again, with locks, rather than trusted.
+        $segments = $segments !== null && $segments->contains('id', (int) $draft->client_agreement_id)
+            ? $segments
+            : app(DeferredBacklogReader::class)->lockedSegments((int) $draft->workspace_id, (int) $draft->client_company_id);
+        $agreement = $segments->firstWhere('id', (int) $draft->client_agreement_id);
         if (! $agreement instanceof ClientAgreement) {
             return;
         }
-        $handedOver = app(DeferredBacklogReader::class)->handedOverAfter((int) $draft->workspace_id, $agreement);
+        $handedOver = app(DeferredBacklogReader::class)->handedOverAfter((int) $draft->workspace_id, $agreement, $segments);
         if (! $handedOver instanceof CarbonImmutable) {
             return;
         }

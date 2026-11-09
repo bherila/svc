@@ -3,6 +3,7 @@
 namespace Tests\Feature\Billing;
 
 use App\Exceptions\DisputedWorkChanged;
+use App\Exceptions\WorkOutsideAgreementSegment;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -14,6 +15,7 @@ use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\HeldWorkBasisRecorder;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use Illuminate\Support\Carbon;
@@ -152,6 +154,31 @@ final class BuyDownAttachSnapshotTest extends TestCase
             app(InvoiceLifecycleService::class)->issue($x->fresh(), $workspace);
             $this->assertSame('issued', $x->fresh()->status);
             $this->assertNotContains($c->id, $listed(), 'The issued statement no longer lists the withdrawn hour.');
+        });
+    }
+
+    /**
+     * Codex's stale handover: the caller's snapshot predates a backdated
+     * termination of the agreement and the successor that takes over. The
+     * draft still charges February's work at the outgoing rate; the issue's
+     * handover check reads the agreements with row locks, sees the successor,
+     * and refuses.
+     */
+    public function test_an_issue_from_a_snapshot_older_than_a_successor_is_refused(): void
+    {
+        $this->inProbe('handover', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x): void {
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($workspace, $agreement): void {
+                app(AgreementWorkflow::class)->terminate($agreement->fresh(), '2026-02-05');
+                ClientAgreement::query()->create([
+                    'workspace_id' => $workspace->id, 'client_company_id' => $agreement->client_company_id, 'title' => 'Synthetic successor',
+                    'status' => 'active', 'starts_on' => '2026-02-06', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 5000,
+                    'retainer_minutes' => 0, 'retainer_amount' => 0, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+                ]);
+            }, 'issue');
+
+            $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame(WorkOutsideAgreementSegment::class, $outcome['class']);
+            $this->assertSame('draft', $x->fresh()->status);
         });
     }
 
