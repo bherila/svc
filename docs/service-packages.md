@@ -550,7 +550,9 @@ Slice 4 (automatic recurring invoices) settled these:
   on monthly and quarterly cadences (`ProjectScopedOverlapGuardTest`), with a
   new history in `BillingHistoryInvariantTest` (two project agreements billing
   the same periods each price exactly as they would alone, no hour charged
-  twice or by the other agreement); the whole billing suite passes unchanged.
+  twice or by the other agreement); every existing billing test passes (the
+  one billing-test edit registers the new `auto_invoice_period_start` date
+  column with `DateColumnBoundaryTest`).
   Before the change that history lost the second agreement's revenue: the bulk
   walk skipped its periods with the overlap error. Consequence: a client's
   second package (its own project, its own agreement) is invoiced on the same
@@ -576,10 +578,11 @@ Slice 4 (automatic recurring invoices) settled these:
   such agreement that has begun with nothing billed (`UncoveredCadencePeriods`,
   the reader the cadence drafts and the stale-and-missing audit share), then
   per agreement, in its own transaction: the billing maintenance share lock,
-  the enrollment's row lock, `CadencePeriodGuard::lock()` (the agreement lock
-  and a locking read of every invoice claiming the period), the Square check
-  (INV-3), the company-wide check (below), the cadence engine, `EmptyCadenceDraft` (a period that asks for
-  nothing is rolled back, recorded `nothing_to_bill`), then
+  the enrollment's row lock, the company-wide check (above),
+  `CadencePeriodGuard::lock()` (the agreement lock and a locking read of every
+  invoice claiming the period), the Square check (INV-3), the cadence engine,
+  `EmptyCadenceDraft` (a period that asks for nothing is rolled back, recorded
+  `nothing_to_bill`), then
   `InvoiceLifecycleService::issue()`, so automatic delivery and autopay follow
   the company's own settings. Generating and issuing commit together: nothing
   is left claimed and unissued. A re-run, or a concurrent run waiting on the

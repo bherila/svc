@@ -226,7 +226,8 @@ final class PackageRecurringInvoices
                 }
             })
             ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
-            ->whereIn('status', InvoiceStatus::live())
+            // Classified below as the guard classifies a claim: every status
+            // but void, an unrecognised one included.
             ->get(['client_agreement_id', 'cycle_start', 'status']);
         $settled = [];
         foreach ($refused as $agreementId => $enrollment) {
