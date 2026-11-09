@@ -76,6 +76,7 @@ export function workspaceNavigation(
         shared_projects_href: '/workspaces/workspace-1/shared-projects',
         reviewers_href: '/workspaces/workspace-1/reviewers',
         approvals_href: null,
+        packages_href: '/workspaces/workspace-1/packages',
         ...overrides,
     };
 }

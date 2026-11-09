@@ -47,7 +47,8 @@ export function CopyLinkButton({
             </Button>
             <span role="status" className="text-xs text-muted-foreground">
                 {state === 'copied' && 'Copied'}
-                {state === 'failed' && 'Could not copy; select the link instead'}
+                {state === 'failed' &&
+                    'Could not copy; select the link instead'}
             </span>
         </span>
     );

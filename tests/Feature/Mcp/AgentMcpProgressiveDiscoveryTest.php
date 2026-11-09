@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Response;
+use Tests\Concerns\BootsServicePackages;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -30,6 +31,7 @@ use Tests\TestCase;
  */
 final class AgentMcpProgressiveDiscoveryTest extends TestCase
 {
+    use BootsServicePackages;
     use CallsMcp;
     use RefreshDatabase;
 
@@ -46,8 +48,9 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
             'agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [], 'agent_api.writes_enabled' => true,
             'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace',
             'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true,
+            'svc.service_packages.enabled' => true,
         ];
-        foreach (['time_entry', 'invoice', 'expense', 'payment', 'client', 'collaboration', 'project', 'proposal', 'workspace', 'file'] as $group) {
+        foreach (['time_entry', 'invoice', 'expense', 'payment', 'client', 'collaboration', 'project', 'proposal', 'workspace', 'file', 'package'] as $group) {
             $configuration['agent_api.'.$group.'_writes_enabled'] = true;
         }
         config($configuration);
@@ -231,6 +234,8 @@ final class AgentMcpProgressiveDiscoveryTest extends TestCase
     {
         yield 'finance:read' => [AgentApiScopes::FINANCE_READ, 'finance', 'finance.payouts.list', []];
         yield 'time:read' => [AgentApiScopes::TIME_READ, 'time', 'time_entries.list', []];
+        // A new scope group is a toolset of its own with no further code.
+        yield 'packages:read' => [AgentApiScopes::PACKAGES_READ, 'packages', 'packages.list', []];
     }
 
     /**

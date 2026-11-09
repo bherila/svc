@@ -16,6 +16,7 @@ use App\Services\Mcp\AgentMcpCollaborationTools;
 use App\Services\Mcp\AgentMcpContextResource;
 use App\Services\Mcp\AgentMcpDeferredBuyDownTools;
 use App\Services\Mcp\AgentMcpFinanceTools;
+use App\Services\Mcp\AgentMcpPackageTools;
 use App\Services\Mcp\AgentMcpPaymentReminderTools;
 use App\Services\Mcp\AgentMcpPortalAccessTools;
 use App\Services\Mcp\AgentMcpPortalInvitationTools;
@@ -43,6 +44,7 @@ use Bherila\McpLaravelBridge\Capabilities\Requirement;
 use Bherila\McpLaravelBridge\Capabilities\RestBinding;
 use Bherila\McpLaravelBridge\Capabilities\SchemaRef;
 use Bherila\McpLaravelBridge\Capabilities\WriteSafety;
+use Illuminate\Container\Container;
 use LogicException;
 
 /**
@@ -80,6 +82,7 @@ final class AgentOperationCatalog
         ...AttachmentSharingOperations::ROUTES,
         ...SquareCoveredPaymentOperations::ROUTES,
         ...RevenueOperations::ROUTES,
+        ...ServicePackageOperations::ROUTES,
         'collaboration.topics.list' => ['collaboration.topics.index', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [200]],
         'collaboration.topics.get' => ['collaboration.topics.show', '/workspaces/{workspace}/clients/{client}/collaboration/topics/{topic}', [200]],
         'collaboration.topics.create' => ['collaboration.topics.store', '/workspaces/{workspace}/clients/{client}/collaboration/topics', [201]],
@@ -259,9 +262,32 @@ final class AgentOperationCatalog
     /** @var array<string, true> */
     private array $external = [];
 
+    private ?OperationRegistry $contract = null;
+
+    /** This installation's operations: what it routes, offers over MCP and serves in its document. */
     public function registry(): OperationRegistry
     {
-        return $this->registry ??= $this->build();
+        return $this->registry ??= $this->build(self::servicePackages());
+    }
+
+    /**
+     * Every operation, whichever product switches this installation has on:
+     * what the checked contract (`public/openapi/svc-agent-v1.json`) documents,
+     * so regenerating it never depends on the local configuration.
+     */
+    public function contract(): OperationRegistry
+    {
+        return self::servicePackages() ? $this->registry() : ($this->contract ??= $this->build(true));
+    }
+
+    /**
+     * Whether this installation has service packages. A bare container, as in
+     * the contract unit tests, has no configuration and is taken to have them
+     * off; {@see self::contract()} has them either way.
+     */
+    private static function servicePackages(): bool
+    {
+        return Container::getInstance()->bound('config') && ServicePackageOperations::enabled();
     }
 
     /** Whether the operation is only ever offered to someone who manages a workspace. */
@@ -280,10 +306,15 @@ final class AgentOperationCatalog
         return ($this->external[$operationId] ?? false) === true;
     }
 
-    private function build(): OperationRegistry
+    private function build(bool $servicePackages): OperationRegistry
     {
         $registry = new OperationRegistry;
         $registry->register(...$this->tools(), ...$this->taskOrganizationTools(), ...$this->taskPlanningTools(), ...$this->attachmentSharingTools(), ...$this->restOnly(), ...$this->resourcesAndPrompts(), ...$this->square(), ...$this->squareMirror(), ...$this->finance(), ...$this->revenueTools(), ...$this->sharedProjectTools(), ...$this->submissionTools(), ...$this->toolsetTools());
+        // Service packages exist only while their product switch is on (API-6, X-1):
+        // switched off, no route, tool or document path of theirs is registered.
+        if ($servicePackages) {
+            $registry->register(...$this->packageTools());
+        }
         $documented = array_keys(AgentRestDocumentation::operations());
         $bound = array_keys(self::ROUTES);
         sort($documented);
@@ -1947,6 +1978,34 @@ final class AgentOperationCatalog
         return $operations;
     }
 
+    /**
+     * The service package tools (docs/service-packages.md). Each calls its
+     * REST operation; reads and writes are manager-only, and writes sit behind
+     * the package write cutover inside the outer workflow one.
+     *
+     * @return list<Operation>
+     */
+    private function packageTools(): array
+    {
+        $operations = [];
+        foreach (ServicePackageOperations::DEFINITIONS as $id => [$handler, $title, , $response, $request]) {
+            $write = $request !== null;
+            $operations[] = $this->tool($id, $title, self::documented($id), [AgentMcpPackageTools::class, $handler],
+                match ($id) {
+                    'packages.retire' => Effect::Destructive,
+                    'packages.list', 'packages.get' => Effect::Read,
+                    default => Effect::LocalWrite,
+                }, true, $write ? 'mcp.write' : 'mcp.read',
+                cutovers: $write ? [AgentDeploymentFlags::PACKAGES] : [],
+                manager: true,
+                input: $write ? SchemaRef::openApi($request) : null,
+                output: SchemaRef::openApi($response),
+                availability: [AgentDeploymentFlags::SERVICE_PACKAGES]);
+        }
+
+        return $operations;
+    }
+
     /** @return list<Operation> */
     private function submissionTools(): array
     {
@@ -2266,7 +2325,7 @@ final class AgentOperationCatalog
         if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id]) || isset(SubmissionOperations::ROUTES[$id])) {
             return false;
         }
-        $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
+        $body = self::requestBody($id);
 
         return isset($body['properties']['confirm']);
     }
@@ -2279,9 +2338,26 @@ final class AgentOperationCatalog
         if (! isset(self::ROUTES[$id]) || isset(SharedProjectOperations::ROUTES[$id]) || isset(SubmissionOperations::ROUTES[$id])) {
             return false;
         }
-        $body = AgentApiResponseSchemaCatalog::requestForOperation($id);
+        $body = self::requestBody($id);
 
         return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version'])
             || isset($body['properties']['expected_graph_version']) || isset($body['properties']['expected_container_version']);
+    }
+
+    /**
+     * A documented operation's request body. Code-owned package requests are
+     * read from their own declaration, which the checked document is generated
+     * from: while the product switch is off it publishes no package path to
+     * look them up by.
+     *
+     * @return array<string, mixed>
+     */
+    private static function requestBody(string $id): array
+    {
+        if (isset(ServicePackageOperations::ROUTES[$id])) {
+            return ServicePackageOperations::schema((string) ServicePackageOperations::DEFINITIONS[$id][4]);
+        }
+
+        return AgentApiResponseSchemaCatalog::requestForOperation($id);
     }
 }

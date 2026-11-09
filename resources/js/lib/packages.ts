@@ -1,6 +1,5 @@
-import { formatMoney } from '@/lib/money';
 import { statusLabel } from '@/lib/labels';
-import type { PackageTerms } from '@/types/packages';
+import { formatMoney } from '@/lib/money';
 
 /** Every cadence the server offers, as words. Unknown ones read as words too. */
 const CADENCE_LABELS: Record<string, string> = {
@@ -39,40 +38,9 @@ export function priceLine(
 
 /** A stored minor-unit amount as the text an input holds: 4500 -> "45.00". */
 export function majorText(minor: number | null | undefined): string {
-    return minor === null || minor === undefined ? '' : (minor / 100).toFixed(2);
-}
-
-/**
- * What one billing cycle costs at the headline: the recurring components on the
- * package's own cadence plus the retainer, as the server's own presenter adds
- * them. Usage is extra and not included.
- */
-export function cycleAmount(terms: PackageTerms): number {
-    let total = terms.retainer_amount ?? 0;
-
-    for (const component of terms.components) {
-        if (
-            component.kind === 'recurring' &&
-            component.cadence === terms.billing_cadence
-        ) {
-            total += Math.round(
-                component.amount * Number.parseFloat(component.quantity),
-            );
-        }
-    }
-
-    return total;
-}
-
-/** Whether any term bills by usage, which an automatic invoice cannot carry. */
-export function billsByUsage(terms: {
-    hourly: boolean;
-    retainerAmount: number;
-    retainerMinutes: number;
-}): boolean {
-    return (
-        terms.hourly || terms.retainerAmount > 0 || terms.retainerMinutes > 0
-    );
+    return minor === null || minor === undefined
+        ? ''
+        : (minor / 100).toFixed(2);
 }
 
 /**
@@ -81,8 +49,7 @@ export function billsByUsage(terms: {
  * copy typed by an operator can never inject markup.
  */
 export type TextBlock =
-    | { type: 'paragraph'; text: string }
-    | { type: 'list'; items: string[] };
+    { type: 'paragraph'; text: string } | { type: 'list'; items: string[] };
 
 export function textBlocks(markdown: string | null): TextBlock[] {
     const blocks: TextBlock[] = [];

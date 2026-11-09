@@ -55,6 +55,7 @@ final class ServicePackagePresenter
             'published_at' => $version->published_at?->toIso8601String(),
             'terms' => $terms->toArray(),
             'setup_fee_total' => $terms->setupFeeTotal(),
+            'cycle_amount' => PublicPackagePresenter::cycleAmount($terms),
         ];
     }
 }

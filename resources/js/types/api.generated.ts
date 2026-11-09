@@ -1791,6 +1791,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/packages': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the workspace's service packages, oldest first, optionally by status (draft, published or retired). Each has its published version and its draft, both with every term, its public URL once published, and publish_refusals: the coded reasons publishing the draft would be refused now (for example a payment at sign-up without a Stripe connection). Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['packages.list'];
+        put?: never;
+        /** @description Create a service package with a draft version. Terms not sent take the defaults (the workspace currency, monthly, draft invoices, owner review, request-mode cancellation with 30 days' notice); intake questions without a key get one from their label. Creating publishes nothing. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['packages.create'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/packages/{package}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read one service package with its published version, its draft, its public URL and publish_refusals, and the version to send with a change. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['packages.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Change package fields (link name, listed, portal-addable) and/or the draft's terms, using the package's current version. Only what is sent changes; sending components or intake_questions replaces that whole list. Terms are always written to the draft: a published version is never changed, and editing a published package starts a new draft from it. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        patch: operations['packages.update'];
+        trace?: never;
+    };
+    '/workspaces/{workspace}/packages/{package}/publish': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, publish the draft as the package's new version and open its public page. Refused with a coded reason (package_payment_needs_stripe, package_auto_issue_needs_fixed_price and the other publish_refusals codes) when the draft could not be honoured. Current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['packages.publish'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/packages/{package}/retire': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, close a published package to new requests and portal additions. Agreements already made from it are untouched. Current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['packages.retire'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/payments/{payment}': {
         parameters: {
             query?: never;
@@ -5816,6 +5886,228 @@ export interface components {
             subtitle: string | null;
             href: string;
             workspace: string;
+        };
+        ServicePackage: {
+            id: components['schemas']['Uuid'];
+            link_name: string;
+            /** @enum {string} */
+            status: 'draft' | 'published' | 'retired';
+            is_listed: boolean;
+            portal_addable: boolean;
+            /** Format: uri */
+            public_url: string | null;
+            published: components['schemas']['ServicePackageVersion'] | null;
+            draft: components['schemas']['ServicePackageVersion'] | null;
+            publish_refusals: {
+                /** @enum {string} */
+                code:
+                    | 'package_link_name_taken'
+                    | 'package_not_published'
+                    | 'package_nothing_to_publish'
+                    | 'package_nothing_priced'
+                    | 'package_payment_needs_stripe'
+                    | 'package_auto_issue_needs_fixed_price'
+                    | 'package_autopay_needs_limit'
+                    | 'package_pay_before_activation_needs_charge'
+                    | 'package_setup_fee_at_signup_needs_setup_fee'
+                    | 'package_minimum_term_needs_recurring_cadence';
+                message: string;
+            }[];
+            version: components['schemas']['Version'];
+            /** Format: date-time */
+            created_at: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        ServicePackageConfirmRequest: {
+            expected_version: string;
+            /** @constant */
+            confirm: true;
+        };
+        ServicePackageCreateRequest: {
+            link_name: string;
+            is_listed?: boolean;
+            portal_addable?: boolean;
+            name: string;
+            summary?: string | null;
+            body_markdown?: string | null;
+            agreement_text?: string | null;
+            currency?: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'one_time';
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+            rollover_months?: number | null;
+            /** @enum {string|null} */
+            first_cycle_proration?:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            charge_setup_fee_at_signup?: boolean;
+            charge_first_period?: boolean;
+            require_autopay?: boolean;
+            autopay_limit_amount?: number | null;
+            pay_before_activation?: boolean;
+            payment_lapse_days?: number;
+            /** @enum {string} */
+            activation_mode?: 'automatic' | 'review';
+            /** @enum {string} */
+            invoice_issuing?: 'automatic' | 'draft';
+            notice_days?: number;
+            minimum_term_months?: number | null;
+            /** @enum {string} */
+            cancellation_mode?: 'none' | 'request' | 'self_serve';
+            components?: {
+                /** @enum {string} */
+                kind: 'recurring' | 'setup_fee';
+                description: string;
+                /** @enum {string|null} */
+                cadence?:
+                    | 'monthly'
+                    | 'quarterly'
+                    | 'semi_annual'
+                    | 'annual'
+                    | 'one_time'
+                    | null;
+                amount: number;
+                quantity?: number | null;
+                is_taxable?: boolean | null;
+            }[];
+            intake_questions?: {
+                key?: string;
+                label: string;
+                /** @enum {string} */
+                kind: 'short_text' | 'paragraph';
+                required?: boolean | null;
+            }[];
+        };
+        ServicePackageListResponse: {
+            data: components['schemas']['ServicePackage'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ServicePackageResponse: {
+            data: components['schemas']['ServicePackage'];
+        };
+        ServicePackageTerms: {
+            name: string;
+            summary: string | null;
+            body_markdown: string | null;
+            agreement_text: string | null;
+            currency: string;
+            /** @enum {string} */
+            billing_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'one_time';
+            hourly_rate_amount: number | null;
+            retainer_amount: number | null;
+            retainer_minutes: number | null;
+            rollover_months: number | null;
+            /** @enum {string|null} */
+            first_cycle_proration:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            charge_setup_fee_at_signup: boolean;
+            charge_first_period: boolean;
+            require_autopay: boolean;
+            autopay_limit_amount: number | null;
+            pay_before_activation: boolean;
+            payment_lapse_days: number;
+            /** @enum {string} */
+            activation_mode: 'automatic' | 'review';
+            /** @enum {string} */
+            invoice_issuing: 'automatic' | 'draft';
+            notice_days: number;
+            minimum_term_months: number | null;
+            /** @enum {string} */
+            cancellation_mode: 'none' | 'request' | 'self_serve';
+            intake_questions: {
+                key: string;
+                label: string;
+                /** @enum {string} */
+                kind: 'short_text' | 'paragraph';
+                required: boolean;
+            }[];
+            components: {
+                /** @enum {string} */
+                kind: 'recurring' | 'setup_fee';
+                description: string;
+                /** @enum {string} */
+                cadence:
+                    | 'monthly'
+                    | 'quarterly'
+                    | 'semi_annual'
+                    | 'annual'
+                    | 'one_time';
+                amount: number;
+                quantity: string;
+                is_taxable: boolean;
+            }[];
+        };
+        ServicePackageUpdateRequest: {
+            expected_version: string;
+            link_name?: string;
+            is_listed?: boolean;
+            portal_addable?: boolean;
+            name?: string;
+            summary?: string | null;
+            body_markdown?: string | null;
+            agreement_text?: string | null;
+            currency?: string;
+            /** @enum {string} */
+            billing_cadence?:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'one_time';
+            hourly_rate_amount?: number | null;
+            retainer_amount?: number | null;
+            retainer_minutes?: number | null;
+            rollover_months?: number | null;
+            /** @enum {string|null} */
+            first_cycle_proration?:
+                'prorate_hours' | 'full_period' | 'align_next_cycle' | null;
+            charge_setup_fee_at_signup?: boolean;
+            charge_first_period?: boolean;
+            require_autopay?: boolean;
+            autopay_limit_amount?: number | null;
+            pay_before_activation?: boolean;
+            payment_lapse_days?: number;
+            /** @enum {string} */
+            activation_mode?: 'automatic' | 'review';
+            /** @enum {string} */
+            invoice_issuing?: 'automatic' | 'draft';
+            notice_days?: number;
+            minimum_term_months?: number | null;
+            /** @enum {string} */
+            cancellation_mode?: 'none' | 'request' | 'self_serve';
+            components?: {
+                /** @enum {string} */
+                kind: 'recurring' | 'setup_fee';
+                description: string;
+                /** @enum {string|null} */
+                cadence?:
+                    | 'monthly'
+                    | 'quarterly'
+                    | 'semi_annual'
+                    | 'annual'
+                    | 'one_time'
+                    | null;
+                amount: number;
+                quantity?: number | null;
+                is_taxable?: boolean | null;
+            }[];
+            intake_questions?: {
+                key?: string;
+                label: string;
+                /** @enum {string} */
+                kind: 'short_text' | 'paragraph';
+                required?: boolean | null;
+            }[];
+        };
+        ServicePackageVersion: {
+            id: components['schemas']['Uuid'];
+            number: number;
+            /** Format: date-time */
+            published_at: string | null;
+            terms: components['schemas']['ServicePackageTerms'];
+            setup_fee_total: number;
         };
         SharedProjectAssignRequest: {
             assignees: {
@@ -13950,6 +14242,482 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['SummaryResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.list': {
+        parameters: {
+            query?: {
+                status?: 'draft' | 'published' | 'retired';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service packages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.create': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageCreateRequest'];
+            };
+        };
+        responses: {
+            /** @description Service package */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service package */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.update': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageUpdateRequest'];
+            };
+        };
+        responses: {
+            /** @description Service package */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.publish': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Service package */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'packages.retire': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                package: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Service package */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { ClientsTabs } from '@/components/packages/clients-tabs';
 import { ClientRoster } from '@/components/revenue/client-roster';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -136,6 +137,7 @@ export default function ClientIndex({
                     )}
                     data-appearance-bridge
                 >
+                    <ClientsTabs active="clients" />
                     <h1 className="text-[17px] font-semibold tracking-tight md:text-lg">
                         Clients
                     </h1>

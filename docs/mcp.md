@@ -171,7 +171,7 @@ so the two groups no longer turn on together.
 ### Scope groups, presets and Admin (#582)
 
 The credential picker (personal API tokens and OAuth apps) and the OAuth consent
-screen show the 29 agent scopes in groups rather than one flat list. The catalog is
+screen show the 31 agent scopes in groups rather than one flat list. The catalog is
 `App\Support\AgentApi\AgentApiScopePresentation`, bound as the auth package's
 `ScopePresentation`; `AgentApiScopePresentationTest` pins every id, order and scope.
 It is presentation only: grants, tokens and OAuth clients still store explicit scope
@@ -183,15 +183,16 @@ ids, and no endpoint accepts a group or preset id.
 | Projects & tasks | `projects:read`, `projects:write`, `tasks:read`, `tasks:write` |
 | Collaboration & files | `collaboration:read`, `collaboration:write`, `files:read` |
 | Time | `time:read`, `time:write` |
-| Clients & proposals | `clients:read`, `proposals:read` |
+| Clients, proposals & packages | `clients:read`, `proposals:read`, `packages:read` |
 | Billing & payments | `billing:read`, `billing:write`, `payments:read` |
 | Expenses & finance | `expenses:read`, `expenses:write`, `finance:read`, `revenue:read` |
-| Admin (sensitive) | `billing:deliver`, `payments:record`, `finance:reconcile`, `proposals:write`, `proposals:accept`, `time:approve`, `clients:write`, `files:write`, `workspaces:create` |
+| Admin (sensitive) | `billing:deliver`, `payments:record`, `finance:reconcile`, `proposals:write`, `proposals:accept`, `packages:write`, `time:approve`, `clients:write`, `files:write`, `workspaces:create` |
 
 A group shows only the scopes the surface offers, and is omitted when it has none.
 **Admin** collects every sensitive scope: sending invoices and proposals to clients,
-recording or reconciling money, accepting agreements, approving time and rates,
-changing clients, sharing files and creating workspaces. "Admin" is not an OAuth
+recording or reconciling money, accepting agreements, publishing service packages
+(a published package has a public sign-up page outside people use), approving time
+and rates, changing clients, sharing files and creating workspaces. "Admin" is not an OAuth
 scope. Ticking it in the picker stores the explicit scopes, so a sensitive scope
 added later never reaches an existing grant without a new consent. On the consent
 screen an Admin scope appears in its own section with the group description and a
@@ -202,7 +203,7 @@ boxes stay editable. A preset is offered only where all its scopes are offered.
 
 | Preset | Scopes |
 | --- | --- |
-| Read-only | `identity:read` plus every `:read` scope, derived from the catalog so a new read scope joins it; listed in the order `identity:read`, `projects`, `tasks`, `collaboration`, `files`, `time`, `clients`, `proposals`, `billing`, `payments`, `expenses`, `finance`, `revenue`, then any newer read scope in catalog order |
+| Read-only | `identity:read` plus every `:read` scope, derived from the catalog so a new read scope joins it; listed in the order `identity:read`, `projects`, `tasks`, `collaboration`, `files`, `time`, `clients`, `proposals`, `packages`, `billing`, `payments`, `expenses`, `finance`, `revenue`, then any newer read scope in catalog order |
 | Time logging | `identity:read`, `projects:read`, `tasks:read`, `time:read`, `time:write` |
 | Project work | Time logging plus `tasks:write`, `collaboration:read`, `collaboration:write`, `files:read` |
 | Invoice drafting | `identity:read`, `projects:read`, `clients:read`, `time:read`, `billing:read`, `billing:write`, `payments:read` |
@@ -223,6 +224,7 @@ preset is closed under the map (the package validator and a unit test check it).
 | `payments:record` | `payments:read` |
 | `finance:reconcile` | `finance:read` |
 | `proposals:write`, `proposals:accept` | `proposals:read` |
+| `packages:write` | `packages:read` |
 | `time:approve` | `time:read` |
 | `clients:write` | `clients:read` |
 | `files:write` | `files:read` |
@@ -609,7 +611,10 @@ see the read-only `square.*` pass-through tools described under
 [Finance reconciliation](#finance-reconciliation-457). Managers holding
 `revenue:read` also see `revenue.summary`, `revenue.monthly`,
 `revenue.projection` and `revenue.clients`, described under
-[Revenue planning reads](#revenue-planning-reads).
+[Revenue planning reads](#revenue-planning-reads). While
+`SVC_SERVICE_PACKAGES_ENABLED` is on, managers holding `packages:read` also see
+`packages.list` and `packages.get`, described under
+[Service packages](#service-packages).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -2070,6 +2075,53 @@ retries reuse the result and recheck current authorization. A changed body with
 an old key or a stale version returns a conflict. Send and accept lock the
 proposal before checking its version; acceptance then locks its company before
 visibility reads or agreement decisions can establish a database snapshot.
+### Service packages
+
+The service package operations (`docs/service-packages.md`, "MCP and REST surface")
+exist only while `SVC_SERVICE_PACKAGES_ENABLED` is on, which it is not by default.
+Switched off, none of them is registered: no `/workspaces/{workspace}/packages`
+route, no MCP tool and no `packages` toolset, and the document served at
+`/api/openapi.json` leaves their paths and schemas out. The checked contract,
+`public/openapi/svc-agent-v1.json`, documents them whatever the local switch, so
+regenerating it never depends on configuration. Each operation also declares the
+switch as a product precondition (`x-svc-flags` names it), which no session
+bypasses, so a process whose configuration changed after its routes were built
+still answers 404 and offers no tool.
+
+| Operation | Scopes | Notes |
+| --- | --- | --- |
+| `packages.list` | `packages:read` | Oldest first; optional `status` (`draft`, `published`, `retired`), `limit` 1-100, `cursor` |
+| `packages.get` | `packages:read` | |
+| `packages.create` | `packages:write`, `packages:read` | Creates the package with a draft version; returns 201 |
+| `packages.update` | `packages:write`, `packages:read` | `expected_version`; changes only what is sent, always on the draft |
+| `packages.publish` | `packages:write`, `packages:read` | `expected_version` and `confirm: true` |
+| `packages.retire` | `packages:write`, `packages:read` | `expected_version` and `confirm: true` |
+
+They are workspace owner/admin operations. Anyone else, a portal contact included,
+and any other workspace's package, is answered 404 as if no package existed, and
+the tools are not offered to them. A package answers with its published version
+and its draft (each with every term and its `setup_fee_total`), its `public_url`
+once published, its opaque `version`, and `publish_refusals`: the coded reasons
+(`package_payment_needs_stripe`, `package_auto_issue_needs_fixed_price` and the
+others in `ServicePackagePresenter`) publishing the draft would be refused now.
+A refused publish answers 422 with the first reason's `code` and every reason in
+its message; MCP repeats the code in its tool error.
+
+The routes, the tools and the website call the same `ServicePackageWorkflow` and
+`ServicePackageReadService`, so authorization, term validation, locking and
+versions cannot differ between them. The request schemas are generated from
+`ServicePackageRules`, the rules that workflow validates with, and every schema is
+code-owned in `ServicePackageOperations`, regenerated into the contract by
+`php scripts/generate-package-contract.php`. Each MCP tool runs its REST
+operation, so a tool's input is its REST body plus the path and idempotency key,
+and its output is the REST response.
+
+Writes take a stable idempotency key and need both `AGENT_API_WRITES_ENABLED` and
+`AGENT_API_PACKAGE_WRITES_ENABLED` (off by default); the signed-in website passes
+those cutovers, as for every write group, but never the product switch. Identical
+retries replay the result and recheck that the caller still manages the
+workspace; a changed body with an old key, or a stale `expected_version`, is a 409.
+
 ### Workspace and generic file parity (#386, #382)
 
 | Capability | Shared website action/query | Scope and deployment gate |

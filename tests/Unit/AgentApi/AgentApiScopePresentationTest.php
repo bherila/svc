@@ -73,18 +73,18 @@ final class AgentApiScopePresentationTest extends TestCase
             ['projects', 'Projects & tasks', false, [S::PROJECTS_READ, S::PROJECTS_WRITE, S::TASKS_READ, S::TASKS_WRITE]],
             ['collaboration', 'Collaboration & files', false, [S::COLLABORATION_READ, S::COLLABORATION_WRITE, S::FILES_READ]],
             ['time', 'Time', false, [S::TIME_READ, S::TIME_WRITE]],
-            ['clients', 'Clients & proposals', false, [S::CLIENTS_READ, S::PROPOSALS_READ]],
+            ['clients', 'Clients, proposals & packages', false, [S::CLIENTS_READ, S::PROPOSALS_READ, S::PACKAGES_READ]],
             ['billing', 'Billing & payments', false, [S::BILLING_READ, S::BILLING_WRITE, S::PAYMENTS_READ]],
             ['expenses', 'Expenses & finance', false, [S::EXPENSES_READ, S::EXPENSES_WRITE, S::FINANCE_READ, S::REVENUE_READ]],
             ['admin', 'Admin', true, [
                 S::BILLING_DELIVER, S::PAYMENTS_RECORD, S::FINANCE_RECONCILE, S::PROPOSALS_WRITE, S::PROPOSALS_ACCEPT,
-                S::TIME_APPROVE, S::CLIENTS_WRITE, S::FILES_WRITE, S::WORKSPACES_CREATE,
+                S::PACKAGES_WRITE, S::TIME_APPROVE, S::CLIENTS_WRITE, S::FILES_WRITE, S::WORKSPACES_CREATE,
             ]],
         ], $groups);
 
         $descriptions = array_map(static fn ($group): ?string => $group->description, $this->presentation->groups());
         $this->assertSame(
-            [null, null, null, null, null, null, null, 'Send invoices and proposals to clients, record or reconcile money, accept agreements, approve time and rates, change clients, share files and create workspaces.'],
+            [null, null, null, null, null, null, null, 'Send invoices and proposals to clients, record or reconcile money, accept agreements, publish service packages, approve time and rates, change clients, share files and create workspaces.'],
             $descriptions,
         );
     }
@@ -99,7 +99,7 @@ final class AgentApiScopePresentationTest extends TestCase
         $this->assertSame([
             ['read_only', 'Read-only', 'Read your projects, tasks, notes and discussions, files, time, clients, proposals, invoices, payments, expenses, finance and revenue. Changes nothing.', [
                 S::IDENTITY_READ, S::PROJECTS_READ, S::TASKS_READ, S::COLLABORATION_READ, S::FILES_READ, S::TIME_READ,
-                S::CLIENTS_READ, S::PROPOSALS_READ, S::BILLING_READ, S::PAYMENTS_READ, S::EXPENSES_READ, S::FINANCE_READ, S::REVENUE_READ,
+                S::CLIENTS_READ, S::PROPOSALS_READ, S::PACKAGES_READ, S::BILLING_READ, S::PAYMENTS_READ, S::EXPENSES_READ, S::FINANCE_READ, S::REVENUE_READ,
             ]],
             ['time_logging', 'Time logging', 'Read your projects and tasks, and log and manage your draft time against them.', [
                 S::IDENTITY_READ, S::PROJECTS_READ, S::TASKS_READ, S::TIME_READ, S::TIME_WRITE,
@@ -128,6 +128,7 @@ final class AgentApiScopePresentationTest extends TestCase
             S::FINANCE_RECONCILE => [S::FINANCE_READ],
             S::PROPOSALS_WRITE => [S::PROPOSALS_READ],
             S::PROPOSALS_ACCEPT => [S::PROPOSALS_READ],
+            S::PACKAGES_WRITE => [S::PACKAGES_READ],
             S::TIME_APPROVE => [S::TIME_READ],
             S::CLIENTS_WRITE => [S::CLIENTS_READ],
             S::FILES_WRITE => [S::FILES_READ],

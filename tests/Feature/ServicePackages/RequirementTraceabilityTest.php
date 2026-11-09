@@ -25,8 +25,6 @@ final class RequirementTraceabilityTest extends TestCase
      * @var list<string>
      */
     private const PENDING = [
-        // Slice 1b: admin and public pages.
-        'PUB-7', 'X-4',
         // Slice 2: requests and approval.
         'PUB-4', 'PUB-5', 'PUB-6', 'PUB-8', 'ADM-1', 'ADM-2', 'ADM-3', 'ADM-4', 'ADM-5', 'EDGE-4', 'EDGE-10', 'API-3',
         // Slice 3: acceptance, payment, activation.

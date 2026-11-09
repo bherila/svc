@@ -3,7 +3,11 @@
 namespace App\Services\AgentApi\Operations;
 
 use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Services\Packages\ServicePackageReadService;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\Billing\ChargeCadence;
+use App\Support\Billing\FirstCycleProration;
 use App\Support\Packages\CancellationMode;
 use App\Support\Packages\IntakeQuestionKind;
 use App\Support\Packages\PackageActivationMode;
@@ -13,8 +17,6 @@ use App\Support\Packages\PackageRefusal;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use App\Support\Packages\ServicePackageRules;
-use App\Support\Billing\ChargeCadence;
-use App\Support\Billing\FirstCycleProration;
 use BackedEnum;
 use InvalidArgumentException;
 use LogicException;
@@ -27,8 +29,8 @@ use Stringable;
  * public contract by scripts/generate-package-contract.php.
  *
  * Nothing here decides anything about a package: the routes call
- * {@see \App\Services\Packages\ServicePackageWorkflow} and
- * {@see \App\Services\Packages\ServicePackageReadService}, and the request
+ * {@see ServicePackageWorkflow} and
+ * {@see ServicePackageReadService}, and the request
  * schemas are generated from {@see ServicePackageRules}, the rules that
  * workflow validates with, so the contract cannot accept what it refuses.
  *
@@ -74,11 +76,6 @@ final class ServicePackageOperations
         return EnsureServicePackagesEnabled::enabled();
     }
 
-    public static function writes(string $id): bool
-    {
-        return self::DEFINITIONS[$id][4] !== null;
-    }
-
     /** @return list<string> every component this family adds to the contract */
     public static function components(): array
     {
@@ -111,8 +108,7 @@ final class ServicePackageOperations
             429 => 'Too many requests (retry after Retry-After).',
         ];
         $writeErrors = array_replace($errors, [
-            403 => 'The token lacks the operation\'s scopes, or the caller is not a workspace owner or admin (checked again on a replay).',
-            404 => 'The workspace or package is not visible to the caller, the caller is not a workspace owner or admin, or an agent write cutover is switched off.',
+            404 => 'The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.',
             409 => 'expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
             422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal.',
         ]);
@@ -127,16 +123,17 @@ final class ServicePackageOperations
                 'packages.get' => ['WorkspaceId', $package],
                 default => ['WorkspaceId', $package, 'IdempotencyKey'],
             };
+            $read = $request === null;
             $operations[$id] = [
                 'method' => $method,
-                'scopes' => $request === null ? [AgentApiScopes::PACKAGES_READ] : [AgentApiScopes::PACKAGES_WRITE, AgentApiScopes::PACKAGES_READ],
+                'scopes' => $read ? [AgentApiScopes::PACKAGES_READ] : [AgentApiScopes::PACKAGES_WRITE, AgentApiScopes::PACKAGES_READ],
                 'summary' => $title,
                 'description' => $descriptions[$id],
                 'parameters' => $parameters,
                 'response' => $response,
                 'response_description' => $id === 'packages.list' ? 'Service packages' : 'Service package',
-                'errors' => $request === null ? $errors : $writeErrors,
-            ] + ($request === null ? [] : ['request' => $request]);
+                'errors' => $read ? $errors : $writeErrors,
+            ] + ($read ? [] : ['request' => $request]);
         }
 
         return $operations;
@@ -152,16 +149,8 @@ final class ServicePackageOperations
         $int = ['type' => 'integer'];
         $nullableInt = ['type' => ['integer', 'null']];
         $bool = ['type' => 'boolean'];
-        $instant = ['type' => 'string', 'format' => 'date-time'];
         $nullableInstant = ['type' => ['string', 'null'], 'format' => 'date-time'];
-        $expected = ['expected_version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64]];
-        $termKeys = ServicePackageRules::termKeys();
         $packageRules = ServicePackageRules::package(creating: true);
-        $requiredAtCreate = array_values(array_filter(
-            [...array_keys($packageRules), ...$termKeys],
-            static fn (string $key): bool => in_array('required', ServicePackageRules::terms()[$key] ?? $packageRules[$key], true)
-                && ! array_key_exists($key, PackageTerms::defaults('USD')),
-        ));
 
         return match ($component) {
             'ServicePackage' => self::object([
@@ -187,6 +176,8 @@ final class ServicePackageOperations
                 'published_at' => $nullableInstant,
                 'terms' => ['$ref' => '#/components/schemas/ServicePackageTerms'],
                 'setup_fee_total' => ['type' => 'integer', 'minimum' => 0],
+                // What one billing period of the recurring terms costs, in minor units.
+                'cycle_amount' => ['type' => 'integer', 'minimum' => 0],
             ]),
             'ServicePackageTerms' => self::object([
                 'name' => $text,
@@ -232,15 +223,14 @@ final class ServicePackageOperations
                 'data' => ['type' => 'array', 'maxItems' => self::MAX_LIMIT, 'items' => ['$ref' => '#/components/schemas/ServicePackage']],
                 'meta' => self::object(['next_cursor' => $nullableText]),
             ]),
-            'ServicePackageCreateRequest' => self::request(
-                self::fromRules([...$packageRules, ...ServicePackageRules::terms()], [...array_keys($packageRules), ...$termKeys]),
-                $requiredAtCreate,
-            ),
-            'ServicePackageUpdateRequest' => self::request(
-                [...$expected, ...self::fromRules([...ServicePackageRules::package(creating: false), ...ServicePackageRules::terms()], [...array_keys($packageRules), ...$termKeys])],
-                ['expected_version'],
-            ),
-            'ServicePackageConfirmRequest' => self::request([...$expected, 'confirm' => ['type' => 'boolean', 'const' => true]], ['expected_version', 'confirm']),
+            // Everything else has a default when creating, and is the draft's when updating.
+            'ServicePackageCreateRequest' => self::request(self::requestProperties($component), array_values(array_filter(
+                [...array_keys($packageRules), ...ServicePackageRules::termKeys()],
+                static fn (string $key): bool => in_array('required', ServicePackageRules::terms()[$key] ?? $packageRules[$key], true)
+                    && ! array_key_exists($key, PackageTerms::defaults('USD')),
+            ))),
+            'ServicePackageUpdateRequest' => self::request(self::requestProperties($component), ['expected_version']),
+            'ServicePackageConfirmRequest' => self::request(self::requestProperties($component), ['expected_version', 'confirm']),
             default => throw new InvalidArgumentException("Unknown service package component {$component}."),
         };
     }
@@ -255,7 +245,25 @@ final class ServicePackageOperations
     {
         $request = self::DEFINITIONS[$id][4] ?? throw new LogicException("Operation [{$id}] takes no body.");
 
-        return array_keys(self::schema($request)['properties']);
+        return array_keys(self::requestProperties($request));
+    }
+
+    /**
+     * A request body's fields and their schemas.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function requestProperties(string $component): array
+    {
+        $expected = ['expected_version' => ['type' => 'string', 'minLength' => 64, 'maxLength' => 64]];
+        $fields = [...array_keys(ServicePackageRules::package(creating: true)), ...ServicePackageRules::termKeys()];
+
+        return match ($component) {
+            'ServicePackageCreateRequest' => self::fromRules([...ServicePackageRules::package(creating: true), ...ServicePackageRules::terms()], $fields),
+            'ServicePackageUpdateRequest' => [...$expected, ...self::fromRules([...ServicePackageRules::package(creating: false), ...ServicePackageRules::terms()], $fields)],
+            'ServicePackageConfirmRequest' => [...$expected, 'confirm' => ['type' => 'boolean', 'const' => true]],
+            default => throw new InvalidArgumentException("Unknown service package request {$component}."),
+        };
     }
 
     /**
@@ -316,6 +324,10 @@ final class ServicePackageOperations
             foreach ($keys[$name] ?? throw new LogicException("Bound [{$name}] for [{$path}] has no schema translation.") as $key) {
                 $schema[$key] = $value;
             }
+        }
+        // `required` also refuses an empty string.
+        if (($schema['type'] ?? null) === 'string' && ! isset($schema['minLength']) && ! isset($schema['enum']) && in_array('required', $rules[$path] ?? [], true)) {
+            $schema['minLength'] = 1;
         }
         if (isset($schema['enum']) && ! isset($schema['type'])) {
             $schema['type'] = 'string';

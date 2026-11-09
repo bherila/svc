@@ -21,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Laravel\Passport\Http\Middleware\CheckToken;
+use Tests\Concerns\BootsServicePackages;
 use Tests\TestCase;
 
 /**
@@ -29,6 +30,7 @@ use Tests\TestCase;
  */
 final class AgentOperationRegistryTest extends TestCase
 {
+    use BootsServicePackages;
     use RefreshDatabase;
 
     private const string SCOPE_INVENTORY = 'tests/Fixtures/AgentApi/operation-scopes.json';
@@ -51,6 +53,7 @@ final class AgentOperationRegistryTest extends TestCase
             'finance.reconciliations.acknowledge',
             'invoices.autopay.resolve', 'invoices.autopay.skip', 'invoices.correct', 'invoices.discard_draft', 'invoices.generate_period', 'invoices.issue',
             'invoices.release_delivery', 'invoices.reopen', 'invoices.send', 'invoices.send_reminder', 'invoices.square_cover', 'invoices.square_covered_payment_record', 'invoices.square_link', 'invoices.square_uncover', 'invoices.square_unlink', 'invoices.void',
+            'packages.publish', 'packages.retire',
             'payments.correct', 'payments.record', 'payments.refund', 'payments.reverse_refund', 'payments.set_status', 'projects.archive', 'projects.create', 'projects.members.update', 'projects.update',
             'proposals.accept', 'proposals.send', 'square.import_customer', 'task_organization.lists.archive', 'task_planning.labels.archive',
         ];

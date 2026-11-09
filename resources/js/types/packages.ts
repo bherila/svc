@@ -58,6 +58,8 @@ export type PackageVersion = {
     terms: PackageTerms;
     /** Minor units. */
     setup_fee_total: number;
+    /** One billing cycle at the headline, from the server: recurring components on the package's cadence plus the retainer. */
+    cycle_amount: number;
 };
 
 export type PackageRefusal = { code: string; message: string };

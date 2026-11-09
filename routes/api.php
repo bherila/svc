@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\AgentExpenseScheduleController;
 use App\Http\Controllers\Api\V1\AgentInvoiceMutationController;
 use App\Http\Controllers\Api\V1\AgentInvoiceOperationsController;
 use App\Http\Controllers\Api\V1\AgentMcpController;
+use App\Http\Controllers\Api\V1\AgentPackageController;
 use App\Http\Controllers\Api\V1\AgentPaymentController;
 use App\Http\Controllers\Api\V1\AgentPaymentReminderController;
 use App\Http\Controllers\Api\V1\AgentPortalAccessController;
@@ -48,6 +49,7 @@ use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
 use App\Services\AgentApi\Operations\RevenueOperations;
+use App\Services\AgentApi\Operations\ServicePackageOperations;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Finance\ReconciliationTarget;
@@ -220,6 +222,13 @@ Route::prefix('v1')
         $workspaceOperation('proposals.create', [AgentProposalController::class, 'store']);
         $workspaceOperation('proposals.send', [AgentProposalController::class, 'send'])->whereUuid('proposal');
         $workspaceOperation('proposals.accept', [AgentProposalController::class, 'accept'])->whereUuid('proposal');
+
+        // Service packages exist only while their product switch is on (API-6, X-1).
+        if (ServicePackageOperations::enabled()) {
+            foreach (['packages.list' => 'index', 'packages.get' => 'show', 'packages.create' => 'store', 'packages.update' => 'update', 'packages.publish' => 'publish', 'packages.retire' => 'retire'] as $id => $handler) {
+                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid('package');
+            }
+        }
 
         $workspaceOperation('expenses.list', [AgentExpenseController::class, 'index']);
         $workspaceOperation('expenses.log', [AgentExpenseController::class, 'store']);

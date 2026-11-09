@@ -23,7 +23,7 @@ import WorkspaceShell from '@/layouts/workspace-shell';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
-import { cycleAmount, priceLine } from '@/lib/packages';
+import { priceLine } from '@/lib/packages';
 import { cn } from '@/lib/utils';
 import type { PackageListItem, PackagesIndexProps } from '@/types/packages';
 
@@ -40,7 +40,7 @@ function Price({ pkg }: { pkg: PackageListItem }) {
     }
 
     const { terms } = version;
-    const cycle = cycleAmount(terms);
+    const cycle = version.cycle_amount;
 
     return (
         <div className="grid grid-cols-1 gap-0.5">
@@ -91,7 +91,7 @@ function PackageRow({ pkg }: { pkg: PackageListItem }) {
 
     return (
         <TableRow>
-            <TableCell className="max-w-0 whitespace-normal wrap-anywhere">
+            <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
                 <p className="font-medium">{name}</p>
                 {version?.terms.summary && (
                     <p className="text-xs text-muted-foreground">
@@ -106,7 +106,9 @@ function PackageRow({ pkg }: { pkg: PackageListItem }) {
                 <Price pkg={pkg} />
             </TableCell>
             <TableCell>
-                <Badge variant={pkg.status === 'published' ? 'default' : 'outline'}>
+                <Badge
+                    variant={pkg.status === 'published' ? 'default' : 'outline'}
+                >
                     {statusLabel(pkg.status)}
                 </Badge>
             </TableCell>
@@ -125,10 +127,7 @@ function PackageRow({ pkg }: { pkg: PackageListItem }) {
                     <Link
                         href={pkg.edit_url}
                         aria-label={`Edit ${name}`}
-                        className={cn(
-                            buttonVariants({ variant: 'outline', size: 'sm' }),
-                            'min-h-11 md:min-h-0',
-                        )}
+                        className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4 md:min-h-8"
                     >
                         Edit
                     </Link>
@@ -201,7 +200,10 @@ export default function PackagesIndex({
                                 bundle of services at a fixed price.
                             </p>
                         ) : (
-                            <Table scrollLabel="Packages">
+                            <Table
+                                scrollLabel="Packages"
+                                className="min-w-[46rem]"
+                            >
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead className="min-w-56">

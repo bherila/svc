@@ -77,6 +77,7 @@ const workPortalOnly = process.argv.includes('--work-portal');
 const invoiceDocumentOnly = process.argv.includes('--invoice-document');
 const sharedProjectsOnly = process.argv.includes('--shared-projects');
 const reviewersOnly = process.argv.includes('--reviewers');
+const packagesOnly = process.argv.includes('--packages');
 const lightOnly = process.argv.includes('--light-workspace');
 const autopayOnly = process.argv.includes('--autopay');
 const paletteOnly = process.argv.includes('--palette');
@@ -207,6 +208,9 @@ try {
         SVC_LAYOUT_WORK_PORTAL: workPortalOnly ? '1' : '0',
         SVC_LAYOUT_SHARED_PROJECTS: sharedProjectsOnly ? '1' : '0',
         SVC_LAYOUT_REVIEWERS: reviewersOnly ? '1' : '0',
+        SVC_LAYOUT_PACKAGES: packagesOnly ? '1' : '0',
+        // Registers the package routes; every other mode leaves the feature off.
+        SVC_SERVICE_PACKAGES_ENABLED: packagesOnly ? 'true' : 'false',
         SVC_LAYOUT_LIGHT: lightOnly ? '1' : '0',
         SVC_LAYOUT_AUTOPAY: autopayOnly ? '1' : '0',
         SVC_LAYOUT_PALETTE: paletteOnly ? '1' : '0',
@@ -1333,6 +1337,108 @@ try {
         }
     }
 
+    // Service packages (--packages). The owner's list, new-package form and editors, and
+    // the two public pages, with oversized names, summaries, link names, descriptions and
+    // questions throughout. Stored values (cadences, kinds, statuses) must read as words;
+    // the public pages must show no id, offer no form in this slice and reference nothing
+    // from another origin (PUB-7). The editors also open their confirmation dialogs.
+    async function checkPackages(screen, width) {
+        await page.waitForLoadState('networkidle');
+        const isPublic = screen.startsWith('packages_public') || screen === 'packages_catalog';
+        const heading = {
+            packages_list: 'Packages',
+            packages_new: 'New package',
+            packages_catalog: /^Services from /,
+        }[screen];
+
+        if (heading !== undefined) {
+            await expect(
+                page.getByRole('heading', { name: heading, level: 1 }),
+            ).toBeVisible();
+        }
+
+        const text = await page.locator('main').innerText();
+
+        for (const forbidden of [
+            'semi_annual',
+            'one_time',
+            'setup_fee',
+            'short_text',
+            'self_serve',
+            'published_version',
+            'draft_marker',
+        ]) {
+            if (text.includes(forbidden)) {
+                failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+            }
+        }
+
+        if (isPublic) {
+            // The page's own markup. The harness is signed in, so Inertia's
+            // shared `auth` prop (in data-page) carries the viewer's id; a
+            // visitor has none, and what is checked is what the page prints.
+            const id = /.{30}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-.{20}/.exec(
+                await page.evaluate(() => {
+                    const copy = document.body.cloneNode(true);
+
+                    for (const element of copy.querySelectorAll('[data-page]')) {
+                        element.removeAttribute('data-page');
+                    }
+
+                    return copy.innerHTML;
+                }),
+            );
+
+            if (id !== null) {
+                failures.push(`${screen} at ${width}px carries an id: ${id[0]}`);
+            }
+
+            if ((await page.locator('form, input, textarea').count()) > 0) {
+                failures.push(`${screen} at ${width}px offers a form before sign-up requests exist.`);
+            }
+
+            const outside = await page.evaluate(() =>
+                performance
+                    .getEntriesByType('resource')
+                    .map((entry) => entry.name)
+                    .filter((name) => new URL(name).origin !== window.location.origin),
+            );
+
+            if (outside.length > 0) {
+                failures.push(`${screen} at ${width}px loads from another origin: ${outside.join(', ')}.`);
+            }
+        }
+
+        await capture(screen, 'loaded', width, false);
+
+        if (screen === 'packages_editor') {
+            await page.getByRole('button', { name: 'Publish…' }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'publish-confirm', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+            await page.getByRole('button', { name: 'Add component' }).click();
+            await page.getByLabel('Component 4 description').fill('Unbroken'.repeat(40));
+            await page.getByLabel('Component 4 amount').fill('not a number');
+            await page.getByRole('button', { name: 'Save draft' }).click();
+            await expect(page.getByText('Enter an amount such as 45.00.')).toBeVisible();
+            await capture(screen, 'invalid-amount', width, false);
+        }
+
+        if (screen === 'packages_editor_blocked') {
+            await expect(page.getByRole('button', { name: 'Publish…' })).toBeDisabled();
+            await expect(page.getByRole('group', { name: 'Why this cannot be published yet' })).toBeVisible();
+        }
+
+        if (screen === 'packages_editor_live') {
+            await page.getByRole('button', { name: 'Retire…' }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'retire-confirm', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        }
+    }
+
     // The partner's light workspace (--light-workspace): My work with its light card,
     // the month to submit, the approved timesheet and the invitation that makes the
     // workspace. Oversized names throughout. No private note may appear, the
@@ -2177,7 +2283,18 @@ try {
     for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 });
 
-        for (const screen of paletteOnly
+        for (const screen of packagesOnly
+            ? [
+                  'packages_list',
+                  'packages_new',
+                  'packages_editor',
+                  'packages_editor_blocked',
+                  'packages_editor_live',
+                  'packages_catalog',
+                  'packages_public',
+                  'packages_public_short',
+              ]
+            : paletteOnly
             ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']
             : autopayOnly
             ? [
@@ -3326,6 +3443,10 @@ try {
 
             if (reviewersOnly) {
                 await checkReviewers(screen, width);
+            }
+
+            if (packagesOnly) {
+                await checkPackages(screen, width);
             }
 
             if (lightOnly) {
