@@ -52,6 +52,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\RecordsSnapshotReads;
 use Tests\Support\BillingWriterLockSites;
 use Tests\TestCase;
 
@@ -95,6 +96,7 @@ use Tests\TestCase;
  */
 final class LockOrderConformanceTest extends TestCase
 {
+    use RecordsSnapshotReads;
     use RefreshDatabase;
 
     /**
@@ -167,9 +169,12 @@ final class LockOrderConformanceTest extends TestCase
     public function test_every_recorded_transaction_acquires_its_locks_in_registry_order(): void
     {
         LockOrderRecorder::start();
+        $this->startRecordingSnapshotReads();
 
         $this->driveTheConcurrentWriters();
         $this->driveDeferredBuyDown();
+        $this->stopRecordingSnapshotReads();
+        $this->assertSnapshotReadsArePinned();
 
         $sequences = LockOrderRecorder::sequences();
 
@@ -612,6 +617,30 @@ final class LockOrderConformanceTest extends TestCase
         $this->assertContains(LockResource::ClientTask, $sequences[0], 'The engine must reach a billing writer lock inside the preview.');
     }
 
+    /**
+     * The ratchet over ordinary reads of already-locked tables
+     * (tests/Fixtures/Concurrency/snapshot-reads.txt). MariaDB only: SQLite
+     * renders no locking read, so nothing there can be told apart.
+     */
+    private function assertSnapshotReadsArePinned(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+        $file = base_path('tests/Fixtures/Concurrency/snapshot-reads.txt');
+        $pinned = array_values(array_filter(
+            array_map(static fn (string $line): string => trim(explode('  # ', $line, 2)[0]), file($file, FILE_IGNORE_NEW_LINES) ?: []),
+            static fn (string $line): bool => $line !== '' && ! str_starts_with($line, '#'),
+        ));
+        $seen = array_keys($this->snapshotReads());
+        $this->assertSame(
+            [],
+            array_values(array_diff($seen, $pinned)),
+            'A transaction now reads, without a lock, a table it has already locked: its snapshot can be older than the rows it checked. Read it with a lock, refuse an older snapshot, or pin it with the reason it cannot change money in '.$file.'.',
+        );
+        $this->assertSame([], array_values(array_diff($pinned, $seen)), 'A pinned snapshot read no longer happens: remove it from '.$file.'.');
+    }
+
     /** @return array{ClientCompany, ClientProject} */
     private function secondaryCompany(string $slug): array
     {
@@ -654,6 +683,14 @@ final class LockOrderConformanceTest extends TestCase
         $preview = $billing->preview($this->workspace, $agreement, $request);
         $draft = $billing->create($this->workspace, $agreement, $request, $preview->version);
         app(InvoiceLifecycleService::class)->discardDraft($draft, $this->workspace, 'Synthetic reservation release');
+
+        // And attached to a cadence draft carrying a held-work basis, which
+        // the attach checks, renews and re-totals (docs/ux-overhaul.md 7b″).
+        $this->approvedEntry('2026-02-10', 60, $company, $project)->update(['client_disputed_at' => '2026-03-02 12:00:00', 'client_dispute_note' => 'Synthetic question']);
+        $host = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement->fresh() ?? $agreement, Carbon::parse('2026-03-01'));
+        $this->assertNotNull($host->held_work_basis);
+        $attached = $billing->create($this->workspace, $agreement, $request, $billing->preview($this->workspace, $agreement, $request)->version, $host);
+        $this->assertSame($host->id, $attached->id);
     }
 
     private function agreement(string $cadence = 'monthly', ?ClientCompany $company = null): ClientAgreement

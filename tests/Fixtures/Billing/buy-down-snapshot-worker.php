@@ -4,6 +4,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientInvoice;
 use App\Models\Workspace;
 use App\Services\Billing\DeferredBuyDownAction;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\DeferredBuyDownRequest;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ use Illuminate\Support\Facades\DB;
  * Like the API's mutation executor, it opens a transaction and reads before
  * the billing action takes a lock - the backlog's version and the target - so
  * its REPEATABLE READ snapshot is fixed there. It then waits while the test
- * moves the state on, and attaches the buy-down from that older snapshot.
+ * moves the state on, and attaches the buy-down (mode `attach`) or issues the
+ * target (mode `issue`) from that older snapshot.
  */
 
 require __DIR__.'/../../../vendor/autoload.php';
@@ -59,9 +61,13 @@ try {
             exit(3);
         }
 
-        return $billing->create($workspace, $agreement, $request, $version, $target);
+        return ($input['mode'] ?? 'attach') === 'issue'
+            ? app(InvoiceLifecycleService::class)->issue($target, $workspace)
+            : $billing->create($workspace, $agreement, $request, $version, $target);
     });
     echo json_encode(['outcome' => 'success', 'total' => (int) $attached->total_amount, 'lines' => $attached->lines->count()], JSON_THROW_ON_ERROR)."\n";
+} catch (DomainException $exception) {
+    echo json_encode(['outcome' => 'refused', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {
     echo json_encode(['outcome' => 'unexpected', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
     exit(1);

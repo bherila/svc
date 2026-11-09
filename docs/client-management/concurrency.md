@@ -473,6 +473,33 @@ month's own hours against a pool that already includes earlier months, so it
 does not produce the overcharge in the reproduced shape; it is covered by the
 same tests as regression coverage and must keep issuing both drafts.
 
+## Reading after a lock: the snapshot ratchet
+
+Under REPEATABLE READ a locking read sees the latest committed rows and an
+ordinary read sees the transaction's snapshot, fixed by its first ordinary
+read - possibly in a caller, before any lock: the API's mutation executor
+reads the target before the billing action locks anything. A transaction
+that checks state with locking reads and then derives a write from an
+ordinary read of the same table can write back state older than it checked.
+#655 found two: a buy-down attached to a draft renewed its held-work basis and
+totalled its lines from the snapshot, and an issue marked time invoiced and
+wrote the accounting journal from lines a regeneration had replaced.
+
+So a write derived from rows the transaction has locked reads them with a
+lock (`HeldWorkBasisRecorder::renewCurrent()`, the attach's line totals), or
+the transaction refuses when its snapshot disagrees with the locked rows
+(`InvoiceLifecycleService::assertSnapshotHoldsTheLockedLines()`, which every
+later ordinary read of the draft's lines then relies on).
+
+`LockOrderConformanceTest` records, on the MariaDB lane, every ordinary read
+of a table its transaction has already locked, keyed `opener > reader table`
+(`tests/Concerns/RecordsSnapshotReads.php`), and requires the set to equal
+`tests/Fixtures/Concurrency/snapshot-reads.txt`. The entries there predate
+the check and are not reviewed one by one; a new one fails until it is made a
+locking read, refused, or pinned with the reason it cannot change money.
+`tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
+regressions, run from a worker whose snapshot predates the state it acts on.
+
 ## Adding a lock
 
 1. Write `->tap(Locks::forUpdate())` where you would have written

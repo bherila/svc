@@ -469,6 +469,7 @@ final class InvoiceLifecycleService
                     (int) $locked->client_company_id,
                     verifySnapshot: $spendsCredit,
                 );
+                $this->assertSnapshotHoldsTheLockedLines($locked);
             }
 
             // Re-read even when the caller supplied the authorized workspace.
@@ -862,6 +863,32 @@ final class InvoiceLifecycleService
         if ((string) $callerCopy->invoice_kind !== (string) $locked->invoice_kind
             || $agreementOf($callerCopy) !== $agreementOf($locked)) {
             throw new DomainException('This invoice changed after it was loaded. Reload it and try again.');
+        }
+    }
+
+    /**
+     * Refuse when this transaction's snapshot no longer shows the draft's
+     * lines as they are (docs/client-management/concurrency.md).
+     *
+     * What issue does after its checks - marking the charged time invoiced,
+     * writing the accounting journal, the document and the deferred-work
+     * statement, capping a credit - reads the lines ordinarily, and an
+     * ordinary read returns the snapshot. A caller whose own transaction read
+     * before this one locked anything, as the API's mutation executor does,
+     * holds a snapshot that can predate a regeneration of the draft: those
+     * reads would then act on the lines it replaced. So the lines are read
+     * both ways, after every lock, and must agree. In a transaction this
+     * method owns, the ordinary read starts the snapshot and always agrees.
+     */
+    private function assertSnapshotHoldsTheLockedLines(ClientInvoice $draft): void
+    {
+        $lines = static fn () => ClientInvoiceLine::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_invoice_id', $draft->id)
+            ->orderBy('id');
+        $current = $lines()->tap(Locks::forUpdate())->get()->toArray();
+        if ($lines()->get()->toArray() !== $current) {
+            throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
         }
     }
 

@@ -95,6 +95,38 @@ final class BuyDownAttachSnapshotTest extends TestCase
         });
     }
 
+    /**
+     * The same older snapshot under an issue. What issue does after its
+     * checks reads the lines ordinarily - the time it marks invoiced, the
+     * accounting journal, the document - so a snapshot that predates a
+     * rebuild of the draft would act on the lines it replaced. The issue
+     * refuses instead, and the draft issues from a fresh request.
+     */
+    public function test_an_issue_from_a_snapshot_older_than_the_lines_is_refused(): void
+    {
+        $this->inProbe('issue', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x, ClientTimeEntry $a): void {
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($a, $x): void {
+                $this->stampDispute($a);
+                app(ClientInvoicingService::class)->regenerateDraftInvoice($x->fresh());
+            }, 'issue');
+
+            $this->assertSame('refused', $outcome['outcome']);
+            $this->assertSame('This invoice changed after it was loaded. Reload it and issue it again.', $outcome['message']);
+            $this->assertSame('draft', $x->fresh()->status);
+            $this->assertSame(0, DB::table('accounting_invoice_entries')->where('client_invoice_id', $x->id)->count());
+
+            $issued = app(InvoiceLifecycleService::class)->issue($x->fresh(), $workspace);
+            $lines = DB::table('client_invoice_lines')->where('workspace_id', $workspace->id)->where('client_invoice_id', $x->id);
+            $charged = DB::table('client_invoice_line_time_entries')->whereIn('client_invoice_line_id', (clone $lines)->pluck('id'))->pluck('client_time_entry_id');
+            $this->assertNotEmpty($charged);
+            $this->assertSame([], ClientTimeEntry::query()->whereKey($charged)->where('status', '!=', 'invoiced')->pluck('id')->all());
+            $journal = DB::table('accounting_invoice_entries')->where('client_invoice_id', $x->id)->get(['payload'])
+                ->map(fn ($row): array => json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR));
+            $this->assertEqualsCanonicalizing((clone $lines)->pluck('public_id')->all(), $journal->pluck('line_id')->all());
+            $this->assertSame((int) $issued->total_amount, (int) $journal->sum('total_amount'));
+        });
+    }
+
     /** @param callable(Workspace, ClientAgreement, ClientInvoice, ClientTimeEntry, User): void $test */
     private function inProbe(string $name, callable $test): void
     {
@@ -133,8 +165,13 @@ final class BuyDownAttachSnapshotTest extends TestCase
         }
     }
 
-    /** Start the attach, let it fix its snapshot, move the state on, then let it finish. */
-    private function attachFromSnapshot(Workspace $workspace, ClientAgreement $agreement, ClientInvoice $target, callable $meanwhile): void
+    /**
+     * Start the worker, let it fix its snapshot, move the state on, then let
+     * it finish.
+     *
+     * @return array<string, mixed> the worker's outcome
+     */
+    private function attachFromSnapshot(Workspace $workspace, ClientAgreement $agreement, ClientInvoice $target, callable $meanwhile, string $mode = 'attach'): array
     {
         $barrier = sys_get_temp_dir().'/svc-buydown-snapshot-'.Str::lower(Str::random(16));
         $paused = $barrier.'-paused';
@@ -142,7 +179,7 @@ final class BuyDownAttachSnapshotTest extends TestCase
         $payload = base64_encode(json_encode([
             'connection' => config('database.connections.'.DB::getDefaultConnection()),
             'workspace' => $workspace->id, 'agreement' => $agreement->id, 'invoice' => $target->id,
-            'paused' => $paused, 'release' => $release,
+            'paused' => $paused, 'release' => $release, 'mode' => $mode,
         ], JSON_THROW_ON_ERROR));
         $worker = new Process(
             [PHP_BINARY, base_path('tests/Fixtures/Billing/buy-down-snapshot-worker.php'), $payload],
@@ -165,7 +202,12 @@ final class BuyDownAttachSnapshotTest extends TestCase
             $worker->wait();
             $this->assertTrue($worker->isSuccessful(), $worker->getOutput().$worker->getErrorOutput());
             $lines = explode("\n", trim($worker->getOutput()));
-            $this->assertSame('success', json_decode(end($lines), true, flags: JSON_THROW_ON_ERROR)['outcome']);
+            $outcome = json_decode(end($lines), true, flags: JSON_THROW_ON_ERROR);
+            if ($mode === 'attach') {
+                $this->assertSame('success', $outcome['outcome'], $worker->getOutput());
+            }
+
+            return $outcome;
         } finally {
             $worker->stop(0);
             @unlink($paused);
