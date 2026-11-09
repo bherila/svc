@@ -9,6 +9,8 @@ use App\Support\Concurrency\Locks;
 use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Engagement\Cancellation\ScheduledTerminationStatus;
 use Carbon\CarbonImmutable;
+use Closure;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
 /**
@@ -78,6 +80,23 @@ final class CancellationRecords
             'status' => ScheduledTerminationStatus::Terminated->value,
             'terminated_at' => $at,
         ])->save();
+    }
+
+    /**
+     * Eager loads for a query of agreements: each one's pending request (with
+     * who asked) and scheduled end, two bounded reads per page, read back by
+     * {@see CancellationStates::loaded()}.
+     *
+     * @return array<string, Closure>
+     */
+    public static function openRelations(int $workspaceId): array
+    {
+        return [
+            'cancellationRequests' => static fn (HasMany $requests) => $requests->where('workspace_id', $workspaceId)
+                ->where('status', CancellationRequestStatus::Pending->value)->with(['requestedBy:id,name'])->orderBy('id'),
+            'scheduledTerminations' => static fn (HasMany $ends) => $ends->where('workspace_id', $workspaceId)
+                ->where('status', ScheduledTerminationStatus::Scheduled->value)->orderBy('id'),
+        ];
     }
 
     /**
