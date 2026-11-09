@@ -288,8 +288,87 @@ export type PortalService = {
     activated_at: string | null;
     /** The agreement's own portal page, once it is active. */
     agreement_url: string | null;
+    /** Where the sign-up's own payment stands (slice 3b). */
+    payment: PortalServicePayment;
     /** This service's own portal page: review and sign while offered. */
     url: string;
+};
+
+/** Where a sign-up's own payment stands: the server decides every value. */
+export type PortalServicePayment = {
+    state: 'not_charged' | 'not_invoiced' | 'due' | 'paid' | 'voided';
+    /** What an enrollment `awaiting_payment` still waits for; empty otherwise. */
+    waiting_for: ('payment' | 'autopay')[];
+    signup_invoice: {
+        id: string;
+        number: string;
+        status: string;
+        currency: string;
+        total_amount: number;
+        balance_amount: number;
+        /** The invoice's own portal page, finished; null when it is not the reader's to open. */
+        url: string | null;
+    } | null;
+    requires_autopay: boolean;
+    autopay_limit_amount: number | null;
+    pay_before_activation: boolean;
+    /** The workspace-local day an open offer or unpaid acceptance lapses. */
+    lapses_on: string | null;
+};
+
+/** One line of "Due now": a setup fee, or the first period with its dates. */
+export type SignupChargeLine = {
+    kind: 'setup_fee' | 'first_period';
+    description: string;
+    /** Minor units. */
+    amount: number;
+    period_start: string | null;
+    period_end: string | null;
+};
+
+/**
+ * What sign-up asks for on the review page (ACC-3, ACC-4), or null when it
+ * asks for nothing. Every URL is finished by the server and null when the
+ * viewer may not use it.
+ */
+export type PortalCheckout = {
+    due_now: {
+        currency: string;
+        lines: SignupChargeLine[];
+        total: number;
+        /** Present once the sign-up invoice exists: what is still owed on it. */
+        balance?: number;
+        /** True before acceptance: the engine's estimate, not yet an invoice. */
+        estimate: boolean;
+    };
+    pay_before_activation: boolean;
+    /** The sign-up invoice's portal page, while something is owed on it. */
+    pay_url: string | null;
+    /** The invoice's existing Stripe pay flow (PaymentIntent route and publishable key). */
+    payment_options: { intent_href: string; publishable_key: string } | null;
+    /** The existing SetupIntent save-card endpoints, when autopay is required. */
+    card_setup: {
+        setup_url: string;
+        confirm_url: string;
+        publishable_key: string;
+    } | null;
+    autopay: {
+        limit_amount: number;
+        currency: string;
+        limit_label: string;
+        satisfied: boolean;
+        /** The exact sentence the client authorizes; null until a default card is saved. */
+        wording: string | null;
+        /** The existing autopay enable endpoint; null until it may be used. */
+        enable_url: string | null;
+        /** The fields to post to enable_url, exactly. */
+        enable_fields: {
+            limit_amount: number;
+            wording: string;
+            service: string;
+        } | null;
+        billing_url: string;
+    } | null;
 };
 
 export type PortalAddablePackage = {
@@ -324,4 +403,6 @@ export type PortalServiceProps = {
     /** Null while the viewer may not sign, or nothing is open to sign. */
     accept_url: string | null;
     accept_refusal: PackageRefusal | null;
+    /** What sign-up asks for: null when it asks for nothing. */
+    checkout: PortalCheckout | null;
 };

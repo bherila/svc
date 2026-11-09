@@ -277,6 +277,15 @@ export function portalService(
         acceptance: null,
         activated_at: null,
         agreement_url: null,
+        payment: {
+            state: 'not_charged',
+            waiting_for: [],
+            signup_invoice: null,
+            requires_autopay: false,
+            autopay_limit_amount: null,
+            pay_before_activation: false,
+            lapses_on: '2026-11-23',
+        },
         url: '/portal/company-1/services/enrollment-1',
         ...overrides,
     };
@@ -292,6 +301,7 @@ export function portalServiceProps(
         changed_terms: [],
         accept_url: '/portal/company-1/services/enrollment-1/accept',
         accept_refusal: null,
+        checkout: null,
         ...overrides,
     };
 }

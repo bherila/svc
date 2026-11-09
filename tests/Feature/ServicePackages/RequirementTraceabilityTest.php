@@ -25,11 +25,8 @@ final class RequirementTraceabilityTest extends TestCase
      * @var list<string>
      */
     private const PENDING = [
-        // Slice 3b: payment at sign-up, autopay and lapsing.
-        'ACC-3', 'ACC-4', 'ACC-6',
-        'EDGE-1', 'EDGE-2', 'EDGE-5', 'EDGE-6', 'API-4', 'X-2', 'X-5',
         // Slice 4: recurring invoices.
-        'INV-1', 'INV-2', 'INV-3', 'X-3',
+        'INV-1', 'INV-2', 'INV-3',
         // Slice 5: cancellation.
         'CAN-1', 'CAN-2', 'CAN-3', 'CAN-4', 'CAN-5', 'CAN-6', 'EDGE-9', 'EDGE-11',
         // Slice 6: version migration.

@@ -16,6 +16,7 @@ use App\Models\ClientStripeCustomer;
 use App\Models\ClientStripePaymentMethod;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\WorkspaceActionQueue;
@@ -30,10 +31,11 @@ use App\Support\Billing\Autopay\AutopayConsentRequest;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Packages\LapseOutcome;
 use App\Support\Packages\PackageRefusal;
-use App\Support\Packages\SignupCharges;
 use App\Support\Packages\PackageTerms;
+use App\Support\Packages\SignupCharges;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -390,7 +392,7 @@ final class PackageSignupPaymentTest extends TestCase
 
         $this->assertSame([], $this->lapseRun()['outcomes']);
         $this->assertSame('awaiting_payment', $unpaid->refresh()->status);
-        $event = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())->first(static fn ($event): bool => str_contains((string) $event->command, 'svc:packages:lapse-enrollments --apply'));
+        $event = collect(app(Schedule::class)->events())->first(static fn ($event): bool => str_contains((string) $event->command, 'svc:packages:lapse-enrollments --apply'));
         $this->assertNotNull($event);
         $this->assertFalse($event->filtersPass($this->app));
         config(['svc.service_packages.enabled' => true]);
@@ -557,7 +559,7 @@ final class PackageSignupPaymentTest extends TestCase
 
     // ── X-2: Square is never written ────────────────────────────────────────
 
-    #[Requirement('X-2', 'INV-3')]
+    #[Requirement('X-2')]
     public function test_an_agreement_square_collects_gets_no_sign_up_invoice_and_the_acceptance_is_refused(): void
     {
         [, , $package, $company, $contact] = $this->world(['charge_first_period' => true]);
@@ -660,9 +662,9 @@ final class PackageSignupPaymentTest extends TestCase
         return ['kind' => 'recurring', 'description' => self::HOSTING, 'cadence' => 'monthly', 'amount' => 4500];
     }
 
-    private function published(ServicePackage $package): \App\Models\ServicePackageVersion
+    private function published(ServicePackage $package): ServicePackageVersion
     {
-        return \App\Models\ServicePackageVersion::query()->whereKey($package->published_version_id)->with('components')->sole();
+        return ServicePackageVersion::query()->whereKey($package->published_version_id)->with('components')->sole();
     }
 
     private function accept(User $contact, ClientCompany $company, ServicePackage $package): ServicePackageEnrollment

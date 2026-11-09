@@ -37,6 +37,12 @@ export type SavedMethod = {
     is_default: boolean;
     default_href: string | null;
     remove_href: string | null;
+    /**
+     * The server's warning to show before removing this method, when a
+     * service requires autopay and removing it turns autopay off (EDGE-2);
+     * null when there is nothing to warn about.
+     */
+    remove_warning?: string | null;
 };
 
 /** Where the add form talks to the server, and the key Stripe's form is mounted with. Null when the viewer may not add. */
