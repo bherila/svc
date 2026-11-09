@@ -1,0 +1,124 @@
+# The Stripe test-mode end-to-end suite (tests/StripeLive): SVC's real portal, autopay and
+# webhook code against the real Stripe API in TEST MODE. Documented in
+# docs/client-management/stripe-billing.md ("Testing against Stripe test mode").
+#
+# ADVISORY. This workflow is deliberately not a need of the `ci` aggregate in tests.yml: it
+# depends on a third party's availability and on a secret, so its result must not decide a
+# merge or a deploy yet. It is its own workflow so it runs in parallel with every other lane.
+#
+# It skips cleanly (the job succeeds, with a notice) when STRIPE_TEST_SECRET_KEY is not
+# available: fork pull requests and Dependabot runs never receive repository secrets. The suite
+# itself also refuses any key that is not sk_test_ / rk_test_.
+name: stripe-test-mode
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'app/Services/Billing/**'
+      - 'app/Services/Payments/**'
+      - 'app/Support/Billing/**'
+      - 'app/Support/Payments/**'
+      - 'app/Http/Controllers/Billing/**'
+      - 'app/Console/Commands/Billing/**'
+      - 'app/Models/ClientStripe*.php'
+      - 'app/Models/ClientInvoicePayment*.php'
+      - 'app/Models/ClientAutopayConsent.php'
+      - 'app/Models/InvoiceAutopayAttempt.php'
+      - 'routes/billing.php'
+      - 'config/services.php'
+      - 'config/client-management.php'
+      - 'composer.lock'
+      - 'tests/StripeLive/**'
+      - 'tests/Concerns/BuildsAutopay.php'
+      - 'phpunit.stripe-live.xml'
+      - '.github/workflows/stripe-test-mode.yml'
+  schedule:
+    # Nightly, off the hour. Catches Stripe-side drift when nobody has touched billing.
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: svc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  stripe-test-mode:
+    name: Stripe test mode
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+
+    steps:
+      - name: Check that the test key is available
+        id: key
+        # The secret is exposed to this step and the test step only, never to third-party actions.
+        env:
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          # Set the repository variable STRIPE_TEST_SUITE_ENABLED=true once the secret is configured.
+          # From then on a trusted run (push to main, nightly, manual) without the key fails instead of
+          # silently skipping, so the suite cannot quietly stop running. Pull requests still skip.
+          SUITE_ENABLED: ${{ vars.STRIPE_TEST_SUITE_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ -z "$STRIPE_TEST_SECRET_KEY" ]; then
+            if [ "$SUITE_ENABLED" = "true" ] && [ "$EVENT_NAME" != "pull_request" ]; then
+              echo "::error title=Stripe test mode cannot run::STRIPE_TEST_SUITE_ENABLED is true but STRIPE_TEST_SECRET_KEY is not available to this $EVENT_NAME run. Restore the secret or unset the variable."
+              exit 1
+            fi
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Stripe test mode skipped::STRIPE_TEST_SECRET_KEY is not available to this run (fork pull request, Dependabot, or the secret is not configured)."
+            {
+              echo "### Stripe test mode"
+              echo
+              echo "Skipped: \`STRIPE_TEST_SECRET_KEY\` is not available to this run."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            case "$STRIPE_TEST_SECRET_KEY" in
+              sk_test_*|rk_test_*) echo "present=true" >> "$GITHUB_OUTPUT" ;;
+              *)
+                echo "::error title=Refusing a non-test Stripe key::STRIPE_TEST_SECRET_KEY must start with sk_test_ or rk_test_."
+                exit 1
+                ;;
+            esac
+          fi
+
+      - name: Checkout code
+        if: ${{ steps.key.outputs.present == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        if: ${{ steps.key.outputs.present == 'true' }}
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      # Cache downloaded archives only, never Composer auth or private VCS clones.
+      - name: Cache Composer downloads
+        if: ${{ steps.key.outputs.present == 'true' }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('composer.lock') }}
+
+      # bherila/mcp-laravel-bridge is public and installs from source over HTTPS: no SSH key is
+      # needed, so a fork with only its own Stripe test key can run this workflow.
+      - name: Install Composer dependencies
+        if: ${{ steps.key.outputs.present == 'true' }}
+        run: |
+          composer install --no-interaction
+          test -f .env || cp .env.example .env
+
+      - name: Run the Stripe test-mode suite
+        if: ${{ steps.key.outputs.present == 'true' }}
+        env:
+          STRIPE_TEST_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+        run: php -d memory_limit=1G artisan test --configuration=phpunit.stripe-live.xml --testsuite=StripeLive
