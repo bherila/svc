@@ -304,6 +304,7 @@ export function portalServiceProps(
         accept_url: '/portal/company-1/services/enrollment-1/accept',
         accept_refusal: null,
         checkout: null,
+        cancellation: null,
         ...overrides,
     };
 }

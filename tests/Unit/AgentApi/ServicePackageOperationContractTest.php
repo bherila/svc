@@ -159,6 +159,8 @@ final class ServicePackageOperationContractTest extends TestCase
             'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
             'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse', 'ServicePackageSignupPayment', 'ServicePackageInvoicing',
             'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
+            'AgreementCancellation', 'ClientServiceCancellation', 'CancellationRequest', 'CancellationRequestResponse', 'CancellationRequestListResponse',
+            'CancellationRequestApproveRequest', 'CancellationRequestDeclineRequest', 'AgreementScheduleEndRequest',
         ], ServicePackageOperations::components());
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Unknown service package component ServicePackageSecret.');

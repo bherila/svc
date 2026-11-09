@@ -42,3 +42,15 @@ The client's contact signs in, reads the agreement and signs it, from the portal
 If you publish a new version before the client signs, they sign the new version, and the signing page shows what changed. A retired package's open offers can still be signed on the terms offered.
 
 A package set to **start automatically** starts as soon as the client signs. One set to **I review first** waits in the dashboard's **Needs you** list; open it and activate it from the client's agreement. The service starts on the day it's activated, the agreement is signed in the client's name, and the client gets an email. Packages that take a payment at sign-up can't be signed online yet.
+
+## Cancellation
+
+Every agreement, not only a package's, has cancellation terms: a **notice** period in days, an optional **minimum term** in months, and what the client can do in the portal: nothing, **request** a cancellation that you decide, or **cancel themselves**. A package's agreements start with the package's terms; change any agreement's under **Edit terms** on its page.
+
+A cancellation always ends at the close of a billing period: the one in which the notice runs out, and never before the minimum term ends. Clients and you only ever choose from the dates offered, so a paid period is never cut short.
+
+- **A request** appears in the dashboard's **Needs you** list. On the agreement's page, **Approve** it on the date asked for or another offered date (an earlier date marked *waive notice* skips the notice period), or **Decline** it. A note you write goes to the client in the email.
+- **A self-serve cancellation** schedules the end straight away, and you get an email.
+- **Ending an agreement yourself**: on its page, choose one of the offered dates under **End this agreement**.
+
+An accepted cancellation doesn't end anything yet: the agreement stays active until the date, with that date as its end, and the client is emailed it. Until then you can **Undo** it on the agreement's page, which restores the end it had before; a client can undo only a cancellation they made themselves. On the date the agreement is terminated, and billing follows the usual rules for an ended agreement. Anything the client owes stays owed.

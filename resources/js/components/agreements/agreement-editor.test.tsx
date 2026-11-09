@@ -45,6 +45,9 @@ const agreement: AgreementTerms = {
     period_retainer_amount: null,
     agreement_text: null,
     is_visible_to_client: false,
+    notice_days: 0,
+    minimum_term_months: null,
+    cancellation_mode: 'none',
 };
 beforeEach(() => vi.clearAllMocks());
 

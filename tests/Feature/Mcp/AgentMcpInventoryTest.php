@@ -36,9 +36,11 @@ final class AgentMcpInventoryTest extends TestCase
         'agreements.create',
         'agreements.get',
         'agreements.list',
+        'agreements.schedule_end',
         'agreements.square_series.clear',
         'agreements.square_series.set',
         'agreements.terminate',
+        'agreements.undo_scheduled_end',
         'agreements.update',
         'attachments.delete',
         'attachments.download_url',
@@ -58,6 +60,10 @@ final class AgentMcpInventoryTest extends TestCase
         'billing_schedules.generate',
         'billing_schedules.get',
         'billing_schedules.list',
+        'cancellation_requests.approve',
+        'cancellation_requests.decline',
+        'cancellation_requests.get',
+        'cancellation_requests.list',
         'capacity_ledger.get',
         'client_services.get',
         'client_services.list',
@@ -275,7 +281,8 @@ final class AgentMcpInventoryTest extends TestCase
             'expense_writes_enabled' => ['expenses.log', 'expenses.update', 'expenses.delete', 'expenses.approve', 'expenses.unapprove', 'expenses.settle_dispute', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate', 'expenses.receipts.upload_url', 'expenses.receipts.delete'],
             'payment_writes_enabled' => ['invoices.square_covered_payment_record', 'payments.record', 'payments.correct', 'payments.set_status', 'payments.refund', 'payments.reverse_refund'],
             'client_writes_enabled' => ['companies.autopay.set', 'clients.contacts.create', 'clients.contacts.update', 'clients.contacts.archive', 'clients.contacts.restore', 'clients.portal_access.grant', 'clients.portal_access.update', 'clients.portal_access.revoke',
-                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set'],
+                'clients.portal_invitations.create', 'clients.portal_invitations.resend', 'clients.portal_invitations.revoke', 'clients.create', 'clients.update', 'clients.archive', 'clients.restore', 'agreements.create', 'agreements.update', 'agreements.activate', 'agreements.terminate', 'companies.square_customer.set', 'companies.square_customer.clear', 'agreements.square_series.set', 'agreements.square_series.clear', 'square.import_customer', 'companies.payment_reminders.set',
+                'cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end'],
             'collaboration_writes_enabled' => ['collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete', 'collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete', 'shared_projects.tasks.assign', 'shared_projects.comments.create'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
@@ -316,7 +323,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_232_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_238_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -327,14 +334,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(232, self::TOOLS);
+        $this->assertCount(238, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_232_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_238_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -394,16 +401,17 @@ final class AgentMcpInventoryTest extends TestCase
     }
 
     /**
-     * The service package switch withholds all sixteen package, sign-up
-     * request, enrollment and client service tools, reads included, and nothing else - even in a process
+     * The service package switch withholds all twenty-two package, sign-up
+     * request, enrollment, client service and cancellation tools, reads included, and nothing else - even in a process
      * whose routes were built while it was on (X-1).
      */
     #[Requirement('X-1')]
-    public function test_the_service_package_switch_withholds_exactly_its_sixteen_tools(): void
+    public function test_the_service_package_switch_withholds_exactly_its_twenty_two_tools(): void
     {
         $this->enableAll();
         config(['svc.service_packages.enabled' => false]);
-        $packages = ['client_services.get', 'client_services.list', 'enrollments.activate', 'enrollments.get', 'enrollments.list',
+        $packages = ['agreements.schedule_end', 'agreements.undo_scheduled_end', 'cancellation_requests.approve', 'cancellation_requests.decline', 'cancellation_requests.get', 'cancellation_requests.list',
+            'client_services.get', 'client_services.list', 'enrollments.activate', 'enrollments.get', 'enrollments.list',
             'package_requests.approve', 'package_requests.decline', 'package_requests.erase', 'package_requests.get', 'package_requests.list',
             'packages.create', 'packages.get', 'packages.list', 'packages.publish', 'packages.retire', 'packages.update'];
 
@@ -470,6 +478,7 @@ final class AgentMcpInventoryTest extends TestCase
             'packages.list', 'packages.get', 'packages.create', 'packages.update', 'packages.publish', 'packages.retire',
             'package_requests.list', 'package_requests.get', 'package_requests.approve', 'package_requests.decline', 'package_requests.erase',
             'enrollments.list', 'enrollments.get', 'enrollments.activate',
+            'cancellation_requests.list', 'cancellation_requests.get', 'cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end',
             'attachments.list', 'attachments.get', 'attachments.download_url', 'attachments.upload_url', 'attachments.delete',
             'expense_schedules.list', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate',
             'expenses.approve', 'expenses.unapprove', 'expenses.settle_dispute', 'expenses.receipts.delete', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url',

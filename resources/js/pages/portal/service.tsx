@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { PortalCancellationCard } from '@/components/agreements/portal-cancellation';
 import {
     FieldError,
     FormField,
@@ -225,6 +226,7 @@ export default function PortalService({
     accept_url: acceptUrl,
     accept_refusal: acceptRefusal,
     checkout,
+    cancellation,
 }: PortalServiceProps) {
     const { terms, acceptance } = service;
     const steps: Step[] = [
@@ -291,6 +293,13 @@ export default function PortalService({
                             )}
                         </CardContent>
                     </Card>
+                )}
+
+                {cancellation !== null && (
+                    <PortalCancellationCard
+                        panel={cancellation}
+                        serviceName={service.name}
+                    />
                 )}
 
                 {changedTerms.length > 0 && (

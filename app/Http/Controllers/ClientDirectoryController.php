@@ -33,6 +33,7 @@ use App\Services\Billing\InvoiceCorrectionService;
 use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceEmailService;
 use App\Services\Clients\CompanyProfile;
+use App\Services\Engagement\OperatorCancellationPanel;
 use App\Services\Files\AttachmentAudience;
 use App\Services\Files\AttachmentFilePage;
 use App\Services\Files\AttachmentParentReference;
@@ -695,7 +696,14 @@ class ClientDirectoryController extends Controller
                 // Billed in Square (#438): SVC issues, Square collects.
                 'square_series_key' => $clientAgreement->square_series_key,
                 'square_location_id' => $clientAgreement->square_location_id,
+                // Cancellation terms (CAN-1).
+                'notice_days' => (int) $clientAgreement->notice_days,
+                'minimum_term_months' => $clientAgreement->minimum_term_months,
+                'cancellation_mode' => (string) $clientAgreement->cancellation_mode,
             ],
+            // A pending request, a scheduled end, or the dates one may be
+            // scheduled on (CAN-4, EDGE-9): a manager's alone.
+            'operator_cancellation' => $manages ? app(OperatorCancellationPanel::class)->for($workspace, $clientAgreement) : null,
             'recurring_items' => $items->map(fn (ClientAgreementRecurringItem $item): array => AgreementReadPresenter::recurringItem($item))->values()->all(),
             // What termination would collect and charge today (#366), priced
             // at the agreement's rate, so a manager's alone.

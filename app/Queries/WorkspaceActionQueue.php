@@ -3,6 +3,7 @@
 namespace App\Queries;
 
 use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Models\AgreementCancellationRequest;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
@@ -16,6 +17,7 @@ use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Packages\AutoInvoiceOutcome;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
@@ -283,6 +285,27 @@ final class WorkspaceActionQueue
                 $rows[] = $this->row('enrollment-autopay-off-'.$enrollment->public_id, 'enrollment_autopay_off', ($enrollment->acceptedVersion->name ?? $agreement->title).': autopay required but off', $company['name'],
                     route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
                     date: $enrollment->activated_at?->toDateString());
+            }
+
+            // CAN-4: a client asked to end an agreement; an owner or admin
+            // approves or declines it on the agreement's page. Oldest first.
+            $cancellations = AgreementCancellationRequest::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', CancellationRequestStatus::Pending->value)
+                ->with(['agreement' => fn ($agreement) => $agreement->where('workspace_id', $workspace->id)])
+                ->orderBy('requested_at')->orderBy('id')
+                ->limit(self::LIMIT)->get();
+            $cancellationNames = $this->companyNames($workspace, $cancellations->pluck('client_company_id')->all());
+            foreach ($cancellations as $request) {
+                $company = $this->company($cancellationNames, $request->client_company_id);
+                $agreement = $request->agreement;
+                if ($company === null || $agreement === null) {
+                    continue;
+                }
+
+                $rows[] = $this->row('cancellation-request-'.$request->public_id, 'cancellation_request', $agreement->title.': cancellation requested', $company['name'],
+                    route('clients.agreement', [$workspace, $company['public_id'], $agreement], absolute: false), 'Review',
+                    date: $request->requested_end_on->toDateString());
             }
 
             foreach ($autoRefused as $enrollment) {

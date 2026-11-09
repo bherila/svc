@@ -664,7 +664,10 @@ export function AgreementTermsForm({
                         }
                     />
                 </Field>
-                <Field id="cancellation-mode" label="Cancellation in the portal">
+                <Field
+                    id="cancellation-mode"
+                    label="Cancellation in the portal"
+                >
                     <Select
                         items={CANCELLATION_MODES}
                         value={form.cancellation_mode}

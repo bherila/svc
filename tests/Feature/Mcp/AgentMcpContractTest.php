@@ -173,7 +173,9 @@ final class AgentMcpContractTest extends TestCase
                 $this->assertSame($operation['operationId'], $operation['x-mcp-tool']);
                 // Portal invitations also sit behind their product switch (#430).
                 $invitations = str_starts_with($operation['operationId'], 'clients.portal_invitations.') ? ['SVC_PORTAL_INVITATIONS_ENABLED'] : [];
-                $this->assertSame([...($method === 'get' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']), ...$invitations], $operation['x-svc-flags']);
+                // Scheduling and undoing an end exist only with service packages (X-1).
+                $cancellation = in_array($operation['operationId'], ['agreements.schedule_end', 'agreements.undo_scheduled_end'], true) ? ['SVC_SERVICE_PACKAGES_ENABLED'] : [];
+                $this->assertSame([...($method === 'get' ? [] : ['AGENT_API_WRITES_ENABLED', 'AGENT_API_CLIENT_WRITES_ENABLED']), ...$invitations, ...$cancellation], $operation['x-svc-flags']);
                 $this->assertSame([['oauth2' => $actual[$operation['operationId']]], ['apiToken' => []]], $operation['security']);
             }
         }
@@ -183,9 +185,11 @@ final class AgentMcpContractTest extends TestCase
             'agreements.create' => ['clients:write', 'clients:read'],
             'agreements.get' => ['billing:read'],
             'agreements.list' => ['billing:read'],
+            'agreements.schedule_end' => ['clients:write', 'billing:read'],
             'agreements.square_series.clear' => ['billing:write', 'billing:read'],
             'agreements.square_series.set' => ['billing:write', 'billing:read'],
             'agreements.terminate' => ['clients:write', 'billing:read'],
+            'agreements.undo_scheduled_end' => ['clients:write', 'billing:read'],
             'agreements.update' => ['clients:write', 'billing:read'],
             'attachments.delete' => ['files:write', 'files:read'],
             'attachments.download' => ['files:read'],
@@ -207,6 +211,10 @@ final class AgentMcpContractTest extends TestCase
             'billing_schedules.generate' => ['billing:deliver', 'billing:read'],
             'billing_schedules.get' => ['billing:read'],
             'billing_schedules.list' => ['billing:read'],
+            'cancellation_requests.approve' => ['clients:write', 'billing:read'],
+            'cancellation_requests.decline' => ['clients:write', 'billing:read'],
+            'cancellation_requests.get' => ['billing:read'],
+            'cancellation_requests.list' => ['billing:read'],
             'capacity_ledger.get' => ['billing:read'],
             'client_services.get' => ['packages:read'],
             'client_services.list' => ['packages:read'],
