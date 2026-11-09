@@ -360,5 +360,7 @@ Service package writes are nested behind `AGENT_API_PACKAGE_WRITES_ENABLED=false
 and `AGENT_API_WRITES_ENABLED`, and the package operations exist at all only while
 `SVC_SERVICE_PACKAGES_ENABLED` is on: switched off, their routes and tools are not
 registered and the served OpenAPI document leaves them out. Switching a write
-switch off removes create/update/publish/retire from MCP discovery and REST while
-`packages.list` and `packages.get` remain for `packages:read`.
+switch off removes create/update/publish/retire and the sign-up request decisions
+(approve/decline/erase) from MCP discovery and REST while `packages.list`,
+`packages.get`, `package_requests.list` and `package_requests.get` remain for
+`packages:read`.

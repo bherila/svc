@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
 use Tests\Support\Requirement;
 
 /**
- * The six service package operations, declared once (API-1) and read without
+ * The service package and sign-up request operations, declared once (API-1) and read without
  * booting the application. A bare container has no configuration, so the
  * installation's registry leaves them out and the contract has them.
  */
@@ -80,6 +80,63 @@ final class ServicePackageOperationContractTest extends TestCase
         }
         $this->assertTrue(AgentDeploymentFlags::isAvailabilityPrecondition(AgentDeploymentFlags::SERVICE_PACKAGES));
         $this->assertNotContains(AgentDeploymentFlags::SERVICE_PACKAGES, AgentDeploymentFlags::cutovers());
+    }
+
+    #[Requirement('API-1', 'API-2', 'API-6')]
+    public function test_each_request_operation_is_declared_once_with_its_route_scopes_switches_and_safety(): void
+    {
+        $catalog = new AgentOperationCatalog;
+        $contract = $catalog->contract();
+        $base = '/workspaces/{workspace}/package-requests';
+        foreach ([
+            'package_requests.list' => ['GET', 'index', Effect::Read, $base, 'ServicePackageRequestListResponse', null],
+            'package_requests.get' => ['GET', 'show', Effect::Read, $base.'/{request}', 'ServicePackageRequestResponse', null],
+            'package_requests.approve' => ['POST', 'approve', Effect::ExternalWrite, $base.'/{request}/approve', 'ServicePackageRequestApprovalResponse', 'ServicePackageRequestApproveRequest'],
+            'package_requests.decline' => ['POST', 'decline', Effect::ExternalWrite, $base.'/{request}/decline', 'ServicePackageRequestResponse', 'ServicePackageRequestDeclineRequest'],
+            'package_requests.erase' => ['POST', 'erase', Effect::Destructive, $base.'/{request}/erase', 'ServicePackageRequestResponse', 'ServicePackageConfirmRequest'],
+        ] as $id => [$method, $route, $effect, $path, $response, $request]) {
+            $this->assertNull($catalog->registry()->find($id), "{$id} exists only while service packages are on");
+            $operation = $contract->find($id);
+            $this->assertNotNull($operation, $id);
+            $write = $method !== 'GET';
+            $this->assertSame($effect, $operation->effect, $id);
+            $this->assertTrue($catalog->isManagerOnly($id), $id);
+            $this->assertSame([AgentMcpPackageTools::class, ServicePackageOperations::DEFINITIONS[$id][0]], $operation->mcp?->handler, $id);
+            // The website links to these route names.
+            $this->assertSame('agent-api.v1.package-requests.'.$route, $operation->rest?->routeName, $id);
+            $this->assertSame($method, $operation->rest->method, $id);
+            $this->assertSame($path, $operation->rest->path, $id);
+            $this->assertSame([200], $operation->rest->successStatuses, $id);
+            $this->assertSame($write ? ['packages:write', 'packages:read'] : ['packages:read'], $operation->requirement->scopes, $id);
+            $this->assertSame([
+                ...($write ? [AgentDeploymentFlags::PACKAGES] : []), AgentDeploymentFlags::SERVICE_PACKAGES,
+                'mcp', 'mcp.switch:'.($write ? 'mcp.write' : 'mcp.read'), 'mcp.switch:'.$id,
+            ], $operation->requirement->flags, $id);
+            $this->assertSame($write ? IdempotencyKey::HeaderAndArgument : IdempotencyKey::None, $operation->safety->idempotencyKey, $id);
+            // Every decision is versioned and confirmed (API-2).
+            $this->assertSame($write, $operation->safety->expectedVersion, $id);
+            $this->assertSame($write, $operation->safety->confirm, $id);
+            $this->assertSame([$response, $request], [ServicePackageOperations::DEFINITIONS[$id][3], ServicePackageOperations::DEFINITIONS[$id][4]], $id);
+        }
+
+        $approve = ServicePackageOperations::schema('ServicePackageRequestApproveRequest');
+        $decline = ServicePackageOperations::schema('ServicePackageRequestDeclineRequest');
+        $this->assertSame(['expected_version', 'confirm'], $approve['required']);
+        $this->assertSame(['expected_version', 'confirm'], $decline['required']);
+        $this->assertSame(['type' => ['string', 'null'], 'format' => 'uuid'], $approve['properties']['client_id']);
+        // The decline reason's schema is the workflow's own rule.
+        $this->assertSame(['type' => ['string', 'null'], 'maxLength' => 1000], $decline['properties']['reason']);
+        $this->assertSame(['expected_version', 'confirm'], ServicePackageOperations::bodyFields('package_requests.erase'));
+
+        // Visitor text has one place in the shape (API-3), and there is no invitation in it (ADM-5).
+        $presented = ServicePackageOperations::schema('ServicePackageRequest');
+        $this->assertSame(['id', 'status', 'package', 'submitted_at', 'decided_at', 'decline_reason', 'client', 'suggested_client', 'erased_at', 'untrusted', 'version'], $presented['required']);
+        $this->assertSame(['company_name', 'contact_name', 'email', 'phone', 'answers'], $presented['properties']['untrusted']['oneOf'][0]['required']);
+        $this->assertSame(['id', 'status', 'client', 'project_id', 'agreement_id'], ServicePackageOperations::schema('ServicePackageEnrollmentSummary')['required']);
+        $this->assertSame(['data', 'enrollment'], ServicePackageOperations::schema('ServicePackageRequestApprovalResponse')['required']);
+        foreach (['ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestApprovalResponse'] as $component) {
+            $this->assertStringNotContainsString('invitation', strtolower(json_encode(ServicePackageOperations::schema($component), JSON_THROW_ON_ERROR)), $component);
+        }
     }
 
     /** The request schemas are the workflow's own rules, so the contract accepts exactly what it validates. */
