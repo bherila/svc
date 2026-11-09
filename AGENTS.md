@@ -35,6 +35,7 @@ Reviews of #655 found the same shapes repeatedly. Check every billing change for
 - **A write derived from an ordinary read after a locking check.** Under REPEATABLE READ that read returns the caller's snapshot, which can predate what was checked (the API's mutation executor reads first). Read with a lock or refuse an older snapshot; the ratchet in `LockOrderConformanceTest` (`tests/Fixtures/Concurrency/snapshot-reads.txt`) fails on a new site.
 - **A stale draft that issues, a rebuild that misses a dependent draft, a bulk walk priced from a stale ledger, an agreement billing past its segment, a final reconciliation leaving its own deferred work.** `tests/Feature/Billing/BillingHistoryInvariantTest.php` asserts these as invariants over scripted histories; add a history when a change creates a new shape.
 - **Monthly and non-monthly paths diverging.** A fix on one cadence path needs the same case on the other.
+- **An ordering nobody wrote down.** `tests/Feature/Billing/BillingHistorySequenceTest.php` generates histories across the agreement shapes. A new billing operation or line type belongs in its generator; widen a run with `BILLING_HISTORY_SEEDS`.
 
 ## Codex review workflow
 
