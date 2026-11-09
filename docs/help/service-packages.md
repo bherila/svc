@@ -1,7 +1,7 @@
 ---
 title: Service packages
 audience: [operator]
-routes: [packages.index, packages.create, packages.edit, packages.requests.index]
+routes: [packages.index, packages.create, packages.edit, packages.move, packages.requests.index]
 terms: [Service package]
 ---
 
@@ -20,6 +20,8 @@ Open **Clients**, then **Packages**, and choose **New package**. A package has:
 ## Publishing and versions
 
 A package is a draft until you publish it. Publishing freezes that version, and later edits make a new draft that you publish when it's ready. Clients who signed up keep the terms they agreed to.
+
+When you publish a new version, existing clients stay on theirs until you move them (below).
 
 Publishing is refused, with the reason, when the package couldn't work. For example, a package that takes payment at sign-up needs a Stripe connection, and only a fixed-price package can issue its invoices automatically.
 
@@ -54,3 +56,17 @@ A cancellation always ends at the close of a billing period: the one in which th
 - **Ending an agreement yourself**: on its page, choose one of the offered dates under **End this agreement**.
 
 An accepted cancellation doesn't end anything yet: the agreement stays active until the date, with that date as its end, and the client is emailed it. Until then you can **Undo** it on the agreement's page, which restores the end it had before; a client can undo only a cancellation they made themselves. On the date the agreement is terminated, and billing follows the usual rules for an ended agreement. Anything the client owes stays owed.
+
+## Moving clients to a new version
+
+Under **Versions and subscribers** on the package's page, each version shows how many active clients are on it. **Move to the published version…** opens the move: what changes, from what to what; when it takes effect; and the clients, each with what will happen to them.
+
+- **When.** A move starts at the beginning of a billing period, after the client's notice period, so a client told today can still cancel before the new terms start. It also starts after any period you've already invoiced. The dates offered are the only ones you can choose; each says how many clients it suits.
+- **Who.** Choose which clients to move. A client already in another move, or whose agreement ends first, can't be chosen, and the reason is shown. Agreements with an hourly rate or a retainer can't be moved yet: end them and offer the new version instead.
+- **Autopay.** SVC never raises a client's autopay limit. When a client's limit is below the new price, it's flagged here, in the client's notice and in **Needs you**.
+
+Scheduling emails each client the changes, the date and your message, and shows the same notice on the service in their portal.
+
+On the date, the client's agreement ends the day before and a new agreement with the new terms starts on it, so every billing period is invoiced on the terms that applied to it and nothing already invoiced changes. Unused retainer hours don't carry over. A client who has cancelled by then keeps their terms until their agreement ends. If an invoice already covers the new period, or the client asked to cancel before the date and you haven't answered, the move waits in **Needs you** until you settle it.
+
+You can **Cancel move…** while it's scheduled: before its date nothing changes for anyone, and after it only the clients still waiting stay on their terms. Each client is emailed.

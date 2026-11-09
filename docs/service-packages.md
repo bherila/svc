@@ -740,6 +740,115 @@ Slice 5 (cancellation) settled these:
   The operator's panel on the agreement's page posts to the agent endpoints.
   Each pending request is its own Needs you row, dated with the end asked for.
 
+Slice 6 (moving subscribers to a new version) settled these:
+
+- **A move is a new agreement term, not an edit.** The billing engine reads an
+  agreement's terms - hourly rate, retainer fee and hours, rollover, cadence -
+  for every period it reconciles, including work done before today and
+  invoiced after it (December's time is reconciled on January's invoice), and
+  its retainer ledger is recomputed from the agreement's start. Rewriting an
+  active agreement in place would therefore price the last old period's work,
+  and rewrite past months' ledger, on the new terms. The engine's own way to
+  change terms over time is a sequence of agreements on one project
+  (`AgreementSelector`: "each segment owns the cycles that fall inside it",
+  and `AgreementBillingRateResolver` already prefers a renewal over the term it
+  replaced). So on the effective date the move ends the current agreement on
+  the day before through `AgreementWorkflow::terminate()` (it stays the record
+  of what the client signed, its text never rewritten) and starts an agreement
+  on the same project carrying the new version's terms and recurring items
+  (`PackageAgreementTerms::createDraft()`), activated through
+  `AgreementWorkflow::activate()`. That is the "audited, versioned update" of
+  MIG-3: both agreements' activity, `agreement.moved` / `agreement.moved_in`,
+  and the move's own record. The enrollment - the service - then names the new
+  agreement and `current_version_id`; `accepted_version_id`, what the client
+  signed, never changes (ACC-2), and everything that reads the terms in force
+  (automatic invoicing - slice 4's note - required autopay, Needs you names,
+  the client's terms) reads the carried version
+  (`ServicePackageEnrollment::carriedVersionId()`, `CARRIED_VERSION_SQL`).
+- **What carries over** to the new agreement: its `ends_on`, what is left of
+  the minimum term in whole months from the effective date (a move never
+  starts a new commitment; `MigrationRules::remainingMinimumTerm()`), the
+  notice period and portal mode of the new version, a pending cancellation
+  request and a scheduled end from the date on (re-pointed, so the client's
+  request is still answered and their end still happens), the client-visibility
+  settings, interim overage and rollover policy, and the Square marker (INV-3).
+  **Unused retainer hours do not** - the engine's ledger ends with its
+  agreement - which is moot today because of the next point.
+- **Agreements that bill by usage are refused** (`package_migration_bills_by_usage`).
+  An hourly rate or a retainer means the last old period's work is settled on
+  the invoice that opens the next period; the new agreement's first invoice
+  claims that same work period, so the engine's overlap guard refuses
+  whichever is written second - the old term's settlement, leaving its work to
+  be priced on the new terms, or the new term's first period, never sold.
+  `BillingHistoryInvariantTest` caught exactly this while the move was being
+  built. Until the engine can settle a last period beside a same-project
+  successor (a follow-up), only fixed-price services move. At the effective
+  date the move asks the engine, in a savepoint it always rolls back, for the
+  old agreement's closing invoice: empty for a fixed-price service (its
+  recurring items are ended the day before with it), so nothing is written and
+  no invoice number spent; anything to bill (work or expenses that reached a
+  fixed-price service) holds the move (`last_period_to_settle`).
+- **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
+  after the earliest end a cancellation made today could choose (the close of
+  the period in which today plus the agreement's own notice falls), so a client
+  told now can always leave before the new terms; later period starts of the
+  engine's own periods follow; none on or before the last day of a period an
+  issued invoice already sold (so nothing is billed twice and no issued invoice
+  rewritten); none after the agreement's end. MIG-1 names the notice alone, so
+  the minimum term does not hold a move back. One date per move; a subscriber
+  whose own periods it does not start, or whose notice it falls inside, is
+  refused by name (`package_migration_date_not_offered`), and the preview
+  offers every subscriber's dates with how many each suits, suggesting the
+  earliest that suits the most. Only to the package's published version, from
+  an older one, in the same currency, both billing in periods; a subscriber in
+  one scheduled move at a time.
+- **Records.** `service_package_migrations` (package, from/to version, date,
+  message, `scheduled`/`completed`/`cancelled`) and
+  `service_package_migration_targets` (enrollment, company, the agreement moved
+  from and, once applied, the successor; `scheduled`/`applied`/`skipped`/
+  `cancelled`; an outcome code - a skip, or why a scheduled one waits; the new
+  price and the company's autopay limit at scheduling). Composite tenant keys;
+  `LockResource` places the move and its targets after the enrollment, so
+  automatic invoicing can ask under the enrollment's lock whether a move is due.
+- **On the date (MIG-3)** `svc:packages:apply-migrations`, hourly behind the
+  flag, before the invoicing command, walks every scheduled target in pages by
+  id, decides which are due on each workspace's calendar, and applies each in
+  its own transaction: the maintenance share lock, the enrollment, the move,
+  the target, the agreement, its pending request and scheduled end, its
+  invoices from the date on, then the successor, the termination, the closing
+  invoice probe, any draft's discard and the activation. Decisions
+  (`MigrationRules::decide()`, pure): a stopped service, a service already moved
+  by another move, an agreement no longer active or ending before the date is
+  **skipped** and recorded; a pending request to leave before the date, or an
+  issued invoice already selling a period from the date on, **holds** it
+  (recorded once, retried every run, a Needs you row). Drafts the walk already
+  made for those periods were priced on the old terms and are discarded through
+  the ordinary discard. Automatic invoicing skips a period a due move has not
+  applied to yet (`waits_for_move`), so the new period is never issued on the
+  old terms. A second run, or one beside it, finds the target settled.
+- **Cancelling (MIG-5)** is allowed while the move is scheduled: before the date
+  the whole move, from it on the subscribers still waiting (held); one already
+  moved stays moved and the move completes. Each client whose move is cancelled
+  is emailed.
+- **Notices (MIG-2, MIG-4).** `MigrationTermChanges` words each term that
+  changes, old and new, once, for the email, the portal notice, the owner's
+  preview and the agent API (the owner also sees operator settings and terms
+  that only shape new sign-ups, marked so). Clients are emailed at scheduling
+  and at a cancellation, after commit; nothing is emailed when the move applies
+  (the spec names no such message). An autopay limit below the new price - read
+  live against the company's limit - is flagged in the preview, the email, the
+  portal notice and Needs you, and never raised.
+- **Agent surface.** `package_migrations.preview|list|get` (`packages:read`)
+  and `package_migrations.schedule|cancel` (`packages:write`, `confirm`,
+  `expected_version` - the package's to schedule, the move's to cancel), behind
+  the package write cutover. `enrollments.*` gains `current_version` and
+  `move`; `client_services.*` gains `move`, read-only.
+- **Screens.** The package editor lists versions with their active subscribers
+  and a link to move an older version's, and the package's moves with a
+  confirmed cancel; the move page (`packages.move`) is the preview with the
+  date Select, the subscribers and their flags, and the confirmed schedule; the
+  portal service page carries the notice and the Services list notes the date.
+
 ## Validation plan
 
 ### Tracing requirements to tests

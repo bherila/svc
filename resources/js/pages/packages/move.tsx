@@ -319,7 +319,7 @@ export default function PackageMove({
                                                                         }
                                                                     />
                                                                 </TableCell>
-                                                                <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                                                <TableCell className="wrap-anywhere whitespace-normal">
                                                                     <label
                                                                         htmlFor={
                                                                             id
