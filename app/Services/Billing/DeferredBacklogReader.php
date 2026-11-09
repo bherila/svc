@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\Billing\DeferredBacklog;
+use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -111,6 +112,64 @@ final class DeferredBacklogReader
         $companyId = (int) $agreement->client_company_id;
 
         return $this->segmentThrough($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through);
+    }
+
+    /**
+     * The last day before a successor for the same project scope takes over
+     * from this agreement, or null when none does. From that day on its
+     * ordinary work is the successor's to bill, at the successor's terms; a
+     * termination without a successor hands nothing over, and the outgoing
+     * agreement still bills what is logged after it.
+     */
+    /**
+     * @param  Collection<int, ClientAgreement>|null  $segments  the client's agreements in generation
+     *                                                           order, when the caller read them itself - with row locks, at issue
+     */
+    public function handedOverAfter(int $workspaceId, ClientAgreement $agreement, ?Collection $segments = null): ?CarbonImmutable
+    {
+        $companyId = (int) $agreement->client_company_id;
+        $successor = $this->agreements->successorAgreementForGeneration($segments ?? $this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection, $agreement);
+
+        return $successor instanceof ClientAgreement ? $successor->starts_on->startOfDay()->subDay() : null;
+    }
+
+    /**
+     * The client's agreements in generation order, read with row locks: the
+     * current rows, whatever snapshot the caller's transaction holds. For an
+     * issue, which takes them before the invoice, where agreements rank.
+     *
+     * @return Collection<int, ClientAgreement>
+     */
+    public function lockedSegments(int $workspaceId, int $companyId): Collection
+    {
+        return ClientAgreement::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('client_company_id', $companyId)
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
+            ->orderBy('starts_on')
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get();
+    }
+
+    /**
+     * The day this agreement took over from a predecessor for the same project
+     * scope - its own start - or null when it succeeds nobody. Work before it
+     * is the predecessor's to bill.
+     */
+    /** @param  Collection<int, ClientAgreement>|null  $segments  as for {@see self::handedOverAfter()} */
+    public function tookOverOn(int $workspaceId, ClientAgreement $agreement, ?Collection $segments = null): ?CarbonImmutable
+    {
+        $companyId = (int) $agreement->client_company_id;
+        $segments ??= $this->segments($workspaceId, [$companyId])[$companyId] ?? new Collection;
+        foreach ($segments as $candidate) {
+            $successor = $this->agreements->successorAgreementForGeneration($segments, $candidate);
+            if ($successor instanceof ClientAgreement && $successor->id === $agreement->id) {
+                return $agreement->starts_on->startOfDay();
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Services\Billing;
 
 use App\Exceptions\DisputedRowsOnDraft;
 use App\Exceptions\DisputedWorkChanged;
+use App\Exceptions\WorkOutsideAgreementSegment;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
@@ -39,12 +40,14 @@ use App\Support\Billing\PaymentDateBounds;
 use App\Support\Billing\PaymentRefundKind;
 use App\Support\Billing\PaymentVersionChanged;
 use App\Support\Billing\ServicePeriodRequirement;
+use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use App\Support\Finance\ReconciliationReviewReason;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
@@ -328,6 +331,12 @@ final class InvoiceLifecycleService
             // first: from the caller's copy of the invoice, because nothing may
             // be read or locked ahead of it, and then checked against the
             // locked row below.
+            // The client's agreements, for the handover check below: read
+            // with row locks, which see a successor added after the caller's
+            // snapshot, and taken first, where agreements rank - from the
+            // caller's copy of the invoice, which the locked row is checked
+            // against before anything is issued.
+            $handoverSegments = $this->lockHandoverSegments($invoice);
             $agreement = $this->lockInterimAgreement($invoice);
             // A monthly draft recording the catch-up it was sized against is
             // checked against other invoices of its agreement, read with row
@@ -465,12 +474,14 @@ final class InvoiceLifecycleService
                     $interimTime = $this->interimOverageGenerator()->lockTimeFingerprint($locked, $agreement, $interimClaims[0]);
                 }
                 $this->assertChargesNoDisputedRows($locked, $lineIds);
+                $deferredCandidates = $this->lockDeferredCandidates($locked);
                 $company = $this->overpaymentCreditService->lockForSpending(
                     (int) $locked->workspace_id,
                     (int) $locked->client_company_id,
                     verifySnapshot: $spendsCredit,
                 );
                 $this->assertSnapshotHoldsTheLockedLines($locked);
+                $this->assertChargesOnlyItsAgreementsSegment($locked, $handoverSegments);
             }
 
             // Re-read even when the caller supplied the authorized workspace.
@@ -606,7 +617,7 @@ final class InvoiceLifecycleService
             // issue. Refresh only the document snapshot, after the tenant and
             // credit locks above, so late approvals and newly private wording
             // are reflected without rebuilding any charge or allocation.
-            app(ClientInvoicingService::class)->refreshDeferredWorkSnapshotAtIssue($locked);
+            app(ClientInvoicingService::class)->refreshDeferredWorkSnapshotAtIssue($locked, $deferredCandidates ?? null);
             if ($interimClaims !== null && $interimTime !== null) {
                 // After every lock, so a transaction this method owns builds the
                 // ledger through a snapshot that starts after all of them.
@@ -891,6 +902,124 @@ final class InvoiceLifecycleService
         if ($lines()->get()->toArray() !== $current) {
             throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
         }
+    }
+
+    /**
+     * Refuse a draft of an agreement that charges ordinary work dated after a
+     * successor took over from it: generation leaves that work to the
+     * successor, but a draft generated before the successor was added, or
+     * before a backdated termination made room for it, still carries what it
+     * selected then. Only work priced at the agreement's terms - consultant and
+     * retainer-mode time - is the successor's; flat-hourly and direct time is
+     * priced at its own.
+     *
+     * Read after every lock: the draft's lines and the time they link are
+     * already locked and the snapshot agrees with them, and the agreements are
+     * the ones generation reads.
+     */
+    /**
+     * The agreements of the invoice's client, locked, when its kind is bounded
+     * by an agreement's segment; null otherwise.
+     *
+     * @return SupportCollection<int, ClientAgreement>|null
+     */
+    private function lockHandoverSegments(ClientInvoice $invoice): ?SupportCollection
+    {
+        if ($invoice->client_agreement_id === null || ! self::boundedBySegment($invoice)) {
+            return null;
+        }
+
+        return app(DeferredBacklogReader::class)->lockedSegments((int) $invoice->workspace_id, (int) $invoice->client_company_id);
+    }
+
+    private static function boundedBySegment(ClientInvoice $invoice): bool
+    {
+        return match (InvoiceKind::from($invoice->invoiceKindValue())) {
+            InvoiceKind::CadencePeriod, InvoiceKind::InterimOverage, InvoiceKind::Terminal, InvoiceKind::DeferredBuyDown => true,
+            // Hand-picked time is priced at each entry's own terms, under no
+            // agreement's segment.
+            InvoiceKind::AdHoc => false,
+        };
+    }
+
+    /** @param SupportCollection<int, ClientAgreement>|null $segments the client's agreements, locked */
+    private function assertChargesOnlyItsAgreementsSegment(ClientInvoice $draft, ?SupportCollection $segments): void
+    {
+        if (! self::boundedBySegment($draft) || $draft->client_agreement_id === null) {
+            return;
+        }
+        // Locked from the caller's copy; a draft that has since changed
+        // client or kind is read again, with locks, rather than trusted.
+        $segments = $segments !== null && $segments->contains('id', (int) $draft->client_agreement_id)
+            ? $segments
+            : app(DeferredBacklogReader::class)->lockedSegments((int) $draft->workspace_id, (int) $draft->client_company_id);
+        $agreement = $segments->firstWhere('id', (int) $draft->client_agreement_id);
+        if (! $agreement instanceof ClientAgreement) {
+            return;
+        }
+        $reader = app(DeferredBacklogReader::class);
+        $handedOver = $reader->handedOverAfter((int) $draft->workspace_id, $agreement, $segments);
+        $tookOver = $reader->tookOverOn((int) $draft->workspace_id, $agreement, $segments);
+        if (! $handedOver instanceof CarbonImmutable && ! $tookOver instanceof CarbonImmutable) {
+            return;
+        }
+        $charged = fn () => DB::table('client_invoice_lines as line')
+            ->join('client_invoice_line_time_entries as allocation', function ($join) use ($draft): void {
+                $join->on('allocation.client_invoice_line_id', '=', 'line.id')->where('allocation.workspace_id', '=', $draft->workspace_id);
+            })
+            ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
+            ->where('line.workspace_id', $draft->workspace_id)
+            ->where('line.client_invoice_id', $draft->id)
+            ->where(fn ($mode) => $mode->whereNull('entry.subcontractor_billing_mode')
+                ->orWhere('entry.subcontractor_billing_mode', SubcontractorBillingMode::Retainer->value));
+        if ($handedOver instanceof CarbonImmutable
+            && $charged()->whereDate('entry.worked_on', '>', $handedOver->toDateString())->exists()) {
+            throw new WorkOutsideAgreementSegment(sprintf('from %s, when a successor agreement took over', $handedOver->addDay()->toDateString()));
+        }
+        // And the other side of a handover: ordinary work before this
+        // agreement took over from a predecessor - one added, say, after this
+        // draft was generated - is the predecessor's.
+        if ($tookOver instanceof CarbonImmutable
+            && $charged()->where('entry.is_deferred', false)->whereDate('entry.worked_on', '<', $tookOver->toDateString())->exists()) {
+            throw new WorkOutsideAgreementSegment(sprintf('before %s, when this agreement took over from its predecessor', $tookOver->toDateString()));
+        }
+    }
+
+    /**
+     * The time a cadence draft's *Still deferred* statement may list, read with
+     * row locks - which see the current rows, whatever snapshot the caller's
+     * transaction holds - and held until the issue commits.
+     *
+     * The statement is frozen at issue from ordinary reads, and a caller whose
+     * transaction read before this one locked anything holds a snapshot that
+     * can predate an entry being withdrawn - returned to draft, or its client
+     * wording or visibility taken back - so the issued document would print it
+     * as it was (docs/ux-overhaul.md 7b″). The statement's rows are checked
+     * against these. Locked here, with the draft's other time, after its lines
+     * and before the company; a superset of the statement's rows - every such
+     * entry of the company, of any date and project - because narrowing it
+     * needs the agreement and the workspace's day, whose ordinary reads would
+     * fix the snapshot before the credit lock.
+     *
+     * @return array<int, array<string, mixed>>|null each candidate's columns by id, or null for a draft with no statement to freeze
+     */
+    private function lockDeferredCandidates(ClientInvoice $draft): ?array
+    {
+        if ($draft->invoice_kind !== InvoiceKind::CadencePeriod->value || $draft->client_agreement_id === null) {
+            return null;
+        }
+
+        return ClientTimeEntry::query()
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_company_id', $draft->client_company_id)
+            ->where(fn ($statement) => $statement
+                ->where(fn ($deferred) => $deferred->awaitingDeferredBilling()->billableForInvoicing())
+                ->orWhere(fn ($held) => $held->heldThatWouldOtherwiseBill()))
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get()
+            ->mapWithKeys(fn (ClientTimeEntry $entry): array => [$entry->id => $entry->getAttributes()])
+            ->all();
     }
 
     /** @return list<int> the draft's lines, locked */

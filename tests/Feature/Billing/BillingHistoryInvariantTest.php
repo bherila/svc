@@ -166,19 +166,25 @@ final class BillingHistoryInvariantTest extends TestCase
             'billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'ends_on' => '2026-05-15', 'status' => 'terminated',
             'retainer_minutes' => 0, 'retainer_amount' => 0, 'period_retainer_minutes' => 0, 'period_retainer_amount' => 0,
         ]);
-        $this->agreement($workspace, $company, [
+        $successor = $this->agreement($workspace, $company, [
             'starts_on' => '2026-05-16', 'billing_cadence' => 'quarterly', 'bill_overage_interim' => false,
-            'retainer_minutes' => 0, 'retainer_amount' => 0,
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 5000,
         ]);
         foreach (['2026-02-10', '2026-05-01', '2026-06-10', '2026-08-03'] as $day) {
             ClientTimeEntry::query()->whereKey($this->hours($workspace, $company, $project, $owner, $day, 120)->id)->update(['is_deferred' => true]);
         }
         $this->hours($workspace, $company, $project, $owner, '2026-03-03', 60);
+        // Ordinary work on both sides of the handover, at different rates.
+        $before = $this->hours($workspace, $company, $project, $owner, '2026-05-12', 60);
+        $after = $this->hours($workspace, $company, $project, $owner, '2026-06-17', 60);
 
         app(ClientInvoicingService::class)->generateAllInvoices($company);
         $this->assertInvariants($company, 'generated in bulk');
         $this->issueEveryDraft($company, $workspace);
         $this->assertInvariants($company, 'everything issued');
+
+        $this->assertSame([[$outgoing->id, 10000]], $this->chargesOf($before), 'Ordinary work before the handover is the outgoing agreement\'s, at its rate.');
+        $this->assertSame([[$successor->id, 5000]], $this->chargesOf($after), 'Ordinary work after it is the successor\'s, at its rate.');
 
         $segmentEnd = app(DeferredBacklogReader::class)->segmentEnd($workspace, $outgoing, CarbonImmutable::parse('2026-12-31'));
         // With no retainer there is no free capacity: the outgoing agreement's
@@ -206,6 +212,125 @@ final class BillingHistoryInvariantTest extends TestCase
 
     /** Deferred work drawn on Q1's unused rollover pool, then an overage the pool must not cover twice. */
     private const array ROLLOVER_DRAW_HISTORY = [['2026-01-20', 1800, true], ['2026-06-10', 3600, false]];
+
+    /** @return iterable<string, array{string, string, list<string>, string, string}> cadence, successor start, gap days, a day after, now */
+    public static function gapCadences(): iterable
+    {
+        yield 'monthly, a month' => ['monthly', '2026-06-16', ['2026-06-10'], '2026-06-20', '2026-10-20'];
+        yield 'quarterly, a month' => ['quarterly', '2026-06-16', ['2026-06-10'], '2026-06-20', '2026-10-20'];
+        yield 'monthly, several cycles' => ['monthly', '2026-11-16', ['2026-07-10', '2026-09-10', '2026-11-12'], '2026-11-20', '2027-01-20'];
+        yield 'quarterly, several cycles' => ['quarterly', '2026-11-16', ['2026-07-10', '2026-09-10', '2026-11-12'], '2026-11-20', '2027-01-20'];
+    }
+
+    /**
+     * Codex's gaps: the outgoing agreement ends on May 15 and its successor
+     * starts later - the next month, or after several cycles. Ordinary work up
+     * to the day before the successor starts is the outgoing agreement's, gap
+     * included, at its rate, and the successor's from its start, at its own -
+     * each billed exactly once, by a bulk walk that reaches the whole gap.
+     *
+     * @param  list<string>  $gapDays
+     */
+    #[DataProvider('gapCadences')]
+    public function test_work_in_a_gap_before_a_successor_is_billed_once_by_the_outgoing_agreement(string $cadence, string $successorStart, array $gapDays, string $afterDay, string $now): void
+    {
+        Carbon::setTestNow($now.' 12:00:00');
+        CarbonImmutable::setTestNow($now.' 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('gap-'.$cadence.'-'.$successorStart);
+        $outgoing = $this->agreement($workspace, $company, [
+            'billing_cadence' => $cadence, 'bill_overage_interim' => false, 'ends_on' => '2026-05-15', 'status' => 'terminated',
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 20000,
+        ]);
+        $successor = $this->agreement($workspace, $company, [
+            'starts_on' => $successorStart, 'billing_cadence' => $cadence, 'bill_overage_interim' => false,
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+        ]);
+        $may = $this->hours($workspace, $company, $project, $owner, '2026-05-12', 60);
+        $gap = array_map(fn (string $day): ClientTimeEntry => $this->hours($workspace, $company, $project, $owner, $day, 60), $gapDays);
+        $after = $this->hours($workspace, $company, $project, $owner, $afterDay, 60);
+
+        app(ClientInvoicingService::class)->generateAllInvoices($company);
+        $this->assertInvariants($company, 'generated in bulk');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+
+        $this->assertSame([[$outgoing->id, 20000]], $this->chargesOf($may));
+        foreach ($gap as $entry) {
+            $this->assertSame([[$outgoing->id, 20000]], $this->chargesOf($entry), 'Work in the gap, on '.$entry->worked_on->toDateString().', is the outgoing agreement\'s, once, at its rate.');
+        }
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($after), 'Work from the successor\'s start is the successor\'s.');
+    }
+
+    /**
+     * Codex's late predecessor: the successor's draft is generated while it
+     * stands alone, charging June 10 at its $100; then the agreement it took
+     * over from is recorded, January 1 to May 15 at $200. The unchanged draft
+     * is refused; regenerated, it leaves June 10 to the predecessor, whose walk
+     * reaches the gap and bills it once at its own rate.
+     */
+    public function test_a_predecessor_added_after_the_successors_draft_takes_back_its_work(): void
+    {
+        Carbon::setTestNow('2026-07-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('late-predecessor');
+        $successor = $this->agreement($workspace, $company, [
+            'starts_on' => '2026-06-16', 'billing_cadence' => 'monthly', 'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+        ]);
+        $june = $this->hours($workspace, $company, $project, $owner, '2026-06-10', 120);
+        $after = $this->hours($workspace, $company, $project, $owner, '2026-06-20', 60);
+        $this->period($company, $successor, '2026-07-01');
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($june), 'Alone, the successor\'s draft charges June 10.');
+
+        $predecessor = $this->agreement($workspace, $company, [
+            'billing_cadence' => 'monthly', 'ends_on' => '2026-05-15', 'status' => 'terminated',
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 20000,
+        ]);
+        $this->assertInvariants($company, 'the predecessor recorded, no rebuild');
+        $this->issueEveryDraft($company, $workspace);
+        app(ClientInvoicingService::class)->generateAllInvoices($company);
+        $this->assertInvariants($company, 'the predecessor generated');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+
+        $this->assertSame([[$predecessor->id, 20000]], $this->chargesOf($june), 'June 10 is the predecessor\'s, once, at its rate.');
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($after));
+    }
+
+    /**
+     * The post-merge review's history: the outgoing draft is generated while
+     * the agreement is open, then the agreement is terminated backdated and a
+     * successor starts the next day at another rate. The unchanged draft is
+     * refused; regenerated and issued, it leaves June to the successor, which
+     * bills it once at its own rate.
+     */
+    public function test_a_backdated_handover_after_the_outgoing_draft_leaves_the_successors_work_to_it(): void
+    {
+        Carbon::setTestNow('2026-07-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        [$workspace, $company, $project, $owner] = $this->world('backdated');
+        $outgoing = $this->agreement($workspace, $company, [
+            'billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 20000,
+        ]);
+        $june = $this->hours($workspace, $company, $project, $owner, '2026-06-10', 120);
+        $this->period($company, $outgoing, '2026-07-01');
+        $this->assertInvariants($company, 'the outgoing draft generated');
+
+        app(AgreementWorkflow::class)->terminate($outgoing->fresh() ?? $outgoing, '2026-05-15');
+        $successor = $this->agreement($workspace, $company, [
+            'starts_on' => '2026-05-16', 'billing_cadence' => 'quarterly', 'bill_overage_interim' => false,
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'hourly_rate_amount' => 10000,
+        ]);
+        $this->assertInvariants($company, 'the backdated handover, no rebuild');
+        $this->issueEveryDraft($company, $workspace);
+
+        Carbon::setTestNow('2026-08-20 12:00:00');
+        CarbonImmutable::setTestNow('2026-08-20 12:00:00');
+        app(ClientInvoicingService::class)->generateAllInvoices($company);
+        $this->assertInvariants($company, 'the successor generated');
+        $this->issueEveryDraft($company, $workspace);
+        $this->assertInvariants($company, 'everything issued');
+        $this->assertSame([[$successor->id, 10000]], $this->chargesOf($june), 'June is the successor\'s, once, at its rate.');
+    }
 
     /** @return iterable<string, array{array<string, mixed>, list<array{string, int, bool}>}> */
     public static function bulkWorlds(): iterable
@@ -518,22 +643,38 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertSame([], $twice, "After {$step}, these hours are allocated by two live invoices.");
     }
 
+    /**
+     * Ordinary work dated from a successor's start is the successor's; before
+     * an agreement took over from a predecessor it is the predecessor's; and
+     * deferred work ends with the agreement's segment, its termination
+     * included. A termination with no successor hands no ordinary work over.
+     * Asked of charged invoices.
+     */
     private function assertEachAgreementBillsItsOwnSegment(ClientCompany $company, string $step): void
     {
         $workspace = Workspace::query()->findOrFail($company->workspace_id);
+        $reader = app(DeferredBacklogReader::class);
         $agreements = ClientAgreement::query()->where('workspace_id', $company->workspace_id)->where('client_company_id', $company->id)->get();
         foreach ($agreements as $agreement) {
-            $end = app(DeferredBacklogReader::class)->segmentEnd($workspace, $agreement, CarbonImmutable::parse('2099-12-31'))->toDateString();
-            $late = DB::table('client_invoice_line_time_entries as allocation')
+            $handedOver = $reader->handedOverAfter((int) $workspace->id, $agreement)?->toDateString();
+            $tookOver = $reader->tookOverOn((int) $workspace->id, $agreement)?->toDateString();
+            $segmentEnd = $reader->segmentEnd($workspace, $agreement, CarbonImmutable::parse('2099-12-31'))->toDateString();
+            $outside = DB::table('client_invoice_line_time_entries as allocation')
                 ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
                 ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
                 ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
                 ->where('invoice.workspace_id', $company->workspace_id)
                 ->where('invoice.client_agreement_id', $agreement->id)
-                ->where('invoice.status', '!=', InvoiceStatus::Void->value)
-                ->whereDate('entry.worked_on', '>', $end)
+                // Charged invoices: a draft outside its segment is stale, which
+                // the stale-draft check holds to a refusal at issue.
+                ->whereNotIn('invoice.status', [InvoiceStatus::Void->value, InvoiceStatus::Draft->value])
+                ->where(fn ($mode) => $mode->whereNull('entry.subcontractor_billing_mode')->orWhere('entry.subcontractor_billing_mode', 'retainer'))
+                ->where(fn ($outside) => $outside
+                    ->where(fn ($deferred) => $deferred->where('entry.is_deferred', true)->whereDate('entry.worked_on', '>', $segmentEnd))
+                    ->when($handedOver !== null, fn ($query) => $query->orWhere(fn ($ordinary) => $ordinary->where('entry.is_deferred', false)->whereDate('entry.worked_on', '>', $handedOver)))
+                    ->when($tookOver !== null, fn ($query) => $query->orWhere(fn ($ordinary) => $ordinary->where('entry.is_deferred', false)->whereDate('entry.worked_on', '<', $tookOver))))
                 ->pluck('entry.id')->all();
-            $this->assertSame([], $late, "After {$step}, agreement {$agreement->id} bills work dated after its segment ends on {$end}.");
+            $this->assertSame([], $outside, "After {$step}, agreement {$agreement->id} bills work outside its segment (handed over after {$handedOver}, took over on {$tookOver}, deferred through {$segmentEnd}).");
 
             // Nor does it sell anything dated after that end: a retainer line
             // is dated the day its cycle opens, an item's line the day of its
@@ -544,10 +685,10 @@ final class BillingHistoryInvariantTest extends TestCase
                 ->where('invoice.client_agreement_id', $agreement->id)
                 ->where('invoice.status', '!=', InvoiceStatus::Void->value)
                 ->whereIn('line.type', [InvoiceLineType::Retainer->value, InvoiceLineType::RecurringItem->value])
-                ->whereDate('line.line_date', '>', $end)
+                ->whereDate('line.line_date', '>', $segmentEnd)
                 ->get(['line.type', 'line.line_date'])
                 ->map(fn (object $line): string => $line->type.' '.Carbon::parse((string) $line->line_date)->toDateString())->all();
-            $this->assertSame([], $sold, "After {$step}, agreement {$agreement->id} sells a cycle or incidence dated after its segment ends on {$end}.");
+            $this->assertSame([], $sold, "After {$step}, agreement {$agreement->id} sells a cycle or incidence dated after its segment ends on {$segmentEnd}.");
         }
     }
 
@@ -570,6 +711,26 @@ final class BillingHistoryInvariantTest extends TestCase
                 }
             }
         }
+    }
+
+    /**
+     * Each live invoice line charging the entry, or a fragment split from it,
+     * as its agreement and unit price.
+     *
+     * @return list<array{int, int}>
+     */
+    private function chargesOf(ClientTimeEntry $entry): array
+    {
+        return array_values(array_unique(DB::table('client_invoice_line_time_entries as allocation')
+            ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
+            ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+            ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
+            ->where('invoice.status', '!=', InvoiceStatus::Void->value)
+            ->whereRaw('coalesce(entry.split_from_time_entry_id, entry.id) = ?', [$entry->id])
+            ->orderBy('line.id')
+            ->get(['invoice.client_agreement_id', 'line.unit_amount'])
+            ->map(fn (object $row): array => [(int) $row->client_agreement_id, (int) $row->unit_amount])
+            ->all(), SORT_REGULAR));
     }
 
     /** @return Collection<int, ClientInvoice> */
