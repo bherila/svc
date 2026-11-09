@@ -6,6 +6,8 @@ use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\PackageMigrationPlanner;
+use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageReadService;
@@ -23,6 +25,12 @@ use App\Support\Packages\AutoInvoiceRefusal;
 use App\Support\Packages\CancellationMode;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\IntakeQuestionKind;
+use App\Support\Packages\Migration\MigrationDates;
+use App\Support\Packages\Migration\MigrationHold;
+use App\Support\Packages\Migration\MigrationRefusal;
+use App\Support\Packages\Migration\MigrationSkip;
+use App\Support\Packages\Migration\MigrationStatus;
+use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\PackageActivationMode;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageInvoiceIssuing;
@@ -88,6 +96,11 @@ final class ServicePackageOperations
         'cancellation_requests.decline' => ['cancellation-requests.decline', '/workspaces/{workspace}/cancellation-requests/{cancellation}/decline', [200]],
         'agreements.schedule_end' => ['agreements.scheduled-end.store', '/workspaces/{workspace}/agreements/{agreement}/scheduled-end', [200]],
         'agreements.undo_scheduled_end' => ['agreements.scheduled-end.undo', '/workspaces/{workspace}/agreements/{agreement}/scheduled-end/undo', [200]],
+        'package_migrations.preview' => ['package-migrations.preview', '/workspaces/{workspace}/packages/{package}/migration-preview', [200]],
+        'package_migrations.schedule' => ['package-migrations.store', '/workspaces/{workspace}/packages/{package}/migrations', [201]],
+        'package_migrations.list' => ['package-migrations.index', '/workspaces/{workspace}/package-migrations', [200]],
+        'package_migrations.get' => ['package-migrations.show', '/workspaces/{workspace}/package-migrations/{migration}', [200]],
+        'package_migrations.cancel' => ['package-migrations.cancel', '/workspaces/{workspace}/package-migrations/{migration}/cancel', [200]],
     ];
 
     /** Operation id => [MCP handler, title, method, response component, request component|null]. */
@@ -114,6 +127,11 @@ final class ServicePackageOperations
         'cancellation_requests.decline' => ['declineCancellationRequest', 'Decline cancellation request', 'POST', 'CancellationRequestResponse', 'CancellationRequestDeclineRequest'],
         'agreements.schedule_end' => ['scheduleAgreementEnd', 'Schedule agreement end', 'POST', 'AgreementResponse', 'AgreementScheduleEndRequest'],
         'agreements.undo_scheduled_end' => ['undoAgreementEnd', 'Undo scheduled agreement end', 'POST', 'AgreementResponse', 'ServicePackageConfirmRequest'],
+        'package_migrations.preview' => ['previewMigration', 'Preview moving package subscribers', 'GET', 'PackageMigrationPreviewResponse', null],
+        'package_migrations.schedule' => ['scheduleMigration', 'Schedule moving package subscribers', 'POST', 'PackageMigrationResponse', 'PackageMigrationScheduleRequest'],
+        'package_migrations.list' => ['listMigrations', 'List package moves', 'GET', 'PackageMigrationListResponse', null],
+        'package_migrations.get' => ['getMigration', 'Get package move', 'GET', 'PackageMigrationResponse', null],
+        'package_migrations.cancel' => ['cancelMigration', 'Cancel package move', 'POST', 'PackageMigrationResponse', 'ServicePackageConfirmRequest'],
     ];
 
     /**
@@ -143,6 +161,12 @@ final class ServicePackageOperations
         'end_date' => ['nullable', 'string', 'date_format:Y-m-d'],
         'waive_notice' => ['boolean'],
         'note' => ['nullable', 'string', 'max:1000'],
+        // A move to a new version (MIG-1).
+        'from_version_id' => ['required', 'string', 'uuid'],
+        'effective_on' => ['required', 'string', 'date_format:Y-m-d'],
+        'enrollment_ids' => ['required', 'array', 'min:1', 'max:'.self::MAX_LIMIT],
+        'enrollment_ids.*' => ['required', 'string', 'uuid', 'distinct'],
+        'message' => ['nullable', 'string', 'max:'.PackageMigrationWorkflow::MESSAGE_MAX],
     ];
 
     /** The page size bound of packages.list. */
@@ -174,6 +198,8 @@ final class ServicePackageOperations
             'ServicePackageSignupPayment', 'ServicePackageInvoicing', 'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
             'AgreementCancellation', 'ClientServiceCancellation', 'CancellationRequest', 'CancellationRequestResponse', 'CancellationRequestListResponse',
             'CancellationRequestApproveRequest', 'CancellationRequestDeclineRequest', 'AgreementScheduleEndRequest',
+            'PackageMigrationTermChange', 'PackageMigrationPreview', 'PackageMigrationPreviewResponse', 'PackageMigration', 'PackageMigrationResponse',
+            'PackageMigrationListResponse', 'PackageMigrationScheduleRequest', 'ServicePackageEnrollmentMove', 'ClientServiceMove',
         ];
     }
 
@@ -211,6 +237,11 @@ final class ServicePackageOperations
             'cancellation_requests.decline' => 'Only after explicit user confirmation, decline a pending cancellation request with an optional note, which the client reads in an email. The agreement is unchanged. Refused with cancellation_request_not_pending once decided or withdrawn. Current version and confirm: true required. '.$whoCancellations.' '.$cancellationWriteFlags,
             'agreements.schedule_end' => 'Only after explicit user confirmation, schedule an active agreement\'s end on end_date, in any portal cancellation mode: one of the agreement\'s cancellation.offered_end_dates (agreements.get), or of offered_end_dates_without_notice with waive_notice true; the minimum term always holds. The agreement stays active with that end date and is terminated on the date; until then agreements.undo_scheduled_end undoes it. The client is emailed the end date. Refused with cancellation_request_pending while a client\'s request waits (decide it instead), cancellation_already_scheduled, cancellation_agreement_not_active, cancellation_not_recurring, or cancellation_date_not_offered. Use agreements.terminate to end an agreement today or on a date that is not a period close. The agreement\'s current version and confirm: true required. '.$whoCancellations.' '.$cancellationWriteFlags,
             'agreements.undo_scheduled_end' => 'Only after explicit user confirmation, undo an agreement\'s scheduled end before its date, in any mode: the end date it had before is restored, and the workspace\'s owners and admins and the client are emailed. Refused with cancellation_not_scheduled when nothing is scheduled (or it has already been carried out) and cancellation_end_reached once the date has passed. The agreement\'s current version and confirm: true required. '.$whoCancellations.' '.$cancellationWriteFlags,
+            'package_migrations.preview' => 'Before moving a package\'s subscribers to its published version, read what the move would do and change nothing: the terms that change (old and new value of each), the new price, each subscriber of from_version_id (active services carrying that version) with its earliest effective date, the dates it may move on, its autopay limit and whether that is below the new price (SVC never raises a limit), any pending cancellation or scheduled end, and refusal: why it cannot move on effective_on (or the suggested date). effective_dates lists every date some subscriber may move on with how many it suits; a date is the start of a billing period, after the subscriber\'s notice period and after every period already invoiced. A subscriber whose agreement bills by usage (an hourly rate or a retainer) is refused with package_migration_bills_by_usage. '.$who.' '.$flag,
+            'package_migrations.schedule' => 'Only after explicit user confirmation, schedule moving the chosen subscribers (enrollment_ids, from package_migrations.preview) from from_version_id to the package\'s published version on effective_on, which must suit every one of them. Each client is emailed the old and new terms, the date and the optional message (which they read), and sees a notice in the portal; a client whose autopay limit is below the new price is told it will not be raised. On the date the agreement ends the day before and an agreement carrying the new terms starts that day, unless the client has ended it first. Refused with package_migration_not_newer, package_migration_date_not_offered, package_migration_already_scheduled, package_migration_bills_by_usage and the other package_migration_* codes, naming the client. The package\'s current version and confirm: true required. '.$who.' '.$writeFlags,
+            'package_migrations.list' => 'List the workspace\'s scheduled, completed and cancelled moves of package subscribers to a new version, newest first, optionally by status. Each has its package, versions, effective date, message, the terms that change, the new price, and each subscriber\'s status (scheduled, applied, skipped, cancelled), the reason it was skipped or why it waits (outcome), its agreement and, once moved, the agreement carrying the new terms. '.$who.' '.$flag,
+            'package_migrations.get' => 'Read one move of package subscribers with its subscribers and the version to send with package_migrations.cancel. '.$who.' '.$flag,
+            'package_migrations.cancel' => 'Only after explicit user confirmation, cancel a scheduled move: before its effective date the whole move, from it on the subscribers still waiting (the ones moved stay moved). Each client whose move is cancelled is emailed that their terms stay as they are. Refused with package_migration_not_scheduled once completed or cancelled. The move\'s current version and confirm: true required. '.$who.' '.$writeFlags,
             'package_requests.erase' => 'Only after explicit user confirmation, irreversibly erase what the visitor typed into a decided request (contact details, answers and the decline reason), leaving a stub with its package, dates and outcome. Refused with package_request_not_closed while the request is open. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
         ];
         $errors = [
@@ -260,6 +291,19 @@ final class ServicePackageOperations
             409 => 'expected_version is no longer current (read it again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
             422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: '.implode(', ', self::values(CancellationRefusal::cases())).'.',
         ]);
+        $migrationErrors = array_replace($errors, [
+            404 => 'The workspace, package, version or move is not visible to the caller, or the caller is not a workspace owner or admin.',
+            422 => 'from_version_id or effective_on is missing or malformed, status or limit is out of range, or the cursor is malformed or belongs to another query.',
+        ]);
+        $migrationWriteErrors = array_replace($writeErrors, [
+            404 => 'The workspace, package, version or move is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.',
+            409 => 'expected_version is no longer current (read the package or move again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
+            422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: '.implode(', ', self::values(MigrationRefusal::cases())).'.',
+        ]);
+        $migration = ['name' => 'migration', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $migrationStatus = ['name' => 'status', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => self::values(MigrationStatus::cases())]];
+        $fromVersion = ['name' => 'from_version_id', 'in' => 'query', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $effectiveOn = ['name' => 'effective_on', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'date']];
         $package = ['name' => 'package', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
         $cancellation = ['name' => 'cancellation', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
         $agreement = ['name' => 'agreement', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
@@ -285,6 +329,7 @@ final class ServicePackageOperations
                 'client_services' => $service,
                 'cancellation_requests' => $cancellation,
                 'agreements' => $agreement,
+                'package_migrations' => in_array($id, ['package_migrations.get', 'package_migrations.cancel'], true) ? $migration : $package,
                 default => $package,
             };
             $cancelling = in_array($id, self::CANCELLATION_OPERATIONS, true);
@@ -292,6 +337,9 @@ final class ServicePackageOperations
                 'packages.list' => ['WorkspaceId', $status, 'Limit', 'Cursor'],
                 'cancellation_requests.list' => ['WorkspaceId', $cancellationStatus, 'Limit', 'Cursor'],
                 'cancellation_requests.get' => ['WorkspaceId', $target],
+                'package_migrations.preview' => ['WorkspaceId', $target, $fromVersion, $effectiveOn],
+                'package_migrations.list' => ['WorkspaceId', $migrationStatus, 'Limit', 'Cursor'],
+                'package_migrations.get' => ['WorkspaceId', $target],
                 'package_requests.list' => ['WorkspaceId', $requestStatus, 'Limit', 'Cursor'],
                 'enrollments.list' => ['WorkspaceId', $enrollmentStatus, 'Limit', 'Cursor'],
                 'client_services.list' => ['WorkspaceId', $company, 'Limit', 'Cursor'],
@@ -324,6 +372,9 @@ final class ServicePackageOperations
                     'cancellation_requests.list' => 'Cancellation requests',
                     'cancellation_requests.get', 'cancellation_requests.approve', 'cancellation_requests.decline' => 'Cancellation request',
                     'agreements.schedule_end', 'agreements.undo_scheduled_end' => 'The agreement, with its cancellation state',
+                    'package_migrations.preview' => 'What moving the subscribers would do',
+                    'package_migrations.list' => 'Package moves',
+                    'package_migrations.get', 'package_migrations.schedule', 'package_migrations.cancel' => 'Package move',
                     default => $requests ? 'Sign-up request' : 'Service package',
                 },
                 'errors' => match ($family) {
@@ -331,6 +382,7 @@ final class ServicePackageOperations
                     'enrollments' => $read ? $enrollmentErrors : $activateErrors,
                     'client_services' => $serviceErrors,
                     'cancellation_requests', 'agreements' => $read ? $cancellationReadErrors : $cancellationWriteErrors,
+                    'package_migrations' => $read ? $migrationErrors : $migrationWriteErrors,
                     default => $read ? $errors : $writeErrors,
                 },
             ] + ($read ? [] : ['request' => $body]);
@@ -364,6 +416,19 @@ final class ServicePackageOperations
         $nullableNamed = ['oneOf' => [$named, ['type' => 'null']]];
         $versionRef = self::object(['id' => $uuid, 'number' => ['type' => 'integer', 'minimum' => 1]]);
         // Signed by a company contact, who typed the name and title (ACC-2).
+        $nullableUuid = ['type' => ['string', 'null'], 'format' => 'uuid'];
+        $refusal = static fn (array $codes): array => ['oneOf' => [self::object([
+            'code' => ['type' => 'string', 'enum' => $codes],
+            'message' => ['type' => 'string'],
+        ]), ['type' => 'null']]];
+        // Why a subscriber was skipped, or why it waits (MIG-3).
+        $moveOutcome = ['oneOf' => [self::object([
+            'code' => ['type' => 'string', 'enum' => [...self::values(MigrationSkip::cases()), ...self::values(MigrationHold::cases())]],
+            'message' => $text,
+            'detail' => $nullableText,
+        ]), ['type' => 'null']]];
+        $changes = ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/PackageMigrationTermChange']];
+        $price = ['oneOf' => [self::object(['amount' => ['type' => 'integer', 'minimum' => 0], 'currency' => ['type' => 'string', 'pattern' => '^[A-Z]{3}$'], 'label' => $text]), ['type' => 'null']]];
         $acceptance = ['oneOf' => [self::object([
             'accepted_at' => ['type' => 'string', 'format' => 'date-time'],
             'signer_name' => $text,
@@ -484,6 +549,8 @@ final class ServicePackageOperations
                 'package' => self::object(['id' => $uuid, 'link_name' => $text, 'name' => $text]),
                 'offered_version' => $versionRef,
                 'accepted_version' => ['oneOf' => [$versionRef, ['type' => 'null']]],
+                // The version a move put it on (MIG-3); null while it carries the version signed.
+                'current_version' => ['oneOf' => [$versionRef, ['type' => 'null']]],
                 'version_changed' => $bool,
                 'client' => $named,
                 'project_id' => $uuid,
@@ -496,8 +563,82 @@ final class ServicePackageOperations
                 'lapsed_at' => $nullableInstant,
                 'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
                 'invoicing' => ['$ref' => '#/components/schemas/ServicePackageInvoicing'],
+                'move' => ['oneOf' => [['$ref' => '#/components/schemas/ServicePackageEnrollmentMove'], ['type' => 'null']]],
                 'version' => $version,
             ]),
+            // The scheduled move an enrollment is part of (PackageMigrationPresenter::forEnrollment).
+            'ServicePackageEnrollmentMove' => self::object([
+                'migration_id' => $uuid,
+                'status' => ['type' => 'string', 'enum' => self::values(MigrationTargetStatus::cases())],
+                'effective_on' => $date,
+                'to_version' => $versionRef,
+                'outcome' => $moveOutcome,
+            ]),
+            // One term a move changes, in words (MigrationTermChanges).
+            'PackageMigrationTermChange' => self::object(['term' => $text, 'label' => $text, 'from' => $text, 'to' => $text]),
+            // What a move would do (PackageMigrationPlanner::preview).
+            'PackageMigrationPreview' => self::object([
+                'package' => self::object(['id' => $uuid, 'link_name' => $text, 'name' => $text]),
+                'from_version' => $versionRef,
+                'to_version' => ['oneOf' => [$versionRef, ['type' => 'null']]],
+                'refusal' => $refusal(self::values(MigrationRefusal::cases())),
+                'changes' => $changes,
+                'new_price' => $price,
+                'effective_dates' => ['type' => 'array', 'maxItems' => PackageMigrationPlanner::MAX_DATES, 'items' => self::object([
+                    'date' => $date,
+                    'subscribers' => ['type' => 'integer', 'minimum' => 1],
+                ])],
+                'effective_on' => $nullableDate,
+                'subscribers' => ['type' => 'array', 'items' => self::object([
+                    'enrollment_id' => $uuid,
+                    'client' => $named,
+                    'agreement' => self::object(['id' => $uuid, 'title' => $text, 'starts_on' => $date, 'ends_on' => $nullableDate]),
+                    'earliest_effective_on' => $nullableDate,
+                    'effective_dates' => ['type' => 'array', 'maxItems' => MigrationDates::DEFAULT_OFFERED, 'items' => $date],
+                    'autopay_limit_amount' => $nullableInt,
+                    'autopay_below_price' => $bool,
+                    'pending_cancellation_end_on' => $nullableDate,
+                    'scheduled_end_on' => $nullableDate,
+                    'refusal' => $refusal(self::values(MigrationRefusal::cases())),
+                ])],
+            ]),
+            'PackageMigrationPreviewResponse' => self::object(['data' => ['$ref' => '#/components/schemas/PackageMigrationPreview']]),
+            // A move (PackageMigrationPresenter::forManager).
+            'PackageMigration' => self::object([
+                'id' => $uuid,
+                'status' => ['type' => 'string', 'enum' => self::values(MigrationStatus::cases())],
+                'package' => self::object(['id' => $uuid, 'link_name' => $text, 'name' => $text]),
+                'from_version' => $versionRef,
+                'to_version' => $versionRef,
+                'effective_on' => $date,
+                'message' => $nullableText,
+                'changes' => $changes,
+                'new_price' => $price,
+                'scheduled_at' => ['type' => 'string', 'format' => 'date-time'],
+                'scheduled_by' => $nullableText,
+                'cancelled_at' => $nullableInstant,
+                'completed_at' => $nullableInstant,
+                'counts' => self::object(array_fill_keys(self::values(MigrationTargetStatus::cases()), ['type' => 'integer', 'minimum' => 0])),
+                'subscribers' => ['type' => 'array', 'items' => self::object([
+                    'id' => $uuid,
+                    'enrollment_id' => $nullableUuid,
+                    'client' => $named,
+                    'agreement' => self::object(['id' => $uuid, 'title' => $text, 'url' => ['type' => 'string', 'format' => 'uri']]),
+                    'successor_agreement' => ['oneOf' => [self::object(['id' => $uuid, 'title' => $text, 'url' => ['type' => 'string', 'format' => 'uri']]), ['type' => 'null']]],
+                    'status' => ['type' => 'string', 'enum' => self::values(MigrationTargetStatus::cases())],
+                    'outcome' => $moveOutcome,
+                    'autopay_limit_amount' => $nullableInt,
+                    'autopay_below_price' => $bool,
+                    'settled_at' => $nullableInstant,
+                ])],
+                'version' => $version,
+            ]),
+            'PackageMigrationResponse' => self::object(['data' => ['$ref' => '#/components/schemas/PackageMigration']]),
+            'PackageMigrationListResponse' => self::object([
+                'data' => ['type' => 'array', 'maxItems' => self::MAX_LIMIT, 'items' => ['$ref' => '#/components/schemas/PackageMigration']],
+                'meta' => self::object(['next_cursor' => $nullableText]),
+            ]),
+            'PackageMigrationScheduleRequest' => self::request(self::requestProperties($component), ['expected_version', 'confirm', 'from_version_id', 'effective_on', 'enrollment_ids']),
             // How the service's recurring invoices are made (PackageEnrollmentPresenter::invoicing, INV-1, INV-2).
             'ServicePackageInvoicing' => self::object([
                 'issuing' => ['type' => 'string', 'enum' => self::values(PackageInvoiceIssuing::cases())],
@@ -559,7 +700,19 @@ final class ServicePackageOperations
                 'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
                 'next_period_start' => ['type' => ['string', 'null'], 'format' => 'date'],
                 'cancellation' => ['$ref' => '#/components/schemas/ClientServiceCancellation'],
+                'move' => ['oneOf' => [['$ref' => '#/components/schemas/ClientServiceMove'], ['type' => 'null']]],
                 'url' => ['type' => 'string', 'format' => 'uri'],
+            ]),
+            // A move to new terms, as the client is told of it (MIG-2, MIG-4).
+            'ClientServiceMove' => self::object([
+                'effective_on' => $date,
+                'version_number' => ['type' => 'integer', 'minimum' => 1],
+                'changes' => $changes,
+                'terms' => ['$ref' => '#/components/schemas/ClientServiceTerms'],
+                'message' => $nullableText,
+                'new_price_amount' => ['type' => 'integer', 'minimum' => 0],
+                'autopay_limit_amount' => $nullableInt,
+                'autopay_below_price' => $bool,
             ]),
             'ClientServiceTerms' => self::object([
                 'name' => $text,
@@ -679,6 +832,17 @@ final class ServicePackageOperations
     }
 
     /**
+     * The decision rules of these top-level fields, their nested ones (`field.*`) included.
+     *
+     * @param  list<string>  $fields
+     * @return array<string, list<mixed>>
+     */
+    public static function rulesFor(array $fields): array
+    {
+        return array_filter(self::DECISION_RULES, static fn (string $path): bool => in_array(explode('.', $path, 2)[0], $fields, true), ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
      * The fields a write's body may carry: its request schema's properties,
      * so the route refuses exactly what the contract does not name.
      *
@@ -699,7 +863,7 @@ final class ServicePackageOperations
         return self::schema(self::requestComponent($id));
     }
 
-    /** @return 'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest'|'CancellationRequestApproveRequest'|'CancellationRequestDeclineRequest'|'AgreementScheduleEndRequest' */
+    /** @return 'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest'|'CancellationRequestApproveRequest'|'CancellationRequestDeclineRequest'|'AgreementScheduleEndRequest'|'PackageMigrationScheduleRequest' */
     private static function requestComponent(string $id): string
     {
         return self::DEFINITIONS[$id][4] ?? throw new LogicException("Operation [{$id}] takes no body.");
@@ -738,7 +902,7 @@ final class ServicePackageOperations
     /**
      * A request body's fields and their schemas.
      *
-     * @param  'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest'|'CancellationRequestApproveRequest'|'CancellationRequestDeclineRequest'|'AgreementScheduleEndRequest'  $component
+     * @param  'ServicePackageCreateRequest'|'ServicePackageUpdateRequest'|'ServicePackageConfirmRequest'|'ServicePackageRequestApproveRequest'|'ServicePackageRequestDeclineRequest'|'CancellationRequestApproveRequest'|'CancellationRequestDeclineRequest'|'AgreementScheduleEndRequest'|'PackageMigrationScheduleRequest'  $component
      * @return array<string, array<string, mixed>>
      */
     private static function requestProperties(string $component): array
@@ -761,6 +925,7 @@ final class ServicePackageOperations
             'CancellationRequestApproveRequest' => [...$expected, ...$confirm, ...self::fromRules(array_intersect_key(self::DECISION_RULES, array_flip(['end_date', 'waive_notice', 'note'])))],
             'CancellationRequestDeclineRequest' => [...$expected, ...$confirm, ...self::fromRules(array_intersect_key(self::DECISION_RULES, array_flip(['note'])))],
             'AgreementScheduleEndRequest' => [...$expected, ...$confirm, ...self::fromRules(array_intersect_key(self::DECISION_RULES, array_flip(['end_date', 'waive_notice'])))],
+            'PackageMigrationScheduleRequest' => [...$expected, ...$confirm, ...self::fromRules(self::rulesFor(['from_version_id', 'effective_on', 'enrollment_ids', 'message']))],
         };
     }
 

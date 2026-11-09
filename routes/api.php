@@ -234,8 +234,10 @@ Route::prefix('v1')
                 'cancellation_requests.list' => 'cancellationRequests', 'cancellation_requests.get' => 'showCancellationRequest',
                 'cancellation_requests.approve' => 'approveCancellationRequest', 'cancellation_requests.decline' => 'declineCancellationRequest',
                 'agreements.schedule_end' => 'scheduleAgreementEnd', 'agreements.undo_scheduled_end' => 'undoAgreementEnd',
+                'package_migrations.preview' => 'previewMigration', 'package_migrations.schedule' => 'scheduleMigration',
+                'package_migrations.list' => 'migrations', 'package_migrations.get' => 'showMigration', 'package_migrations.cancel' => 'cancelMigration',
             ] as $id => $handler) {
-                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid(['package', 'request', 'enrollment', 'service', 'cancellation', 'agreement']);
+                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid(['package', 'request', 'enrollment', 'service', 'cancellation', 'agreement', 'migration']);
             }
         }
 

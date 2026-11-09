@@ -8,8 +8,8 @@ use Mcp\Capability\Attribute\Schema;
 use Mcp\Server\RequestContext;
 
 /**
- * The service package, sign-up request, enrollment, client service and
- * cancellation tools. Each calls its REST operation, so the manager
+ * The service package, sign-up request, enrollment, client service,
+ * cancellation and version move tools. Each calls its REST operation, so the manager
  * rule, workspace scoping, validation, versions, receipts and cutovers are the
  * route's and cannot differ between the two transports (API-1). A write's
  * arguments are passed on exactly as sent: the fields its request schema
@@ -193,6 +193,47 @@ final class AgentMcpPackageTools
         RequestContext $request): array
     {
         return $this->rest->call('agreements.undo_scheduled_end', ['workspace' => $workspace_id, 'agreement' => $agreement_id], $this->body($request, 'agreements.undo_scheduled_end'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function previewMigration(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $package_id,
+        #[Schema(format: 'uuid')] string $from_version_id,
+        #[Schema(format: 'date')] ?string $effective_on = null): array
+    {
+        return $this->rest->call('package_migrations.preview', ['workspace' => $workspace_id, 'package' => $package_id],
+            query: array_filter(compact('from_version_id', 'effective_on'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function scheduleMigration(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $package_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('package_migrations.schedule', ['workspace' => $workspace_id, 'package' => $package_id], $this->body($request, 'package_migrations.schedule'), $idempotency_key);
+    }
+
+    /** @return array<string, mixed> */
+    public function listMigrations(#[Schema(format: 'uuid')] string $workspace_id,
+        #[Schema(enum: ['scheduled', 'completed', 'cancelled'])] ?string $status = null,
+        #[Schema(minimum: 1, maximum: ServicePackageOperations::MAX_LIMIT)] int $limit = 25,
+        #[Schema(maxLength: 2048)] ?string $cursor = null): array
+    {
+        return $this->rest->call('package_migrations.list', ['workspace' => $workspace_id],
+            query: array_filter(compact('status', 'limit', 'cursor'), static fn (mixed $value): bool => $value !== null));
+    }
+
+    /** @return array<string, mixed> */
+    public function getMigration(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $migration_id): array
+    {
+        return $this->rest->call('package_migrations.get', ['workspace' => $workspace_id, 'migration' => $migration_id]);
+    }
+
+    /** @return array<string, mixed> */
+    public function cancelMigration(#[Schema(format: 'uuid')] string $workspace_id, #[Schema(format: 'uuid')] string $migration_id,
+        #[Schema(minLength: 1, maxLength: 255)] string $idempotency_key,
+        RequestContext $request): array
+    {
+        return $this->rest->call('package_migrations.cancel', ['workspace' => $workspace_id, 'migration' => $migration_id], $this->body($request, 'package_migrations.cancel'), $idempotency_key);
     }
 
     /** @return array<string, mixed> */

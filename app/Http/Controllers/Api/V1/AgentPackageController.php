@@ -13,10 +13,13 @@ use App\Services\AgentApi\Operations\ServicePackageOperations;
 use App\Services\Engagement\CancellationRequestReadService;
 use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
+use App\Services\Packages\PackageMigrationPlanner;
+use App\Services\Packages\PackageMigrationReadService;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
 use App\Support\Engagement\Cancellation\CancellationRequestStatus;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\Migration\MigrationStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use Illuminate\Http\JsonResponse;
@@ -24,8 +27,8 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * The service package, sign-up request, enrollment, client service and
- * cancellation operations (docs/service-packages.md); every decision is the
+ * The service package, sign-up request, enrollment, client service,
+ * cancellation and version move operations (docs/service-packages.md); every decision is the
  * read services' or the workflows'.
  */
 final class AgentPackageController extends Controller
@@ -39,6 +42,8 @@ final class AgentPackageController extends Controller
         private readonly ClientServiceReadService $services,
         private readonly CancellationRequestReadService $cancellationReads,
         private readonly AgentAgreementReadService $agreements,
+        private readonly PackageMigrationPlanner $planner,
+        private readonly PackageMigrationReadService $migrations,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse
@@ -181,6 +186,46 @@ final class AgentPackageController extends Controller
         return $this->agreementEnd($request, $workspace, 'agreements.undo_scheduled_end', $agreement);
     }
 
+    /** What moving a version's subscribers to the published version would do (MIG-1, MIG-4); changes nothing. */
+    public function previewMigration(Request $request, Workspace $workspace, string $package): JsonResponse
+    {
+        $actor = $this->reader($request);
+        $data = $request->validate([
+            'from_version_id' => ['required', 'string', 'uuid'],
+            'effective_on' => ['nullable', 'string', 'date_format:Y-m-d'],
+        ]);
+
+        return response()->json(['data' => $this->planner->preview($actor, $workspace, $this->reads->find($actor, $workspace, $package), $data['from_version_id'], $data['effective_on'] ?? null)]);
+    }
+
+    public function scheduleMigration(Request $request, Workspace $workspace, string $package): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $migration = $this->writes->scheduleMigration($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $package, $request->all());
+
+        return response()->json(['data' => $this->migrations->get($context->user, $workspace, $migration->public_id)], 201);
+    }
+
+    public function migrations(Request $request, Workspace $workspace): JsonResponse
+    {
+        [$actor, $status, $limit, $cursor] = $this->listing($request, MigrationStatus::class);
+
+        return response()->json($this->migrations->list($actor, $workspace, $status, $limit, $cursor));
+    }
+
+    public function showMigration(Request $request, Workspace $workspace, string $migration): JsonResponse
+    {
+        return response()->json(['data' => $this->migrations->get($this->reader($request), $workspace, $migration)]);
+    }
+
+    public function cancelMigration(Request $request, Workspace $workspace, string $migration): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $this->writes->cancelMigration($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $migration, $request->all());
+
+        return response()->json(['data' => $this->migrations->get($context->user, $workspace, $migration)]);
+    }
+
     private function decideCancellation(Request $request, Workspace $workspace, string $operation, string $cancellation): JsonResponse
     {
         $context = $this->contexts->fromAuthenticatedClient($request);
@@ -224,7 +269,7 @@ final class AgentPackageController extends Controller
     /**
      * A list's caller and its validated filters.
      *
-     * @template T of PackageStatus|PackageRequestStatus|EnrollmentStatus|CancellationRequestStatus
+     * @template T of PackageStatus|PackageRequestStatus|EnrollmentStatus|CancellationRequestStatus|MigrationStatus
      *
      * @param  class-string<T>  $statuses
      * @return array{User|AgentPrincipal, T|null, int, string|null}

@@ -2025,11 +2025,14 @@ final class AgentOperationCatalog
                     'packages.retire', 'package_requests.erase' => Effect::Destructive,
                     // Approving invites through the identity provider or emails the contact; declining emails the visitor;
                     // activating emails the client; a cancellation decision, scheduled end or undo emails the client.
+                    // Scheduling or cancelling a move emails each client.
                     'package_requests.approve', 'package_requests.decline', 'enrollments.activate',
-                    'cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end' => Effect::ExternalWrite,
+                    'cancellation_requests.approve', 'cancellation_requests.decline', 'agreements.schedule_end', 'agreements.undo_scheduled_end',
+                    'package_migrations.schedule', 'package_migrations.cancel' => Effect::ExternalWrite,
                     'packages.list', 'packages.get', 'package_requests.list', 'package_requests.get',
                     'enrollments.list', 'enrollments.get', 'client_services.list', 'client_services.get',
-                    'cancellation_requests.list', 'cancellation_requests.get' => Effect::Read,
+                    'cancellation_requests.list', 'cancellation_requests.get',
+                    'package_migrations.preview', 'package_migrations.list', 'package_migrations.get' => Effect::Read,
                     default => Effect::LocalWrite,
                 }, true, match (true) {
                     $cancelling => $write ? 'mcp.write.clients' : 'mcp.read.agreements',

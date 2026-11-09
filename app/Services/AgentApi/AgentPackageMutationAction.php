@@ -6,6 +6,7 @@ use App\Models\AgreementCancellationRequest;
 use App\Models\ClientAgreement;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageMigration;
 use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
@@ -15,6 +16,8 @@ use App\Services\Engagement\AgreementCancellations;
 use App\Services\Engagement\CancellationRequestReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\PackageMigrationReadService;
+use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageReadService;
@@ -26,8 +29,8 @@ use InvalidArgumentException;
 
 /**
  * The agent API's way into {@see ServicePackageWorkflow},
- * {@see PackageRequestWorkflow}, {@see PackageEnrollmentWorkflow} and
- * {@see AgreementCancellations}: an idempotency receipt, the closed body its
+ * {@see PackageRequestWorkflow}, {@see PackageEnrollmentWorkflow},
+ * {@see AgreementCancellations} and {@see PackageMigrationWorkflow}: an idempotency receipt, the closed body its
  * contract publishes, `expected_version` wherever that body names one, and
  * `confirm: true` wherever it names that (API-2). Everything about the package
  * or the request itself - authorization, validation, locking, versions and
@@ -46,6 +49,8 @@ final class AgentPackageMutationAction
         private readonly PackageEnrollmentReadService $enrollmentReads,
         private readonly AgreementCancellations $cancellations,
         private readonly CancellationRequestReadService $cancellationReads,
+        private readonly PackageMigrationWorkflow $migrations,
+        private readonly PackageMigrationReadService $migrationReads,
     ) {}
 
     /** @param array<string, mixed> $payload */
@@ -154,6 +159,41 @@ final class AgentPackageMutationAction
             fn (string $id): ClientAgreement => $this->agreement($workspace, $id));
     }
 
+    /**
+     * Schedule a move of a package's subscribers to its published version
+     * (`package_migrations.schedule`, MIG-1), against the package's version.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function scheduleMigration(User $actor, Workspace $workspace, string $clientId, string $key, string $packageId, array $payload): ServicePackageMigration
+    {
+        $id = $this->execute($actor, $workspace, $clientId, $key, 'package_migrations.schedule', ['package_id' => $packageId, 'body' => $payload],
+            function (array $fields, ?string $version) use ($actor, $workspace, $packageId): string {
+                /** @var list<string> $enrollments */
+                $enrollments = array_values(array_map(static fn (mixed $id): string => (string) $id, (array) ($fields['enrollment_ids'] ?? [])));
+
+                return $this->migrations->schedule($actor, $workspace, $this->reads->find($actor, $workspace, $packageId),
+                    (string) $fields['from_version_id'], (string) $fields['effective_on'], $enrollments, self::text($fields['message'] ?? null), $version)->public_id;
+            },
+            fn (string $id): ServicePackageMigration => $this->migrationReads->find($actor, $workspace, $id));
+
+        return $this->migrationReads->find($actor, $workspace, $id);
+    }
+
+    /**
+     * Cancel a scheduled move (`package_migrations.cancel`, MIG-5), against its version.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function cancelMigration(User $actor, Workspace $workspace, string $clientId, string $key, string $migrationId, array $payload): ServicePackageMigration
+    {
+        $id = $this->execute($actor, $workspace, $clientId, $key, 'package_migrations.cancel', ['migration_id' => $migrationId, 'body' => $payload],
+            fn (array $fields, ?string $version): string => $this->migrations->cancel($actor, $workspace, $this->migrationReads->find($actor, $workspace, $migrationId), $version)->public_id,
+            fn (string $id): ServicePackageMigration => $this->migrationReads->find($actor, $workspace, $id));
+
+        return $this->migrationReads->find($actor, $workspace, $id);
+    }
+
     private function agreement(Workspace $workspace, string $publicId): ClientAgreement
     {
         return ClientAgreement::query()
@@ -187,7 +227,7 @@ final class AgentPackageMutationAction
             if (in_array('confirm', $fields, true)) {
                 Validator::make($payload, ['confirm' => ['required', new ExplicitConfirmation]])->validate();
             }
-            Validator::make($payload, array_intersect_key(ServicePackageOperations::DECISION_RULES, array_flip($fields)))->validate();
+            Validator::make($payload, ServicePackageOperations::rulesFor($fields))->validate();
 
             return [$apply(array_diff_key($payload, array_flip(['expected_version', 'confirm'])), $version)];
         }, function (array $ids) use ($stillVisible): void {
