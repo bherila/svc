@@ -46,6 +46,10 @@ final class MutationTimingsScriptTest extends TestCase
         // A readable file is reported by line; an absent one keeps its byte offset.
         $this->assertStringContainsString(basename($source).':5`', $report);
         $this->assertStringContainsString('`/absent/app/Gone.php@40`', $report);
+        // Time is attributed to source files, and every mutant that was not
+        // killed is listed, however fast it was.
+        $this->assertStringContainsString('| 23.4 | 1 | `/absent/app/Gone.php` |', $report);
+        $this->assertStringContainsString("Not killed (1), each needs an assertion or a recorded reason:\n\n- escaped: Infection\\Mutator\\Return_\\IntegerNegation (b'b|b) `/absent/app/Gone.php@40`", $report);
         $this->assertStringContainsString("Still running when the log ends:\n\n- Infection\\Mutator\\Arithmetic\\Plus (ccc) `/absent/app/Slow.php@7`", $report);
     }
 

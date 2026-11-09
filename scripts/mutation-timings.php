@@ -101,6 +101,13 @@ function mutation_timings_location(string $hint): string
     return $relative.':'.(substr_count(substr($source, 0, (int) $match[2]), "\n") + 1);
 }
 
+function mutation_timings_file(string $hint): string
+{
+    $path = preg_match('#^infection://(.+)::\d+-\d+$#', $hint, $match) === 1 ? $match[1] : $hint;
+
+    return str_starts_with($path, getcwd().'/') ? substr($path, strlen(getcwd()) + 1) : $path;
+}
+
 function mutation_timings_report(string $log, int $top = MUTATION_TIMINGS_DEFAULT_TOP): string
 {
     $parsed = mutation_timings_parse($log);
@@ -119,6 +126,27 @@ function mutation_timings_report(string $log, int $top = MUTATION_TIMINGS_DEFAUL
         $markdown .= "\n| Seconds | Outcome | Mutator (id) | Location |\n| ---: | --- | --- | --- |\n";
         foreach (array_slice($finished, 0, $top) as $mutant) {
             $markdown .= sprintf("| %.1f | %s | %s | `%s` |\n", $mutant['ms'] / 1000, $mutant['status'], $mutant['name'], mutation_timings_location($mutant['location']));
+        }
+    }
+    if ($finished !== []) {
+        $byFile = [];
+        foreach ($finished as $mutant) {
+            $file = mutation_timings_file($mutant['location']);
+            $byFile[$file] ??= ['mutants' => 0, 'ms' => 0];
+            $byFile[$file]['mutants']++;
+            $byFile[$file]['ms'] += $mutant['ms'];
+        }
+        uasort($byFile, static fn (array $a, array $b): int => $b['ms'] <=> $a['ms']);
+        $markdown .= "\nWhere the time went, by source file:\n\n| Seconds | Mutants | File |\n| ---: | ---: | --- |\n";
+        foreach (array_slice($byFile, 0, $top, true) as $file => $row) {
+            $markdown .= sprintf("| %.1f | %d | `%s` |\n", $row['ms'] / 1000, $row['mutants'], $file);
+        }
+        $escaped = array_values(array_filter($finished, static fn (array $mutant): bool => $mutant['status'] !== 'killed by tests' && $mutant['status'] !== 'killed by SA'));
+        if ($escaped !== []) {
+            $markdown .= sprintf("\nNot killed (%d), each needs an assertion or a recorded reason:\n\n", count($escaped));
+            foreach (array_slice($escaped, 0, 100) as $mutant) {
+                $markdown .= sprintf("- %s: %s `%s`\n", $mutant['status'], $mutant['name'], mutation_timings_location($mutant['location']));
+            }
         }
     }
     if ($parsed['running'] !== []) {
