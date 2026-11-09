@@ -118,7 +118,7 @@ final class ServicePackageWorkflow
                 }
             }
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -161,7 +161,7 @@ final class ServicePackageWorkflow
             ])->save();
             $this->ensureCatalogToken($workspace);
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -179,7 +179,7 @@ final class ServicePackageWorkflow
 
             $locked->forceFill(['status' => PackageStatus::Retired->value])->save();
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -196,6 +196,11 @@ final class ServicePackageWorkflow
         return PackageTerms::fromArray(Validator::make($terms, ServicePackageRules::terms())->validate());
     }
 
+    /**
+     * The package row, locked. Also how a write reads back what it saved: an
+     * ordinary re-read would come from the caller's snapshot, which the agent
+     * API's mutation executor opens before this lock.
+     */
     private function locked(Workspace $workspace, ServicePackage $package): ServicePackage
     {
         return ServicePackage::query()
