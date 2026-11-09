@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\AgentApi;
 
+use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
@@ -11,9 +12,15 @@ use App\Support\Packages\PackageRefusal;
 use App\Support\Packages\ServicePackageRules;
 use Bherila\McpLaravelBridge\Capabilities\Effect;
 use Bherila\McpLaravelBridge\Capabilities\IdempotencyKey;
+use Illuminate\Config\Repository;
 use Illuminate\Container\Container;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
+use InvalidArgumentException;
+use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 use Tests\Support\Requirement;
 
 /**
@@ -59,6 +66,7 @@ final class ServicePackageOperationContractTest extends TestCase
             $this->assertNotNull($operation, $id);
             $write = $method !== 'GET';
             $this->assertSame($effect, $operation->effect, $id);
+            $this->assertTrue($operation->idempotent, $id);
             $this->assertTrue($catalog->isManagerOnly($id), $id);
             $this->assertSame([AgentMcpPackageTools::class, ServicePackageOperations::DEFINITIONS[$id][0]], $operation->mcp?->handler, $id);
             $this->assertSame($method, $operation->rest?->method, $id);
@@ -80,6 +88,190 @@ final class ServicePackageOperationContractTest extends TestCase
         }
         $this->assertTrue(AgentDeploymentFlags::isAvailabilityPrecondition(AgentDeploymentFlags::SERVICE_PACKAGES));
         $this->assertNotContains(AgentDeploymentFlags::SERVICE_PACKAGES, AgentDeploymentFlags::cutovers());
+        // The product switch is named once and the flags after it still are.
+        $this->assertSame(
+            ['SVC_SERVICE_PACKAGES_ENABLED', 'AGENT_API_WRITES_ENABLED', 'AGENT_API_PACKAGE_WRITES_ENABLED'],
+            AgentDeploymentFlags::environmentSwitches([AgentDeploymentFlags::SERVICE_PACKAGES, AgentDeploymentFlags::PACKAGES]),
+        );
+    }
+
+    public function test_the_registry_and_the_contract_are_each_built_once(): void
+    {
+        $catalog = new AgentOperationCatalog;
+
+        $this->assertSame($catalog->registry(), $catalog->registry());
+        $this->assertSame($catalog->contract(), $catalog->contract());
+        $this->assertNotSame($catalog->registry(), $catalog->contract());
+    }
+
+    #[Requirement('API-6', 'X-1')]
+    public function test_the_installation_offers_the_operations_exactly_while_its_switch_is_on(): void
+    {
+        $app = new Application(dirname(__DIR__, 3));
+        $app->instance('config', new Repository([]));
+        $this->assertFalse(EnsureServicePackagesEnabled::enabled(), 'a switch that is not configured is off');
+
+        $app->instance('config', new Repository(['svc' => ['service_packages' => ['enabled' => true]]]));
+        $on = new AgentOperationCatalog;
+        $this->assertNotNull($on->registry()->find('packages.list'));
+        $this->assertSame($on->registry(), $on->contract());
+
+        $app->instance('config', new Repository(['svc' => ['service_packages' => ['enabled' => false]]]));
+        $off = new AgentOperationCatalog;
+        $this->assertNull($off->registry()->find('packages.list'));
+        $this->assertNotNull($off->contract()->find('packages.list'));
+    }
+
+    /** Package requests are read from their declaration, so a document generated before the package paths existed still builds. */
+    public function test_the_contract_reads_package_requests_without_the_checked_document(): void
+    {
+        $base = sys_get_temp_dir().'/svc-package-contract-'.bin2hex(random_bytes(6));
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($base.'/public/openapi');
+        try {
+            $document = self::checkedDocument();
+            foreach ($document['paths'] as $path => $methods) {
+                if (str_contains($path, '/packages')) {
+                    unset($document['paths'][$path]);
+                }
+            }
+            $files->put($base.'/public/openapi/svc-agent-v1.json', json_encode($document, JSON_THROW_ON_ERROR));
+            new Application($base);
+            AgentApiResponseSchemaCatalog::flush();
+
+            $contract = (new AgentOperationCatalog)->contract();
+
+            $this->assertTrue($contract->find('packages.update')?->safety->expectedVersion);
+            $this->assertTrue($contract->find('packages.publish')?->safety->confirm);
+        } finally {
+            $files->deleteDirectory($base);
+        }
+    }
+
+    public function test_the_family_adds_exactly_these_components(): void
+    {
+        $this->assertSame([
+            'ServicePackage', 'ServicePackageVersion', 'ServicePackageTerms',
+            'ServicePackageResponse', 'ServicePackageListResponse',
+            'ServicePackageCreateRequest', 'ServicePackageUpdateRequest', 'ServicePackageConfirmRequest',
+            'ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestResponse',
+            'ServicePackageRequestListResponse', 'ServicePackageRequestApprovalResponse',
+            'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
+            'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse',
+            'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
+        ], ServicePackageOperations::components());
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown service package component ServicePackageSecret.');
+
+        ServicePackageOperations::schema('ServicePackageSecret');
+    }
+
+    /** What the code documents is what the checked document publishes, operation by operation. */
+    #[Requirement('API-1')]
+    public function test_the_documentation_is_what_the_checked_document_publishes(): void
+    {
+        $published = [];
+        foreach (self::checkedDocument()['paths'] as $path => $methods) {
+            foreach ($methods as $method => $operation) {
+                if (is_array($operation) && isset($operation['operationId'])) {
+                    $published[$operation['operationId']] = [$path, $method, $operation];
+                }
+            }
+        }
+        $reference = static fn (string $ref, string $kind): string => substr($ref, strlen("#/components/{$kind}/"));
+
+        $documentation = ServicePackageOperations::documentation();
+        $this->assertSame(array_keys(ServicePackageOperations::DEFINITIONS), array_keys($documentation));
+        foreach ($documentation as $id => $declared) {
+            [$path, $method, $operation] = $published[$id];
+            $this->assertSame(ServicePackageOperations::ROUTES[$id][1], $path, $id);
+            $responses = $operation['responses'];
+            $status = ServicePackageOperations::ROUTES[$id][2][0];
+            $success = $responses[$status];
+            unset($responses[$status], $responses['default']);
+
+            $this->assertSame([
+                'method' => strtoupper($method),
+                'scopes' => $operation['security'][0]['oauth2'],
+                'summary' => ServicePackageOperations::DEFINITIONS[$id][1],
+                'description' => $operation['description'],
+                'parameters' => array_map(static fn (array $parameter): string|array => isset($parameter['$ref']) ? $reference($parameter['$ref'], 'parameters') : $parameter, $operation['parameters']),
+                'response' => $reference($success['content']['application/json']['schema']['$ref'], 'schemas'),
+                'response_description' => $success['description'],
+                'errors' => array_map(static fn (array $response): string => $response['description'], $responses),
+                ...(isset($operation['requestBody']) ? ['request' => $reference($operation['requestBody']['content']['application/json']['schema']['$ref'], 'schemas')] : []),
+            ], $declared, $id);
+        }
+    }
+
+    public function test_only_a_write_has_a_body(): void
+    {
+        $this->assertSame(ServicePackageOperations::schema('ServicePackageUpdateRequest'), ServicePackageOperations::requestSchema('packages.update'));
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Operation [packages.list] takes no body.');
+
+        ServicePackageOperations::bodyFields('packages.list');
+    }
+
+    public function test_a_read_has_no_request_schema(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Operation [packages.get] takes no body.');
+
+        ServicePackageOperations::requestSchema('packages.get');
+    }
+
+    public function test_rules_translate_to_json_schema_bounds_by_type(): void
+    {
+        $this->assertSame([
+            'tags' => ['type' => 'array', 'items' => ['type' => 'string', 'minLength' => 1], 'minItems' => 1, 'maxItems' => 3],
+            'pair' => ['type' => 'array', 'items' => ['type' => 'integer', 'minimum' => 5, 'maximum' => 5], 'minItems' => 2, 'maxItems' => 2],
+            'code' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 3],
+            'weight' => ['type' => ['number', 'null'], 'exclusiveMinimum' => 0, 'maximum' => 10],
+            'level' => ['type' => 'integer', 'enum' => ['1', '2']],
+            'choice' => ['enum' => ['a', 'b', null], 'type' => ['string', 'null']],
+            'anything' => [],
+            'slug' => ['type' => 'string', 'pattern' => '^[a-z]+$', 'minLength' => 1],
+            'item' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['a'], 'properties' => [
+                'a' => ['type' => 'string', 'minLength' => 1],
+                'b' => ['type' => ['boolean', 'null']],
+            ]],
+        ], ServicePackageOperations::fromRules([
+            'tags' => ['array', 'min:1', 'max:3'],
+            'tags.*' => ['required', 'string'],
+            'pair' => ['array', 'size:2'],
+            'pair.*' => ['integer', 'size:5'],
+            'code' => ['string', 'size:3'],
+            'weight' => ['nullable', 'numeric', 'gt:0', 'max:10'],
+            'level' => ['integer', 'in:1,2'],
+            'choice' => ['nullable', 'in:a,b'],
+            'anything' => ['required'],
+            'slug' => ['required', 'string', 'regex:/^[a-z]+$/'],
+            'item' => ['array:a,b'],
+            'item.a' => ['required', 'string'],
+            'item.b' => ['nullable', 'boolean'],
+        ]));
+    }
+
+    /** @return iterable<string, array{list<mixed>, string}> */
+    public static function untranslatableRules(): iterable
+    {
+        yield 'an unknown rule' => [['email'], 'Rule [email] for [field] has no schema translation.'];
+        yield 'a rule object that is not a string' => [[new stdClass], 'Rule for [field] has no schema translation.'];
+        yield 'a bound with no meaning for its type' => [['string', 'gt:0'], 'Bound [gt] for [field] has no schema translation.'];
+        yield 'a pattern with flags' => [['string', 'regex:/^a$/i'], 'Pattern for [field] is not a /-delimited regex without flags.'];
+        yield 'a pattern with other delimiters' => [['string', 'regex:#^a$#'], 'Pattern for [field] is not a /-delimited regex without flags.'];
+        yield 'a pattern not opened by its delimiter' => [['string', 'regex:a/b/'], 'Pattern for [field] is not a /-delimited regex without flags.'];
+    }
+
+    /** @param list<mixed> $rules */
+    #[DataProvider('untranslatableRules')]
+    public function test_a_rule_the_contract_cannot_say_fails_the_generation(array $rules, string $message): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage($message);
+
+        ServicePackageOperations::fromRules(['field' => $rules]);
     }
 
     #[Requirement('API-1', 'API-2', 'API-6')]
@@ -232,9 +424,15 @@ final class ServicePackageOperationContractTest extends TestCase
         $this->assertSame(['id', 'link_name', 'status', 'is_listed', 'portal_addable', 'public_url', 'published', 'draft', 'publish_refusals', 'version', 'created_at', 'updated_at'], $package['required']);
         $this->assertSame(['data', 'meta'], ServicePackageOperations::schema('ServicePackageListResponse')['required']);
         $this->assertSame(ServicePackageOperations::MAX_LIMIT, ServicePackageOperations::schema('ServicePackageListResponse')['properties']['data']['maxItems']);
-        $checked = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR)['components']['schemas'];
+        $checked = self::checkedDocument()['components']['schemas'];
         foreach (ServicePackageOperations::components() as $component) {
             $this->assertSame(ServicePackageOperations::schema($component), $checked[$component] ?? null, "{$component}: run php scripts/generate-package-contract.php");
         }
+    }
+
+    /** @return array<string, mixed> */
+    private static function checkedDocument(): array
+    {
+        return json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), true, flags: JSON_THROW_ON_ERROR);
     }
 }

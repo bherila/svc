@@ -5,11 +5,13 @@ namespace App\Services\Packages;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageComponent;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Support\Concurrency\Locks;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\WorkspaceClock;
 
@@ -33,14 +35,28 @@ final class PackageOffers
     /**
      * The package's currently published version with its components, or null
      * while it has none (EDGE-7: approval and acceptance offer this one).
+     *
+     * Locking reads, so the terms are current rather than the snapshot an
+     * enclosing transaction may already hold (Codex P1 on #666). The caller
+     * holds a lock on the package, so its published version cannot move.
      */
     public function publishedVersion(Workspace $workspace, ServicePackage $package): ?ServicePackageVersion
     {
         if ($package->published_version_id === null) {
             return null;
         }
+        $version = ServicePackageVersion::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($package->published_version_id)
+            ->tap(Locks::forShare())
+            ->firstOrFail();
 
-        return $this->version($workspace, $package->published_version_id);
+        return $version->setRelation('components', ServicePackageComponent::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('service_package_version_id', $version->id)
+            ->orderBy('sort_order')->orderBy('id')
+            ->tap(Locks::forShare())
+            ->get());
     }
 
     /** A version of this workspace with its components. */

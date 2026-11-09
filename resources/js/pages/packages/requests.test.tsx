@@ -59,6 +59,29 @@ describe('package requests', () => {
         ).toHaveAttribute('aria-current', 'page');
     });
 
+    it('[ADM-1] links to the next and first pages of a long queue', () => {
+        render(
+            <PackageRequests
+                {...requestsProps({
+                    next_page_url:
+                        '/workspaces/workspace-1/packages/requests?cursor=abc',
+                    first_page_url: '/workspaces/workspace-1/packages/requests',
+                })}
+            />,
+        );
+        const pages = screen.getByRole('navigation', { name: 'Request pages' });
+
+        expect(
+            within(pages).getByRole('link', { name: 'Next page' }),
+        ).toHaveAttribute(
+            'href',
+            '/workspaces/workspace-1/packages/requests?cursor=abc',
+        );
+        expect(
+            within(pages).getByRole('link', { name: 'First page' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/packages/requests');
+    });
+
     it('[PUB-6] shows what the visitor typed as literal text, never as markup', () => {
         const { container } = render(
             <PackageRequests

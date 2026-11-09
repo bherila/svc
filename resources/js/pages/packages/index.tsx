@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { PlusIcon } from 'lucide-react';
 import { ClientsTabs } from '@/components/packages/clients-tabs';
 import { CopyLinkButton } from '@/components/packages/copy-link-button';
+import { PageLinks } from '@/components/packages/page-links';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
@@ -231,19 +232,12 @@ export default function PackagesIndex({
                                 </TableBody>
                             </Table>
                         )}
-                        {(nextPageUrl !== null || firstPageUrl !== null) && (
-                            <nav
-                                aria-label="Package pages"
-                                className="mt-4 flex flex-wrap gap-4 text-sm"
-                            >
-                                {firstPageUrl !== null && (
-                                    <Link href={firstPageUrl}>First page</Link>
-                                )}
-                                {nextPageUrl !== null && (
-                                    <Link href={nextPageUrl}>Next page</Link>
-                                )}
-                            </nav>
-                        )}
+                        <PageLinks
+                            label="Package pages"
+                            firstPageUrl={firstPageUrl}
+                            nextPageUrl={nextPageUrl}
+                            className="mt-4"
+                        />
                     </CardContent>
                 </Card>
 

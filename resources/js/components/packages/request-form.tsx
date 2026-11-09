@@ -38,6 +38,10 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
     const [email, setEmail] = useState(form.prefill?.email ?? '');
     const [phone, setPhone] = useState('');
     const [answers, setAnswers] = useState<Record<string, string>>({});
+    // Own properties only: a question keyed `constructor` or `__proto__` must
+    // read as unanswered, not as something inherited from Object (Codex P2 on #666).
+    const answerTo = (key: string): string =>
+        Object.hasOwn(answers, key) ? answers[key] : '';
     const [trap, setTrap] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [refusal, setRefusal] = useState<string | null>(null);
@@ -100,10 +104,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
         }
 
         for (const question of form.questions) {
-            if (
-                question.required &&
-                (answers[question.key] ?? '').trim() === ''
-            ) {
+            if (question.required && answerTo(question.key).trim() === '') {
                 missing[`answers.${question.key}`] = REQUIRED;
             }
         }
@@ -125,7 +126,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
             answers: Object.fromEntries(
                 form.questions.map((question) => [
                     question.key,
-                    (answers[question.key] ?? '').trim(),
+                    answerTo(question.key).trim(),
                 ]),
             ),
             [form.honeypot_field]: trap,
@@ -272,7 +273,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
                                             required={question.required}
                                             rows={3}
                                             maxLength={question.max_length}
-                                            value={answers[question.key] ?? ''}
+                                            value={answerTo(question.key)}
                                             onChange={(event) =>
                                                 set(event.target.value)
                                             }
@@ -283,7 +284,7 @@ export function RequestForm({ form }: { form: PublicRequestForm }) {
                                             {...aria}
                                             required={question.required}
                                             maxLength={question.max_length}
-                                            value={answers[question.key] ?? ''}
+                                            value={answerTo(question.key)}
                                             onChange={(event) =>
                                                 set(event.target.value)
                                             }
