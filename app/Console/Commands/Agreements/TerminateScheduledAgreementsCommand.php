@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Engagement;
+namespace App\Console\Commands\Agreements;
 
 use App\Console\Commands\MutationCommand;
 use App\Http\Middleware\EnsureServicePackagesEnabled;
