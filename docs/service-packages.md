@@ -557,6 +557,19 @@ Slice 4 (automatic recurring invoices) settled these:
   days as the first. A client with a *company-wide* agreement on a cadence
   still cannot have a package period invoiced over the same dates; that
   refusal is surfaced (below), not hidden.
+- **A company-wide agreement keeps its dates.** The guard is symmetric:
+  between a company-wide agreement and a package, whichever invoice is written
+  first refuses the other, so an hourly automatic run could take the dates of
+  a client's main retainer before its own draft is made, every period. The
+  issuer therefore refuses a package period (`company_wide_agreement`, shown
+  to the owner) while any company-wide agreement of the client that bills on
+  a recurring cadence is in force or ended no earlier than the work that
+  period reconciles (its final invoice still needs those dates). It is asked
+  with a share lock before the package agreement's own lock. The owner's
+  options are to scope that agreement to a project, or to bill the package
+  by hand. The acceptance-time first period (slice 3b) does not defer this
+  way; a company-wide agreement activated after a package period was issued
+  can still find its first period refused by the engine, as before.
 - **`svc:packages:issue-invoices`** (hourly, behind the feature flag, in
   process) issues INV-1. For each workspace with an active enrollment whose
   *signed* version issues automatically, it reads the current period of each
@@ -565,7 +578,7 @@ Slice 4 (automatic recurring invoices) settled these:
   per agreement, in its own transaction: the billing maintenance share lock,
   the enrollment's row lock, `CadencePeriodGuard::lock()` (the agreement lock
   and a locking read of every invoice claiming the period), the Square check
-  (INV-3), the cadence engine, `EmptyCadenceDraft` (a period that asks for
+  (INV-3), the company-wide check (below), the cadence engine, `EmptyCadenceDraft` (a period that asks for
   nothing is rolled back, recorded `nothing_to_bill`), then
   `InvoiceLifecycleService::issue()`, so automatic delivery and autopay follow
   the company's own settings. Generating and issuing commit together: nothing
@@ -586,14 +599,18 @@ Slice 4 (automatic recurring invoices) settled these:
   opener (and the slice 3b acceptance entries it was missing).
 - **Refusals reach an owner.** A refused period rolls back and is recorded on
   the enrollment (`auto_invoice_outcome` `refused`, a code -
-  `collected_in_square`, `period_unbillable`, `issue_refused` or `failed` -
-  and the engine's own words), which Needs you lists ("… invoice not issued
-  automatically") and `enrollments.*` returns under `invoicing.last_automatic`.
-  It is retried every run, does not stop any other agreement, and is written
-  only when it changes (no hourly version churn). Once the period is invoiced
-  by the run the record says `issued`; invoiced by hand, `covered`; either way
-  the row goes. There was no existing record of failed scheduled generation to
-  reuse (the cadence drafts only log), so this is new.
+  `collected_in_square`, `company_wide_agreement`, `period_unbillable`,
+  `issue_refused` or `failed` - and the engine's own words), which Needs you
+  lists ("… invoice not issued automatically") and `enrollments.*` returns
+  under `invoicing.last_automatic`. It is retried every run, does not stop any
+  other agreement, and is written only when it changes (no hourly version
+  churn). Once the period is invoiced by the run the record says `issued`;
+  invoiced by hand, `covered`; either way the row goes. The record is the
+  enrollment's *last* result: a period still refused when the next period
+  begins is replaced by that period's result, and from then on the gap shows
+  only in the agreement's invoices (no reader looks back further). There
+  was no existing record of failed scheduled generation to reuse (the cadence
+  drafts only log), so this is new.
 - **INV-2 reuses the cadence drafts.** A draft-mode package agreement is an
   ordinary recurring agreement: `svc:billing:generate-cadence-drafts` (while
   `svc.billing.scheduled_cadence_drafts` is on) or `invoices.generate_period`

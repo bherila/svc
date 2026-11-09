@@ -83,6 +83,7 @@ final class AutomaticInvoicingRulesTest extends TestCase
     {
         $this->assertSame([
             'collected_in_square' => 'Square collects this agreement, so SVC does not invoice it.',
+            'company_wide_agreement' => 'The client has a company-wide agreement billed on a cadence, which covers this service\'s work too, so SVC does not issue this invoice automatically.',
             'period_unbillable' => 'The billing engine refused this period.',
             'issue_refused' => 'The invoice could not be issued.',
             'failed' => 'Automatic invoicing failed unexpectedly.',

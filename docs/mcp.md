@@ -2200,7 +2200,8 @@ first day of its next billing period, or null when none is to come), and
 `last_automatic`, what `svc:packages:issue-invoices` last did for it - `issued`
 with the invoice and its page, `nothing_to_bill`, `covered` (a refused period
 since invoiced another way) or `refused` with a `refusal` code
-(`collected_in_square`, `period_unbillable`, `issue_refused` or `failed`), its
+(`collected_in_square`, `company_wide_agreement`, `period_unbillable`,
+`issue_refused` or `failed`), its
 message, and the billing engine's own words in `detail`. A refused period is
 retried every hour and listed in Needs you until it is invoiced. No
 card detail, processor id, secret or invitation link is ever returned. Clients

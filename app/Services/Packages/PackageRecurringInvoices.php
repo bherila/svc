@@ -27,6 +27,7 @@ use App\Support\Packages\AutoInvoiceResult;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\WorkspaceClock;
+use Carbon\Carbon;
 use DomainException;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -263,6 +264,18 @@ final class PackageRecurringInvoices
             return AutoInvoiceResult::skipped(AutoInvoiceResult::NOT_DUE);
         }
 
+        // A company-wide agreement on a cadence reaches this project's work
+        // too, so its invoices and this one refuse each other over the same
+        // dates, whichever is written first. Automation never takes those
+        // dates from it: the period is refused for an owner to decide, and
+        // the company-wide agreement bills as it always has.
+        // Asked first, with a share lock, before this agreement's lock and the
+        // invoice claims: an agreement found in force stays as it is until
+        // this commits, and nothing here waits on it while holding invoices.
+        if ($this->companyWideCadenceAgreementInForce($workspace, $agreement, $periodStart)) {
+            throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::CompanyWideAgreement));
+        }
+
         [$company, $record, $start] = $this->guard->lock($workspace, $agreement->public_id, $periodStart, null);
         if ($record->id !== $locked->client_agreement_id) {
             throw new LogicException('The agreement locked is not the enrollment\'s.');
@@ -276,7 +289,6 @@ final class PackageRecurringInvoices
         if ($record->square_series_key !== null) {
             throw new AutoInvoiceRefused(AutoInvoiceResult::refused(AutoInvoiceRefusal::CollectedInSquare));
         }
-
         // Issuing below locks the invoice's lines and the agreement's time
         // after the engine has numbered the invoice and locked milestones.
         // Taken here first, in the registry's order - the lines, the
@@ -310,6 +322,31 @@ final class PackageRecurringInvoices
         $this->write($workspace, $locked, $periodStart, $result);
 
         return $result;
+    }
+
+    /**
+     * Whether another agreement of the company, scoped to no project and
+     * billing on a recurring cadence, still has periods to bill over the work
+     * this period reconciles - the cycle before it, as the engine reckons it.
+     * Its periods reach every project's work, this package's included
+     * ({@see ClientInvoice::scopeSharingWorkWith()}). In force, or ended no
+     * earlier than that work began: an ended agreement's final invoice
+     * reconciles its last work, and must not find those dates taken.
+     */
+    private function companyWideCadenceAgreementInForce(Workspace $workspace, ClientAgreement $agreement, string $periodStart): bool
+    {
+        $workStart = Carbon::parse($periodStart)->subMonths($agreement->effectiveBillingCadence()->monthsInCycle());
+
+        return ClientAgreement::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $agreement->client_company_id)
+            ->whereKeyNot($agreement->id)
+            ->whereNull('client_project_id')
+            ->whereIn('status', ['active', 'paused', 'terminated', 'expired'])
+            ->where(fn ($end) => $end->whereNull('ends_on')->orWhere('ends_on', '>=', $workStart->toDateString()))
+            ->tap(Locks::forShare())
+            ->get(['id', 'billing_cadence', 'client_project_id', 'status', 'ends_on'])
+            ->contains(static fn (ClientAgreement $other): bool => $other->billsOnARecurringCadence());
     }
 
     /**

@@ -12,12 +12,14 @@ use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\WorkspaceActionQueue;
+use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRecurringInvoices;
 use App\Support\Packages\AutoInvoiceResult;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -212,22 +214,17 @@ final class PackageRecurringInvoicesTest extends TestCase
     }
 
     /**
-     * The engine refusing a period - here a company-wide agreement's invoice
-     * already covers the work period, which that agreement's own work can
-     * reach - is rolled back, recorded, shown in Needs you, retried, and does
-     * not stop another client's period. Once the cause is gone, the run
+     * The engine refusing a period - here an invoice of the client's that
+     * names no agreement already covers the work period, history nobody can
+     * attribute - is rolled back, recorded, shown in Needs you, retried, and
+     * does not stop another client's period. Once the cause is gone, the run
      * invoices it and the row goes.
      */
     #[Requirement('INV-1')]
     public function test_a_refused_period_reaches_an_owner_does_not_stop_others_and_is_retried(): void
     {
         [$workspace, , $package, $company, $contact] = $this->world();
-        $retainer = ClientAgreement::query()->create([
-            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic company-wide retainer',
-            'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD',
-            'hourly_rate_amount' => 10000, 'retainer_amount' => 0, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
-        ]);
-        $blocking = $this->issuedCadenceInvoice($workspace, $company, $retainer, 'SYN-0001', '2026-10-01', '2026-10-31', '2026-11-01');
+        $blocking = $this->issuedCadenceInvoice($workspace, $company, null, 'SYN-0001', '2026-10-01', '2026-10-31', '2026-11-01');
         $refusedEnrollment = $this->accept($contact, $company, $package);
         $other = $this->company($workspace, 'Harbor Synthetic Florist');
         $otherEnrollment = $this->accept($this->contact($other), $other, $package);
@@ -260,6 +257,45 @@ final class PackageRecurringInvoicesTest extends TestCase
         $this->assertSame('issued', $this->invoiceFor($refusedEnrollment, '2026-11-01')->status);
         $this->assertSame(['issued', null, null], [$refusedEnrollment->refresh()->auto_invoice_outcome, $refusedEnrollment->auto_invoice_refusal, $refusedEnrollment->auto_invoice_detail]);
         $this->assertNull(collect(app(WorkspaceActionQueue::class)->forManager($workspace))->firstWhere('kind', 'enrollment_auto_invoice_refused'));
+    }
+
+    /**
+     * A client's company-wide agreement on a cadence reaches the package's
+     * work too, so the two cannot bill the same dates. Automation never takes
+     * them from it: the package's period is refused for the owner, whichever
+     * would have been written first, and the company-wide agreement still
+     * bills its own period.
+     */
+    #[Requirement('INV-1')]
+    public function test_a_company_wide_cadence_agreement_keeps_its_dates_and_the_owner_is_told(): void
+    {
+        [$workspace, , $package, $company, $contact] = $this->world();
+        $retainer = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic company-wide retainer',
+            'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD',
+            'hourly_rate_amount' => 10000, 'retainer_amount' => 50000, 'retainer_minutes' => 300, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+        ]);
+        $enrollment = $this->accept($contact, $company, $package);
+
+        $run = $this->issueRun(expectFailure: true);
+        $this->assertSame([['period_start' => '2026-11-01', 'outcome' => 'refused']], $this->brief($run));
+        $this->assertSame('company_wide_agreement', $run['outcomes'][0]['refusal']);
+        $this->assertSame(0, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
+        $this->assertNotNull(collect(app(WorkspaceActionQueue::class)->forManager($workspace))->firstWhere('kind', 'enrollment_auto_invoice_refused'));
+
+        // The company-wide agreement's November is still its to bill.
+        $november = app(ClientInvoicingService::class)->generateCadencePeriod($company, $retainer, Carbon::parse('2026-11-01'));
+        $this->assertSame(['draft', 50000], [$november->status, $november->total_amount]);
+        $this->issueRun(expectFailure: true);
+        $this->assertSame(0, ClientInvoice::query()->where('client_agreement_id', $enrollment->client_agreement_id)->count());
+
+        // Ended on 30 November, it still has November's work to reconcile, so
+        // December (which reconciles November) stays its; January does not.
+        $retainer->forceFill(['status' => 'terminated', 'ends_on' => '2026-11-30'])->save();
+        $this->travelTo(CarbonImmutable::parse('2026-12-01 10:00:00', 'UTC'));
+        $this->assertSame('company_wide_agreement', $this->issueRun(expectFailure: true)['outcomes'][0]['refusal']);
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 10:00:00', 'UTC'));
+        $this->assertSame([['period_start' => '2027-01-01', 'outcome' => 'issued']], $this->brief($this->issueRun()));
     }
 
     /** A refused period an owner then invoices by hand is marked covered, and leaves Needs you. */
@@ -502,10 +538,10 @@ final class PackageRecurringInvoicesTest extends TestCase
         return ClientInvoice::query()->where('client_agreement_id', $enrollment->client_agreement_id)->whereDate('cycle_start', $cycleStart)->sole();
     }
 
-    private function issuedCadenceInvoice(Workspace $workspace, ClientCompany $company, ClientAgreement $agreement, string $number, string $from, string $to, string $cycleStart): ClientInvoice
+    private function issuedCadenceInvoice(Workspace $workspace, ClientCompany $company, ?ClientAgreement $agreement, string $number, string $from, string $to, string $cycleStart): ClientInvoice
     {
         return ClientInvoice::query()->create([
-            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id, 'invoice_number' => $number,
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement?->id, 'invoice_number' => $number,
             'invoice_kind' => 'cadence_period', 'status' => 'issued', 'currency' => 'USD', 'subtotal_amount' => 100, 'tax_amount' => 0, 'total_amount' => 100, 'balance_amount' => 100,
             'service_period_start' => $from, 'service_period_end' => $to, 'cycle_start' => $cycleStart, 'cycle_end' => CarbonImmutable::parse($cycleStart)->endOfMonth()->toDateString(),
             'issue_date' => $cycleStart, 'issued_at' => now(), 'hours_billed_at_rate' => 0,
