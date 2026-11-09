@@ -26,7 +26,10 @@ use RuntimeException;
 
 class InvoiceLineComposer
 {
-    public function __construct(private readonly RecurringItemBiller $recurringItemBiller = new RecurringItemBiller) {}
+    public function __construct(
+        private readonly RecurringItemBiller $recurringItemBiller = new RecurringItemBiller,
+        private readonly LateWork $lateWork = new LateWork,
+    ) {}
 
     /**
      * Remove generated lines from a draft invoice before regeneration.
@@ -336,7 +339,7 @@ class InvoiceLineComposer
     ): void {
         $agreement = $this->agreementFor($invoice);
 
-        $entries = ClientTimeEntry::query()
+        $work = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->when(
@@ -346,9 +349,16 @@ class InvoiceLineComposer
             ->whereDoesntHave('invoiceLines')
             ->where('is_billable', true)
             ->where('is_deferred', false)
-            ->flatHourlySubcontractor()
+            ->flatHourlySubcontractor();
+
+        // Logged after its own period was charged. Priced alone, like an hour
+        // answered late below, so carrying it forward moves no pool.
+        $late = $agreement instanceof ClientAgreement ? $this->lateWork->ids(clone $work, $agreement, $periodStart) : [];
+
+        $entries = $work
             ->where(fn ($window) => $window
                 ->whereBetween('worked_on', [$periodStart->toDateString(), $periodEnd->toDateString()])
+                ->orWhereIn('id', $late)
                 // A dispute answered after its own period was invoiced bills on
                 // the next draft (docs/ux-overhaul.md 7b″), at its own date and
                 // rate: each of these lines is priced alone, so carrying it

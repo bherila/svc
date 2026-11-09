@@ -152,6 +152,7 @@ final class ClientInvoicingService
         private readonly DeferredBacklogReader $deferredBacklogReader = new DeferredBacklogReader,
         private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
         private readonly ConsultantTimeReleaser $consultantTime = new ConsultantTimeReleaser,
+        private readonly LateWork $lateWork = new LateWork,
     ) {
         $this->replayHistoryBasis = $replayHistoryBasis ?? new ReplayHistoryBasis;
         // These three share the collaborators above, so they are wired here
@@ -795,6 +796,7 @@ final class ClientInvoicingService
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
             $this->consultantTime->release($company, $agreement);
+            $this->lateWork->deferFromThePool($company, $agreement, $periodStart);
             $this->handovers->forAgreement($agreement)?->assertClear(
                 $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
             );
@@ -1247,6 +1249,7 @@ final class ClientInvoicingService
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
             $this->consultantTime->release($company, $agreement);
+            $this->lateWork->deferFromThePool($company, $agreement, $periodStart);
             $this->handovers->forAgreement($agreement)?->assertClear($retainerStart->toDateString(), $retainerEnd->toDateString(), true);
 
             if ((bool) $agreement->bill_overage_interim) {
@@ -2242,7 +2245,7 @@ final class ClientInvoicingService
             $from = Carbon::instance($tookOver);
         }
 
-        return ClientTimeEntry::query()
+        $work = ClientTimeEntry::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->unbilled()
@@ -2252,8 +2255,18 @@ final class ClientInvoicingService
             // and nowhere else, which is exactly how the interim generator and
             // the ledger ended up without them.
             ->retainerBillable()
-            ->forAgreementScope($agreement)
-            ->whereBetween('worked_on', [$from->toDateString(), $to->toDateString()])
+            ->forAgreementScope($agreement);
+
+        // With no retainer an hour is priced alone, so late work goes on this
+        // draft. A retainer's was set aside before the ledger was read.
+        $late = $this->lateWork->drawsOnARetainer($agreement)
+            ? []
+            : $this->lateWork->ids(clone $work, $agreement, $from);
+
+        return $work
+            ->where(fn (Builder $window): Builder => $window
+                ->whereBetween('worked_on', [$from->toDateString(), $to->toDateString()])
+                ->orWhereIn('id', $late))
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
