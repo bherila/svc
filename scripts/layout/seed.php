@@ -1473,8 +1473,8 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
 
         return $packages->publish($owner, $workspace, $package)->refresh();
     };
-    $startService = static function (ServicePackage $package) use ($enrollments, $squarePortalContact, $company, $signer) {
-        return $enrollments->accept($squarePortalContact, $company, $enrollments->addFromPortal($squarePortalContact, $company, $package), $signer)->refresh();
+    $startService = static function (ServicePackage $package) use ($enrollments, $squarePortalContact, $company, $signs) {
+        return $enrollments->accept($squarePortalContact, $company, $offer = $enrollments->addFromPortal($squarePortalContact, $company, $package), $signs($offer))->refresh();
     };
     $cancelForm = $startService($cancelPackage('Cancel', 'cancel-self-serve', 'self_serve'));
     $cancelPending = $startService($cancelPackage('Requested', 'cancel-request', 'request'));
