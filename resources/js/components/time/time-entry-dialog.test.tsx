@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { TimeEntryDialog } from '@/components/time/time-entry-dialog';
 import { apiRequest } from '@/lib/api';
+import { clientReviewFixture } from '@/test/client-review-fixture';
 import type { CompanyOption, TimeEntry } from '@/types/time-sheet';
 
 vi.mock('@/lib/api', () => ({
@@ -52,6 +53,8 @@ const timeEntry: TimeEntry = {
     minutes: 60,
     description: 'Review implementation',
     client_visible_description: null,
+    client_review: clientReviewFixture(),
+    settle_dispute: null,
     is_billable: true,
     is_deferred: false,
     is_visible_to_client: false,

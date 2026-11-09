@@ -17,7 +17,9 @@ use App\Support\Billing\SubcontractorBillingMode;
  *
  * Only consultant time. A subcontractor's hours - whatever their billing mode
  * - wait for the person who pays them, so a stored mode or cost keeps an entry
- * out. Pure and database-free; the caller supplies facts, not rows.
+ * out. So does a client's dispute: a disputed hour waits for the provider to
+ * settle it (docs/ux-overhaul.md 7b″), and one written off never bills. Pure and database-free; the caller
+ * supplies facts, not rows.
  */
 final class ConsultantTimeRelease
 {
@@ -26,10 +28,12 @@ final class ConsultantTimeRelease
      * @param  string  $workedOn  `Y-m-d`
      * @param  string  $today  `Y-m-d`, the workspace's calendar
      * @param  bool  $onAnInvoiceLine  linked to any invoice line already
+     * @param  bool  $disputed  the client has disputed it ({@see DisputeHold}), or its settlement wrote it off
      */
-    public static function releases(string $status, bool $billable, ?string $billingMode, bool $hasSubcontractorCost, string $workedOn, string $today, bool $onAnInvoiceLine): bool
+    public static function releases(string $status, bool $billable, ?string $billingMode, bool $hasSubcontractorCost, string $workedOn, string $today, bool $onAnInvoiceLine, bool $disputed): bool
     {
         return $status === 'draft'
+            && ! $disputed
             && $billable
             && $billingMode === null
             && ! $hasSubcontractorCost

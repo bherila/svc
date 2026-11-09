@@ -245,6 +245,29 @@ class TimeEntrySplitterTest extends TestCase
         $this->assertSame('Synthetic note', $overflow->client_dispute_note);
     }
 
+    public function test_split_entry_copies_a_settled_dispute_to_the_overflow(): void
+    {
+        $user = $this->createUser();
+        $company = $this->createClientCompany();
+        $project = ClientProject::query()->create([
+            'workspace_id' => $company->workspace_id,
+            'client_company_id' => $company->id,
+            'name' => 'Settled splitter project',
+        ]);
+        $entry = $this->entryOn($project, $user, 180, '2024-01-15');
+        $entry->forceFill([
+            'client_dispute_settlement' => 'answered', 'client_dispute_reply' => 'Synthetic reply',
+            'client_dispute_settled_at' => '2024-02-03 10:00:00', 'client_dispute_settled_by_user_id' => $user->id,
+        ])->save();
+
+        $overflow = $this->splitter->splitEntry($entry->fresh(), 120)['overflow']->fresh();
+
+        $this->assertSame('answered', $overflow->client_dispute_settlement);
+        $this->assertSame('Synthetic reply', $overflow->client_dispute_reply);
+        $this->assertSame('2024-02-03 10:00:00', $overflow->client_dispute_settled_at?->format('Y-m-d H:i:s'));
+        $this->assertSame($user->id, $overflow->client_dispute_settled_by_user_id);
+    }
+
     public function test_split_entry_throws_on_invalid_split_point(): void
     {
         $this->expectException(\InvalidArgumentException::class);

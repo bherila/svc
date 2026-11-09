@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\AgentClientContactController;
 use App\Http\Controllers\Api\V1\AgentClientController;
 use App\Http\Controllers\Api\V1\AgentCollaborationController;
 use App\Http\Controllers\Api\V1\AgentConnectionController;
+use App\Http\Controllers\Api\V1\AgentDisputeController;
 use App\Http\Controllers\Api\V1\AgentExpenseController;
 use App\Http\Controllers\Api\V1\AgentExpenseReceiptController;
 use App\Http\Controllers\Api\V1\AgentExpenseScheduleController;
@@ -232,6 +233,8 @@ Route::prefix('v1')
             ->whereUuid('expense');
         $workspaceOperation('expenses.unapprove', [AgentExpenseController::class, 'unapprove'])
             ->whereUuid('expense');
+        $workspaceOperation('expenses.settle_dispute', [AgentDisputeController::class, 'settleExpense'])
+            ->whereUuid('expense');
         $workspaceOperation('expenses.receipts.list', [AgentExpenseReceiptController::class, 'index'])
             ->whereUuid('expense');
         $workspaceOperation('expenses.receipts.upload_url', [AgentExpenseReceiptController::class, 'uploadUrl'])
@@ -273,6 +276,8 @@ Route::prefix('v1')
         $workspaceOperation('time_entries.unapprove', [AgentTimeEntryMutationController::class, 'unapprove'])
             ->whereUuid('entry');
         $workspaceOperation('time_entries.approve', [AgentTimeEntryMutationController::class, 'approve']);
+        $workspaceOperation('time_entries.settle_dispute', [AgentDisputeController::class, 'settleTime'])
+            ->whereUuid('entry');
         $workspaceOperation('invoices.hold_delivery', [AgentInvoiceOperationsController::class, 'hold'])
             ->whereUuid('invoice');
         $workspaceOperation('invoices.release_delivery', [AgentInvoiceOperationsController::class, 'release'])

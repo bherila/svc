@@ -1724,6 +1724,48 @@ project/date filters to narrow the result. Pagination cursors are bound to all
 filters; fetch a new first page when changing them. Pages default to 25 rows and
 are capped at 100; descriptions are preserved.
 
+### Disputed time and expenses
+
+A client's dispute holds a time entry or an expense out of billing until the
+provider settles it ([the UX overhaul](ux-overhaul.md), section 7b″). Every
+time-entry and expense row carries a `client_review` object, read from the same
+verdict the client's own screen reads:
+
+| Field | Meaning |
+| --- | --- |
+| `state` | `undecided` (bills on schedule), `approved`, `approved_by_payment`, `disputed`, or `written_off` |
+| `held` | `true` while a dispute keeps the row off every draft: disputed, and no issued invoice already charges it |
+| `dispute_note`, `disputed_at` | What the client wrote and when, while disputed |
+| `settlement`, `reply`, `settled_at` | How the provider settled the last dispute (`answered` or `written_off`), and the reply the client reads |
+
+Two writes settle a dispute. Both take the row's current `expected_version`, an
+`outcome`, the `reply` the client will read and `confirm: true`, and need an
+idempotency key. A replay rechecks access and is audited without repeating the
+write.
+
+| Tool | REST path | Scope | Who |
+| --- | --- | --- | --- |
+| `time_entries.settle_dispute` | `POST /time-entries/{entry}/dispute/settle` | `time:write` | The person who logged the time, or an owner or admin, answers it. Writing it off needs the permission to approve time on its project. Needs `AGENT_API_TIME_ENTRY_WRITES_ENABLED`. |
+| `expenses.settle_dispute` | `POST /expenses/{expense}/dispute/settle` | `expenses:write` | An owner or admin. Needs `AGENT_API_EXPENSE_WRITES_ENABLED`. |
+
+- **`answered`.** Clears the dispute and offers the row to the client again. It
+  bills on the next draft: once the write commits, the generated draft whose
+  period covers it is rebuilt to take it back.
+- **`written_off`.** The row is never billed. A time entry becomes non-billable,
+  and an expense keeps the settlement, which every billing read skips. A row an
+  issued invoice already charges can't be written off: the response is a 409,
+  and the fix is to correct the invoice.
+- **Refusals.** A stale version is a 409. A row with no open dispute, an empty
+  reply, or a missing `confirm` is a 422. Another workspace's row is a 404.
+- **Issuing.** `invoices.issue` refuses a draft that still charges a disputed or
+  written-off row, with a 422 and code `disputed_on_draft`. That happens only
+  when the rebuild that follows a dispute was refused, for example because a
+  deferred buy-down settles the entry.
+
+The server instructions tell an MCP client to get the user's explicit
+confirmation before either write, to send only the reply the user wrote, and
+never to choose to write a row off on the user's behalf.
+
 ## Browser client records
 
 Client creation, company details and business contacts on Settings use the same

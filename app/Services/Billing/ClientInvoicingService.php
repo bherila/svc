@@ -32,6 +32,7 @@ use App\Support\Billing\RetainerLineDescription;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -611,6 +612,11 @@ final class ClientInvoicingService
 
             try {
                 $invoice = $this->generateInvoiceForPeriod($company, $agreement, $retainerPeriod, false, $ledger, $immediateLedger);
+                // The draft just written may have drawn deferred work on a
+                // pool, or spent rollover; the next period measures again
+                // rather than spend what this one took (docs/ux-overhaul.md 7b″).
+                $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $through, $billExcessImmediately);
+                $immediateLedger = $billExcessImmediately ? $ledger : null;
                 $result = [
                     'period' => $periodLabel,
                     'invoice_id' => $invoice->id,
@@ -1185,6 +1191,7 @@ final class ClientInvoicingService
                 availableBeforeHours: $availableBeforeRange,
             ));
             $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
+            app(HeldWorkBasisRecorder::class)->record($invoice, $agreement);
 
             // Credit is applied last so it lands against the final figure rather
             // than against a subtotal that later lines then increase.
@@ -1414,14 +1421,36 @@ final class ClientInvoicingService
             $this->invoiceLineComposer->addRecurringItemLines($invoice, $agreement, $retainerStart, $retainerEnd, $sortOrder);
             $this->invoiceLineComposer->addSubcontractorFlatHourlyLines($company, $invoice, $periodStart, $periodEnd, $sortOrder);
 
+            // Past the agreement's end there is no cycle left to sell, so this
+            // final reconciliation collects waiting deferred work at the
+            // hourly rate, as the monthly path does, rather than placing it on
+            // a pool nothing will charge for.
+            // Only the agreement's own segment, though: through its end, or the
+            // day before a successor for the same scope begins, as the backlog
+            // reads it. The natural cycle can run past both, into work that is
+            // the successor's to bill, and the ledger stops at the end, so the
+            // carried balance is read, and the settlement dated, there too.
+            $terminationDate = $this->agreementEnd($agreement);
+            $isFinalCycle = $terminationDate instanceof Carbon && $retainerStart->gt($terminationDate);
+            $deferredThrough = $periodEnd->copy();
+            if ($isFinalCycle) {
+                $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
+                $segmentEnd = Carbon::instance($this->deferredBacklogReader->segmentEnd($workspace, $agreement, CarbonImmutable::instance($periodEnd)));
+                $deferredThrough = $segmentEnd->lt($periodEnd) ? $segmentEnd : $deferredThrough;
+            }
             $this->applyDeferredWork(
                 $company,
                 $invoice,
                 $agreement,
-                $periodEnd,
-                false,
-                max(0.0, $cycleLedger['covered_hours'] - $plan->totalPriorMonthRetainerHours),
-                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $periodEnd->format('Y-m'))->recarriedDeferredHours ?? 0.0,
+                $deferredThrough,
+                $isFinalCycle,
+                // What the cycle's pool has left once its own work drew on it:
+                // the ledger's closing unused hours, which already count that
+                // work. Covered hours less the draw is the work's own share of
+                // the pool, which left deferred work no room even in a cycle
+                // whose pool went unused (docs/ux-overhaul.md 7b″).
+                max(0.0, (float) $cycleLedger['unused_hours']),
+                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $deferredThrough->format('Y-m'))->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 
@@ -1492,6 +1521,7 @@ final class ClientInvoicingService
                 retainerSoldBy: null,
             ));
             $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
+            app(HeldWorkBasisRecorder::class)->record($invoice, $agreement);
 
             $invoice->update([
                 'retainer_hours_included' => $retainerHours,
@@ -1737,8 +1767,19 @@ final class ClientInvoicingService
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
+        // Work a client's dispute holds is listed beside it, tagged, so the
+        // draft shows what was left off and why (docs/ux-overhaul.md 7b″).
+        $disputed = ClientTimeEntry::query()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_company_id', $invoice->client_company_id)
+            ->heldThatWouldOtherwiseBill()
+            ->forAgreementScope($agreement)
+            ->where('worked_on', '<=', $through->toDateString())
+            ->orderBy('worked_on')
+            ->orderBy('id')
+            ->get();
 
-        $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries));
+        $this->deferredWorkStatements->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries($entries, $disputed));
     }
 
     /**

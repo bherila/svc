@@ -97,7 +97,13 @@ function submissions(
                 },
             ],
             expenses: [],
-            totals: { draft: 90, submitted: 30, approved: 0, disputed: 15 },
+            totals: {
+                draft: 90,
+                submitted: 30,
+                approved: 0,
+                disputed: 15,
+                written_off: 0,
+            },
             truncated: false,
             ...overrides,
         },
@@ -201,6 +207,7 @@ describe('Submit for review', () => {
                         submitted: 0,
                         approved: 0,
                         disputed: 0,
+                        written_off: 0,
                     },
                 })}
             />,

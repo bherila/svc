@@ -1039,6 +1039,15 @@ final class AgentRestDocumentation
                 'response' => 'ExpenseResponse',
                 'response_description' => 'Successful operation',
             ],
+            'expenses.settle_dispute' => [
+                'method' => 'POST',
+                'scopes' => ['expenses:read', 'expenses:write'],
+                'description' => 'Workspace owners and admins only. Settle a client\'s dispute on one expense (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the expense out of billing. outcome answered clears it and offers the expense to the client again, so it is claimed by the next cadence draft; outcome written_off means it is never billed and takes it off any draft. 409 for a stale version, or a write-off of an expense an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed.',
+                'parameters' => ['WorkspaceId', 'ExpenseId', 'IdempotencyKey'],
+                'request' => 'DisputeSettleRequest',
+                'response' => 'ExpenseResponse',
+                'response_description' => 'Dispute settled or replayed',
+            ],
             'expenses.update' => [
                 'method' => 'PATCH',
                 'scopes' => ['expenses:write'],
@@ -1651,6 +1660,15 @@ final class AgentRestDocumentation
                 'request' => 'ExpectedVersionRequest',
                 'response' => 'TimeEntryResponse',
                 'response_description' => 'Time approval withdrawn or replayed',
+            ],
+            'time_entries.settle_dispute' => [
+                'method' => 'POST',
+                'scopes' => ['time:write', 'time:read'],
+                'description' => 'Settle a client\'s dispute on one time entry (client_review.state disputed), using its current version and confirm: true, with the reply the client will read (docs/ux-overhaul.md 7b″). A dispute holds the entry out of billing. outcome answered clears it and offers the entry to the client again: it bills on the next draft, and the generated drafts whose ledger reads it are rebuilt; held consultant or retainer time whose own period was already invoiced becomes deferred work, billed from later free capacity, a buy-down or the agreement\'s termination collection. outcome written_off makes it non-billable for good and takes it off any draft. Answering is open to the person who logged the time or a workspace owner or admin; writing off needs the permission to approve time on its project. 409 for a stale version, or a write-off of time an issued invoice already charges (correct the invoice instead); 422 when nothing is disputed. Requires AGENT_API_TIME_ENTRY_WRITES_ENABLED.',
+                'parameters' => ['WorkspaceId', 'TimeEntryId', 'IdempotencyKey'],
+                'request' => 'DisputeSettleRequest',
+                'response' => 'TimeEntryResponse',
+                'response_description' => 'Dispute settled or replayed',
             ],
             'time_entries.update' => [
                 'method' => 'PATCH',

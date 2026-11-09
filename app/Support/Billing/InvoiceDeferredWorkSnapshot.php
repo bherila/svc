@@ -17,6 +17,11 @@ use App\Models\ClientTimeEntry;
  * deferred" section, but each of its entries is marked as unknown lineage and
  * it is written back as version 1. An unknown project is never laundered into
  * "no project" by a later rewrite.
+ *
+ * An entry may also be marked `disputed`: work a client's dispute holds out of
+ * billing (docs/ux-overhaul.md 7b″), listed beside the deferred work so the
+ * document says what was left off and why. The key is optional and absent
+ * means false, so a document written before it reads unchanged.
  */
 final readonly class InvoiceDeferredWorkSnapshot
 {
@@ -26,34 +31,47 @@ final readonly class InvoiceDeferredWorkSnapshot
     public const int LEGACY_VERSION = 1;
 
     /**
-     * @param  list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool}>  $entries
+     * @param  list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool, disputed: bool}>  $entries
      */
     private function __construct(public array $entries, public int $version) {}
 
-    /** @param iterable<ClientTimeEntry> $entries */
-    public static function fromEntries(iterable $entries): ?self
+    /**
+     * @param  iterable<ClientTimeEntry>  $entries  deferred work still waiting
+     * @param  iterable<ClientTimeEntry>  $disputed  work a client's dispute holds
+     */
+    public static function fromEntries(iterable $entries, iterable $disputed = []): ?self
     {
         $rows = [];
-        foreach ($entries as $entry) {
-            $description = $entry->client_visible_description;
-            $rows[] = [
-                'id' => $entry->id,
-                'workedOn' => $entry->worked_on->toDateString(),
-                'minutes' => $entry->minutes,
-                'description' => $entry->is_visible_to_client === true
-                    && is_string($description)
-                    && trim($description) !== ''
-                    ? trim($description)
-                    : null,
-                'projectId' => $entry->client_project_id,
-                'lineageKnown' => true,
-            ];
+        foreach ([[$entries, false], [$disputed, true]] as [$group, $isDisputed]) {
+            foreach ($group as $entry) {
+                $rows[] = self::row($entry, $isDisputed);
+            }
         }
 
         return self::make($rows, self::VERSION);
     }
 
-    /** @return array{version: int, entries: list<array<string, int|string|null>>} */
+    /** @return array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool, disputed: bool} */
+    private static function row(ClientTimeEntry $entry, bool $disputed): array
+    {
+        $description = $entry->client_visible_description;
+
+        return [
+            'id' => $entry->id,
+            'workedOn' => $entry->worked_on->toDateString(),
+            'minutes' => $entry->minutes,
+            'description' => $entry->is_visible_to_client === true
+                && is_string($description)
+                && trim($description) !== ''
+                ? trim($description)
+                : null,
+            'projectId' => $entry->client_project_id,
+            'lineageKnown' => true,
+            'disputed' => $disputed,
+        ];
+    }
+
+    /** @return array{version: int, entries: list<array<string, bool|int|string|null>>} */
     public function toArray(): array
     {
         $legacy = $this->version === self::LEGACY_VERSION;
@@ -64,6 +82,7 @@ final readonly class InvoiceDeferredWorkSnapshot
             'minutes' => $entry['minutes'],
             'description' => $entry['description'],
             ...($legacy ? [] : ['projectId' => $entry['projectId']]),
+            ...($entry['disputed'] ? ['disputed' => true] : []),
         ], $this->entries)];
     }
 
@@ -84,7 +103,8 @@ final readonly class InvoiceDeferredWorkSnapshot
                 || ! is_int($entry['minutes'] ?? null)
                 || $entry['minutes'] < 0
                 || (! is_string($entry['description'] ?? null) && ($entry['description'] ?? null) !== null)
-                || (! $legacy && ! is_int($entry['projectId'] ?? null))) {
+                || (! $legacy && ! is_int($entry['projectId'] ?? null))
+                || (array_key_exists('disputed', $entry) && ! is_bool($entry['disputed']))) {
                 return null;
             }
             $entries[] = [
@@ -94,6 +114,7 @@ final readonly class InvoiceDeferredWorkSnapshot
                 'description' => $entry['description'] ?? null,
                 'projectId' => $legacy ? null : $entry['projectId'],
                 'lineageKnown' => ! $legacy,
+                'disputed' => $entry['disputed'] ?? false,
             ];
         }
 
@@ -154,13 +175,14 @@ final readonly class InvoiceDeferredWorkSnapshot
         return $ids;
     }
 
-    /** @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null}>} */
+    /** @return array{entry_count: int, total_hours: float, oldest_worked_on: string, entries: list<array{worked_on: string, hours: float, description: string|null, disputed: bool}>} */
     public function documentData(): array
     {
         $entries = array_map(static fn (array $entry): array => [
             'worked_on' => $entry['workedOn'],
             'hours' => round($entry['minutes'] / 60, 4),
             'description' => $entry['description'],
+            'disputed' => $entry['disputed'],
         ], $this->entries);
 
         return [
@@ -171,7 +193,7 @@ final readonly class InvoiceDeferredWorkSnapshot
         ];
     }
 
-    /** @param list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool}> $rows */
+    /** @param list<array{id: int, workedOn: string, minutes: int, description: string|null, projectId: int|null, lineageKnown: bool, disputed: bool}> $rows */
     private static function make(array $rows, int $version): ?self
     {
         if ($rows === []) {

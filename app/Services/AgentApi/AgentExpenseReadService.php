@@ -99,6 +99,7 @@ final class AgentExpenseReadService
         return $query->with([
             'clientCompany' => fn ($company) => $company->where('workspace_id', $workspace->id),
             'project' => fn ($project) => $project->where('workspace_id', $workspace->id),
+            ...AgentExpensePresenter::invoiceRelations($workspace->id),
         ]);
     }
 }

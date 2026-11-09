@@ -19,6 +19,7 @@ use App\Services\Engagement\EngagementException;
 use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\TimeEntryAllocation;
+use App\Support\Approval\DisputeSettlement;
 use App\Support\Approval\SelfApproval;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\Locks;
@@ -91,6 +92,12 @@ final class TimeEntryMutationService
     {
         return $this->serialized($workspace, $entry, function (ClientTimeEntry $entry, ?ClientInvoice $invoice) use ($workspace, $actor, $data): ClientTimeEntry {
             $this->assertDraftEditable($workspace, $entry, $actor, $invoice);
+            // A write-off is terminal (docs/ux-overhaul.md 7b″): the billing
+            // paths never bill it, and an edit cannot make it billable again.
+            if (array_key_exists('is_billable', $data) && (bool) $data['is_billable']
+                && $entry->getRawOriginal('client_dispute_settlement') === DisputeSettlement::WrittenOff->value) {
+                throw new DomainException('This hour was written off when its dispute was settled, so it cannot be made billable again.');
+            }
             $lineageRootId = $entry->split_from_time_entry_id ?? $entry->id;
             $visible = array_key_exists('is_visible_to_client', $data) ? (bool) $data['is_visible_to_client'] : $entry->is_visible_to_client;
             $clientDescription = array_key_exists('client_visible_description', $data) ? $data['client_visible_description'] : $entry->client_visible_description;

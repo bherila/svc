@@ -95,8 +95,19 @@ export type PortalInvoiceRow = {
     href: string;
 };
 
-/** Where a row stands with the client; a row already approved is never sent. */
-export type PortalApprovalState = 'pending' | 'disputed';
+/**
+ * Where a row stands with the client; a row already approved is never sent.
+ * A written-off row is shown, read-only, for a while after the provider settled
+ * the dispute that way (docs/ux-overhaul.md 7b″).
+ */
+export type PortalApprovalState = 'pending' | 'disputed' | 'written_off';
+
+/** How the provider settled the row's last dispute, and what they replied. */
+type PortalApprovalSettlement = {
+    settlement: 'answered' | 'written_off' | null;
+    settlement_label: string | null;
+    reply: string | null;
+};
 
 export type PortalApprovalInvoice = { number: string; href: string };
 
@@ -110,7 +121,7 @@ export type PortalApprovalHour = {
     state: PortalApprovalState;
     dispute_note: string | null;
     invoice: PortalApprovalInvoice | null;
-};
+} & PortalApprovalSettlement;
 
 export type PortalApprovalExpense = {
     id: string;
@@ -122,7 +133,7 @@ export type PortalApprovalExpense = {
     state: PortalApprovalState;
     dispute_note: string | null;
     invoice: PortalApprovalInvoice | null;
-};
+} & PortalApprovalSettlement;
 
 /** One vendor's calendar month: the unit a client approves in. */
 export type PortalApprovalGroup = {

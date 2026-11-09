@@ -26,6 +26,7 @@ final class TimesheetRules
             ClientApprovalVerdict::ApprovedByPayment => false,
             ClientApprovalVerdict::Pending => false,
             ClientApprovalVerdict::Disputed => false,
+            ClientApprovalVerdict::WrittenOff => false,
         };
     }
 

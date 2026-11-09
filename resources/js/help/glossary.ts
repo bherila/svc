@@ -40,6 +40,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'Questioned by the client. It stays out of billing until the question is settled.',
     },
     {
+        term: 'Written off',
+        definition:
+            'Disputed and settled by not billing it. It will never appear on an invoice.',
+    },
+    {
         term: 'Retainer',
         definition:
             'A block of hours the client pays for each period, whether or not they are all used.',
