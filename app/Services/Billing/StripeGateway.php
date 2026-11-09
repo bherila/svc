@@ -5,8 +5,10 @@ namespace App\Services\Billing;
 use App\Models\Workspace;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Payments\StripeAccess;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Stripe\Event;
+use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\StripeClient;
 use Stripe\Webhook;
@@ -64,6 +66,56 @@ final class StripeGateway
         }
 
         return $access->client();
+    }
+
+    /**
+     * The currencies this workspace's Stripe account can charge, as upper-case
+     * ISO 4217 codes, or null when it has no connection or Stripe could not be
+     * asked (EDGE-5).
+     *
+     * Two reads: the account's country and default currency, then that
+     * country's specification. A provider call, so callers make it outside any
+     * database transaction. Nothing is cached: the answer is the account's
+     * now, and a failure is logged with Stripe's code and nothing else.
+     *
+     * @return list<string>|null
+     */
+    public function chargeableCurrencies(Workspace $workspace): ?array
+    {
+        $access = $this->access($workspace);
+        if ($access === null) {
+            return null;
+        }
+
+        try {
+            $client = $access->client();
+            $account = $client->accounts->retrieve(null, [])->toArray();
+            $country = is_string($account['country'] ?? null) ? $account['country'] : '';
+            if ($country === '') {
+                return null;
+            }
+            $spec = $client->countrySpecs->retrieve($country, [])->toArray();
+        } catch (ApiErrorException $failure) {
+            Log::warning('Stripe could not be asked which currencies the account can charge.', ['code' => $failure->getStripeCode()]);
+
+            return null;
+        } catch (RuntimeException) {
+            Log::warning('Stripe could not be asked which currencies the account can charge.');
+
+            return null;
+        }
+
+        $supported = is_array($spec['supported_payment_currencies'] ?? null) ? $spec['supported_payment_currencies'] : [];
+        if (is_string($account['default_currency'] ?? null)) {
+            $supported[] = $account['default_currency'];
+        }
+        $codes = array_values(array_unique(array_map(
+            static fn (string $code): string => strtoupper($code),
+            array_filter($supported, static fn (mixed $code): bool => is_string($code) && preg_match('/^[A-Za-z]{3}$/D', $code) === 1),
+        )));
+        sort($codes);
+
+        return $codes === [] ? null : $codes;
     }
 
     /**

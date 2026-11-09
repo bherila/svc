@@ -229,8 +229,10 @@ Route::prefix('v1')
             foreach ([
                 'packages.list' => 'index', 'packages.get' => 'show', 'packages.create' => 'store', 'packages.update' => 'update', 'packages.publish' => 'publish', 'packages.retire' => 'retire',
                 'package_requests.list' => 'requests', 'package_requests.get' => 'showRequest', 'package_requests.approve' => 'approveRequest', 'package_requests.decline' => 'declineRequest', 'package_requests.erase' => 'eraseRequest',
+                'enrollments.list' => 'enrollments', 'enrollments.get' => 'showEnrollment', 'enrollments.activate' => 'activateEnrollment',
+                'client_services.list' => 'clientServices', 'client_services.get' => 'showClientService',
             ] as $id => $handler) {
-                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid(['package', 'request']);
+                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid(['package', 'request', 'enrollment', 'service']);
             }
         }
 

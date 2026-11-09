@@ -11,6 +11,8 @@ use App\Services\Billing\Autopay\AutopayConsentService;
 use App\Services\Billing\Autopay\AutopayReader;
 use App\Services\Billing\Autopay\PortalAutopayAuthority;
 use App\Services\Billing\PortalPaymentMethodService;
+use App\Services\Packages\ClientServiceReadService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\AgentApi\Presenters\AgentClientPresenter;
 use App\Support\AgentApi\Presenters\AutopayPresenter;
@@ -43,6 +45,8 @@ final class PortalBillingController extends Controller
         private readonly AutopayPresenter $presenter,
         private readonly PaymentConnectionResolver $connections,
         private readonly PortalPaymentMethodService $methodManagement,
+        private readonly PackageEnrollmentWorkflow $enrollments,
+        private readonly ClientServiceReadService $services,
     ) {}
 
     public function show(Request $request, ClientCompany $clientCompany): Response
@@ -62,6 +66,16 @@ final class PortalBillingController extends Controller
             ->max('total_amount');
         $method = $this->reader->defaultMethod($workspace->id, $clientCompany->id);
         ['management' => $management, 'publishable_key' => $publishableKey] = $this->methodManagement->access($workspace, $clientCompany, $viewer);
+        $methods = ClientStripePaymentMethod::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $clientCompany->id)
+            ->orderByDesc('is_default')
+            ->orderBy('id')
+            ->limit(25)
+            ->get();
+        // EDGE-2: removing the card autopay charges, when a service requires
+        // autopay, is allowed after a warning; the sentence is the server's.
+        $removalWarning = $management->mayChange() ? $this->services->autopayRemovalWarning($workspace, $clientCompany) : null;
 
         return Inertia::render('portal/billing', [
             'company' => AgentClientPresenter::identity($clientCompany),
@@ -97,13 +111,7 @@ final class PortalBillingController extends Controller
                 'publishable_key' => $publishableKey,
             ] : null,
             'payment_methods_notice' => $management->notice($workspace->name),
-            'payment_methods' => ClientStripePaymentMethod::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $clientCompany->id)
-                ->orderByDesc('is_default')
-                ->orderBy('id')
-                ->limit(25)
-                ->get()
+            'payment_methods' => $methods
                 ->map(fn (ClientStripePaymentMethod $saved): array => [
                     'id' => $saved->public_id,
                     'label' => $this->reader->methodLabel($saved),
@@ -115,6 +123,9 @@ final class PortalBillingController extends Controller
                         ? route('portal.payment-methods.default', [$clientCompany, $saved->public_id], absolute: false) : null,
                     'remove_href' => $management->mayChange()
                         ? route('portal.payment-methods.destroy', [$clientCompany, $saved->public_id], absolute: false) : null,
+                    // Set on the card autopay charges, or the only one, when a
+                    // service requires autopay: removing it turns autopay off.
+                    'remove_warning' => $removalWarning !== null && ($saved->is_default || $methods->count() === 1) ? $removalWarning : null,
                 ])->values()->all(),
             'method_result' => session('payment_method_result'),
             'result' => session('autopay_result'),
@@ -128,6 +139,8 @@ final class PortalBillingController extends Controller
             'limit_amount' => ['required', 'integer', 'min:1', 'max:'.AutopayConsentService::MAX_LIMIT],
             'wording' => ['required', 'string', 'max:1000'],
             'authorized' => ['required', 'accepted'],
+            // A service sign-up that requires autopay sends the client back to it.
+            'service' => ['sometimes', 'nullable', 'string', 'uuid'],
         ]);
 
         try {
@@ -140,8 +153,13 @@ final class PortalBillingController extends Controller
         } catch (DomainException $refusal) {
             throw ValidationException::withMessages(['authorized' => $refusal->getMessage()]);
         }
+        // The consent has committed: a sign-up waiting for autopay moves on
+        // now, in this request (ACC-4).
+        $this->enrollments->autopayChanged($clientCompany->workspace, $clientCompany);
 
-        return redirect()->route('portal.billing', $clientCompany)->with('autopay_result', 'on');
+        $service = is_string($data['service'] ?? null) ? $this->services->portalServiceUrl($viewer, $clientCompany, $data['service']) : null;
+
+        return ($service === null ? redirect()->route('portal.billing', $clientCompany) : redirect()->to($service))->with('autopay_result', 'on');
     }
 
     public function disable(Request $request, ClientCompany $clientCompany): RedirectResponse

@@ -287,9 +287,9 @@ final class PackageRequestWorkflowTest extends TestCase
         $this->assertIsArray($sequence);
         $resources = array_map(static fn (LockAcquisition $lock): LockResource => $lock->resource, $sequence);
         $this->assertSame(
-            [LockResource::ServicePackage, LockResource::ServicePackageRequest, LockResource::ServicePackageVersion, LockResource::ServicePackageComponent],
+            [LockResource::ServicePackage, LockResource::ServicePackageVersion, LockResource::ServicePackageComponent, LockResource::ServicePackageRequest],
             array_slice($resources, 0, 4),
-            'the package is read current, before the request, and the offered terms after it',
+            'the package and the terms offered now are read current, in registry order, before the request',
         );
         $this->assertSame(LockMode::Share, $sequence[0]->mode, 'a shared lock: approvals of one package need not wait for each other');
     }

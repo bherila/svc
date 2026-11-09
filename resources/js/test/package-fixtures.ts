@@ -1,4 +1,8 @@
 import type {
+    ClientTerms,
+    PortalService,
+    PortalServiceProps,
+    PortalServicesProps,
     PackageComponentTerms,
     PackageRequestRow,
     PackageRequestsProps,
@@ -224,6 +228,108 @@ export function requestForm(
             },
         ],
         prefill: null,
+        ...overrides,
+    };
+}
+
+/** Synthetic client-facing terms shaped like PackageEnrollmentPresenter::clientTerms(). */
+export function clientTerms(overrides: Partial<ClientTerms> = {}): ClientTerms {
+    return {
+        name: 'Synthetic Care plan',
+        summary: 'Hosting and care for synthetic sites.',
+        body_markdown: '- SSL and backups',
+        agreement_text:
+            'This agreement covers the synthetic care plan described below.',
+        currency: 'USD',
+        billing_cadence: 'monthly',
+        cycle_amount: 64500,
+        setup_fee_amount: null,
+        components: [
+            {
+                kind: 'recurring',
+                description: 'Managed hosting',
+                cadence: 'monthly',
+                amount: 4500,
+            },
+        ],
+        hourly_rate_amount: 14000,
+        retainer_amount: 60000,
+        retainer_minutes: 300,
+        rollover_months: 2,
+        activation_mode: 'review',
+        notice_days: 30,
+        minimum_term_months: 6,
+        cancellation_mode: 'request',
+        ...overrides,
+    };
+}
+
+export function portalService(
+    overrides: Partial<PortalService> = {},
+): PortalService {
+    return {
+        id: 'enrollment-1',
+        status: 'offered',
+        company: { id: 'company-1', name: 'Synthetic Client' },
+        project_id: 'project-1',
+        name: 'Synthetic Care plan',
+        version_number: 2,
+        version_changed: false,
+        terms: clientTerms(),
+        acceptance: null,
+        activated_at: null,
+        agreement_url: null,
+        payment: {
+            state: 'not_charged',
+            waiting_for: [],
+            signup_invoice: null,
+            requires_autopay: false,
+            autopay_limit_amount: null,
+            pay_before_activation: false,
+            lapses_on: '2026-11-23',
+        },
+        url: '/portal/company-1/services/enrollment-1',
+        ...overrides,
+    };
+}
+
+export function portalServiceProps(
+    overrides: Partial<PortalServiceProps> = {},
+): PortalServiceProps {
+    return {
+        company: { id: 'company-1', name: 'Synthetic Client' },
+        service: portalService(),
+        offered_terms: null,
+        changed_terms: [],
+        accept_url: '/portal/company-1/services/enrollment-1/accept',
+        accept_fields: { reviewed_version: 'version-2' },
+        accept_refusal: null,
+        checkout: null,
+        ...overrides,
+    };
+}
+
+export function portalServicesProps(
+    overrides: Partial<PortalServicesProps> = {},
+): PortalServicesProps {
+    return {
+        company: { id: 'company-1', name: 'Synthetic Client' },
+        services: [portalService()],
+        addable_packages: [
+            {
+                id: 'package-1',
+                name: 'Synthetic Hosting',
+                summary: 'Managed hosting for synthetic sites.',
+                currency: 'USD',
+                billing_cadence: 'monthly',
+                cycle_amount: 4500,
+                setup_fee_amount: 15000,
+                minimum_term_months: null,
+                url: 'https://example.test/p/synthetic-hosting',
+                add_refusal: null,
+                add_url: '/portal/company-1/services',
+            },
+        ],
         ...overrides,
     };
 }

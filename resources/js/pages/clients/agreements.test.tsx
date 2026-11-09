@@ -88,6 +88,7 @@ function props(overrides: Record<string, unknown> = {}) {
                 href: '/workspaces/workspace-1/clients/company-1/agreements/agreement-1',
                 activate_href:
                     '/api/v1/workspaces/workspace-1/agreements/agreement-1/activate',
+                activate_enrollment: null,
                 create_schedule_href: null,
                 title: 'Synthetic Agreement',
                 status: 'draft',
@@ -99,6 +100,7 @@ function props(overrides: Record<string, unknown> = {}) {
                 version,
                 href: '/workspaces/workspace-1/clients/company-1/agreements/agreement-2',
                 activate_href: null,
+                activate_enrollment: null,
                 create_schedule_href:
                     '/api/v1/workspaces/workspace-1/billing-schedules',
                 title: 'Active Agreement',
@@ -202,6 +204,44 @@ describe('client agreements page', () => {
         );
         expect(jsonRequestBody(requestFetch.mock.calls[0][1].body)).toEqual({
             expected_version: version,
+            confirm: true,
+        });
+    });
+
+    it('starts a service package agreement through its enrollment, never its own activation', async () => {
+        const enrollmentVersion = 'e'.repeat(64);
+        render(
+            <ClientAgreements
+                {...props({
+                    agreements: [
+                        {
+                            ...props().agreements[0],
+                            activate_href: null,
+                            activate_enrollment: {
+                                href: '/api/v1/workspaces/workspace-1/enrollments/enrollment-1/activate',
+                                version: enrollmentVersion,
+                            },
+                        },
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.queryByRole('button', { name: 'Activate' })).toBeNull();
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Activate service' }),
+        );
+        const dialog = await screen.findByRole('dialog');
+        expect(requestFetch).not.toHaveBeenCalled();
+        fireEvent.click(
+            within(dialog).getByRole('button', { name: 'Activate service' }),
+        );
+        await vi.waitFor(() => expect(requestFetch).toHaveBeenCalledTimes(1));
+        expect(requestFetch.mock.calls[0][0]).toBe(
+            '/api/v1/workspaces/workspace-1/enrollments/enrollment-1/activate',
+        );
+        expect(jsonRequestBody(requestFetch.mock.calls[0][1].body)).toEqual({
+            expected_version: enrollmentVersion,
             confirm: true,
         });
     });

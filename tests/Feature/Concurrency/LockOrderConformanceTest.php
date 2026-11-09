@@ -7,11 +7,15 @@ use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Models\ClientAgreement;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
+use App\Models\ClientCompanyMembership;
+use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -32,6 +36,8 @@ use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\ProposalWorkflow;
 use App\Services\Files\AttachmentAction;
 use App\Services\Finance\PaymentReconciliationService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\WorkspaceProjectMutationAction;
 use App\Services\WorkspaceTaskMutationAction;
 use App\Support\Access\AccessMutationContext;
@@ -52,6 +58,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\BuildsServicePackages;
 use Tests\Concerns\RecordsSnapshotReads;
 use Tests\Support\BillingWriterLockSites;
 use Tests\TestCase;
@@ -96,6 +103,7 @@ use Tests\TestCase;
  */
 final class LockOrderConformanceTest extends TestCase
 {
+    use BuildsServicePackages;
     use RecordsSnapshotReads;
     use RefreshDatabase;
 
@@ -322,7 +330,49 @@ final class LockOrderConformanceTest extends TestCase
         app(DisputeSettlements::class)->settleTime($this->workspace, $disputed->public_id, $this->user, DisputeSettlement::Answered, 'Synthetic reply', AgentApiVersion::for($disputed->fresh()));
 
         $this->driveTheExpenseLifecycle();
+        $this->driveTheServicePackageEnrollments();
         $this->driveTheAccessMutations();
+    }
+
+    /**
+     * A client adding a service package from the portal, accepting it and an
+     * owner activating it (docs/service-packages.md, slice 3a): the package
+     * (shared), then the enrollment, then the agreement and company that
+     * AgreementWorkflow takes.
+     */
+    private function driveTheServicePackageEnrollments(): void
+    {
+        $packages = app(ServicePackageWorkflow::class);
+        $terms = [
+            'name' => 'Locks hosting', 'currency' => 'USD', 'billing_cadence' => 'monthly', 'activation_mode' => 'review',
+            'components' => [['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => 'monthly', 'amount' => 4500]],
+        ];
+        $reviewed = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-reviewed', ...$terms]));
+        $automatic = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-automatic', ...$terms, 'activation_mode' => 'automatic']));
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $this->company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        // The review page's signature, on the version it shows.
+        $sign = fn (ServicePackage $package): ServicePackageEnrollment => $enrollments->accept($contact, $this->company, $offer = $enrollments->addFromPortal($contact, $this->company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
+        $waiting = $sign($reviewed);
+        $enrollments->activate($this->user, $this->workspace, $waiting);
+        $sign($automatic);
+
+        // Slice 3b: an acceptance that issues the sign-up invoice (the billing
+        // maintenance share first, then the package, the enrollment, the
+        // agreement and the invoice rows), its payment moving it on, and the
+        // lapse voiding an unpaid one. Each sign-up gets its own project, so
+        // its first cycle overlaps no invoice of the company's.
+        $this->connectStripe();
+        $paying = [...$terms, 'activation_mode' => 'automatic', 'charge_first_period' => true, 'pay_before_activation' => true,
+            'charge_setup_fee_at_signup' => true, 'components' => [...$terms['components'], ['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => 15000]]];
+        $paid = $sign($packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-paid', ...$paying])));
+        $invoice = ClientInvoice::query()->whereKey($paid->signup_invoice_id)->sole();
+        app(InvoiceLifecycleService::class)->applyPayment($invoice, ['amount' => $invoice->balance_amount, 'currency' => $invoice->currency, 'method' => 'synthetic transfer']);
+        $unpaid = $sign($packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-unpaid', ...$paying, 'charge_first_period' => false])));
+        $this->travel(30)->days();
+        $enrollments->lapse($this->workspace, $unpaid);
+        $this->travelBack();
     }
 
     /**

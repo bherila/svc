@@ -6,9 +6,7 @@ use App\Actions\CreateClientCompany;
 use App\Exceptions\ServicePackageRefused;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
-use App\Models\ClientProject;
 use App\Models\ServicePackage;
-use App\Models\ServicePackageComponent;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\ServicePackageVersion;
@@ -21,7 +19,6 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
-use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\IntakeQuestion;
 use App\Support\Packages\PackageRefusal;
 use App\Support\Packages\PackageRequestStatus;
@@ -37,7 +34,8 @@ use Illuminate\Support\Facades\Validator;
  * Submitting writes one request row and nothing else (PUB-4). Approving
  * (ADM-2) creates - or reuses - the client company, gives the subscription its
  * own project, writes a draft agreement from the package's currently
- * published version (EDGE-7), records an `offered` enrollment, and admits the
+ * published version (EDGE-7), records an `offered` enrollment - the offer
+ * PackageOffers makes, as for a portal addition - and admits the
  * contact: an address that already signs in here is given company-wide portal
  * access directly (ADM-3); any other is invited through PortalInvitations as
  * the approver.
@@ -63,7 +61,7 @@ final class PackageRequestWorkflow
     public function __construct(
         private readonly AgentAccess $access,
         private readonly CreateClientCompany $companies,
-        private readonly PackageAgreementTerms $agreementTerms,
+        private readonly PackageOffers $offers,
         private readonly WorkspaceAccess $workspaceAccess,
         private readonly PortalInvitations $invitations,
         private readonly PackageNotifier $notifier,
@@ -144,28 +142,21 @@ final class PackageRequestWorkflow
         $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, &$existingAccount): ServicePackageEnrollment {
             // Current reads, not the snapshot an enclosing transaction may
             // already hold (the agent API's receipt reads open one before this
-            // runs): the package under a shared lock - which waits out a
-            // publish or retire in flight and holds them off until this commits
-            // - then the request, in registry order (Codex P1 on #666).
+            // runs), in registry order (Codex P1 on #666): the package under a
+            // shared lock - which waits out a publish or retire in flight and
+            // holds them off until this commits - then the version offered
+            // now, which may be newer than the one the visitor read (EDGE-7),
+            // then the request.
             $package = ServicePackage::query()->where('workspace_id', $workspace->id)->whereKey($request->service_package_id)
                 ->tap(Locks::forShare())->firstOrFail();
+            $version = $package->packageStatus() === PackageStatus::Published ? $this->offers->publishedVersion($workspace, $package) : null;
             $locked = $this->locked($workspace, $request);
             $this->assertVersion($locked, $expectedVersion);
             $this->refuseUnlessOpen($locked);
 
-            if ($package->packageStatus() !== PackageStatus::Published || $package->published_version_id === null) {
+            if ($version === null) {
                 throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
             }
-            // The package as offered now, which may be newer than the one the
-            // visitor read (EDGE-7). Read current too: a version published
-            // after the enclosing snapshot is invisible to a plain read.
-            $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($package->published_version_id)
-                ->tap(Locks::forShare())->firstOrFail();
-            $version->setRelation('components', ServicePackageComponent::query()
-                ->where('workspace_id', $workspace->id)
-                ->where('service_package_version_id', $version->id)
-                ->orderBy('sort_order')->orderBy('id')
-                ->tap(Locks::forShare())->get());
 
             $email = (string) $locked->email;
             $existingAccount = $this->accountFor($email);
@@ -178,27 +169,8 @@ final class PackageRequestWorkflow
                 // once created, it is the workspace's record, not the visitor's.
                 ? $this->companies->handle($workspace, $companyName ?? (string) $locked->company_name, $email)
                 : ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $clientPublicId)->firstOrFail();
-            $project = $company->projects()->create([
-                'workspace_id' => $workspace->id,
-                'name' => $this->projectName($company, $version->name),
-                'is_visible_to_client' => true,
-            ]);
-            $now = $this->clock->now($workspace);
-            $agreement = $this->agreementTerms->createDraft($workspace, $company, $project, $version, $now->startOfDay());
-
-            $enrollment = new ServicePackageEnrollment;
-            $enrollment->forceFill([
-                'workspace_id' => $workspace->id,
-                'service_package_id' => $package->id,
-                'service_package_version_id' => $version->id,
-                'client_company_id' => $company->id,
-                'client_project_id' => $project->id,
-                'client_agreement_id' => $agreement->id,
-                'service_package_request_id' => $locked->id,
-                'status' => EnrollmentStatus::Offered->value,
-                'offered_by_user_id' => $actor->id,
-                'offered_at' => $now,
-            ])->save();
+            $enrollment = $this->offers->offer($workspace, $package, $version, $company, $actor, $locked);
+            $now = $enrollment->offered_at;
 
             $locked->forceFill([
                 'status' => PackageRequestStatus::Approved->value,
@@ -379,24 +351,6 @@ final class PackageRequestWorkflow
         } elseif ($scope !== PortalAccessScope::Company->value) {
             $this->workspaceAccess->changePortalScope($context, $company, $user, PortalAccessScope::Company);
         }
-    }
-
-    /** The package's name, made unique among the company's projects. */
-    private function projectName(ClientCompany $company, string $name): string
-    {
-        $base = mb_substr($name, 0, 240);
-        $taken = ClientProject::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->where('name', 'like', str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $base).'%')
-            ->pluck('name')
-            ->all();
-        $candidate = $base;
-        for ($suffix = 2; in_array($candidate, $taken, true); $suffix++) {
-            $candidate = "{$base} ({$suffix})";
-        }
-
-        return $candidate;
     }
 
     private function locked(Workspace $workspace, ServicePackageRequest $request): ServicePackageRequest

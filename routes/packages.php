@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Packages\PackageAdminController;
+use App\Http\Controllers\Packages\PortalServicesController;
 use App\Http\Controllers\Packages\PublicPackageController;
 use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Http\Middleware\ResolveWorkspaceNavigation;
@@ -39,4 +40,19 @@ Route::middleware(['web', 'auth', EnsureServicePackagesEnabled::class, ResolveWo
     Route::get('/workspaces/{workspace}/packages/{servicePackage}', [PackageAdminController::class, 'edit'])
         ->whereUuid('servicePackage')
         ->name('packages.edit');
+});
+
+// The portal's Services tab (ACC-8, ACC-1, ACC-2): a client's services, adding a
+// package and signing an offer. In the portal's route family, so web.php gives
+// every one the portal ceiling and the writes the lower portal-writes one.
+// Adding and accepting are browser-only: neither is an agent operation.
+Route::middleware(['web', 'auth', EnsureServicePackagesEnabled::class, ResolveWorkspaceNavigation::class])->group(function (): void {
+    Route::get('/portal/{clientCompany}/services', [PortalServicesController::class, 'index'])->name('portal.services');
+    Route::post('/portal/{clientCompany}/services', [PortalServicesController::class, 'add'])->name('portal.services.add');
+    Route::get('/portal/{clientCompany}/services/{enrollment}', [PortalServicesController::class, 'show'])
+        ->whereUuid('enrollment')
+        ->name('portal.services.show');
+    Route::post('/portal/{clientCompany}/services/{enrollment}/accept', [PortalServicesController::class, 'accept'])
+        ->whereUuid('enrollment')
+        ->name('portal.services.accept');
 });

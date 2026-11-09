@@ -19,6 +19,18 @@ enum PackageRefusal: string
     case PackageNotOffered = 'package_not_offered';
     case InvitationsOff = 'package_invitations_off';
     case AddressHeldElsewhere = 'package_address_held_elsewhere';
+    case NotAddable = 'package_not_addable';
+    case OfferNotOpen = 'package_offer_not_open';
+    case AlreadyAccepted = 'package_already_accepted';
+    case PaymentUnavailable = 'package_payment_unavailable';
+    case CollectedInSquare = 'package_collected_in_square';
+    case FirstPeriodUnbillable = 'package_first_period_unbillable';
+    case NotAwaitingReview = 'package_enrollment_not_awaiting_review';
+    case ActivationConflict = 'package_activation_conflict';
+    case AgreementStartsWithService = 'package_agreement_starts_with_service';
+    case AutopayCurrencyMismatch = 'package_autopay_currency_mismatch';
+    case VersionChanged = 'package_version_changed';
+    case AgreementTermsFixed = 'package_agreement_terms_fixed';
 
     case NothingToPublish = 'package_nothing_to_publish';
     case NothingPriced = 'package_nothing_priced';
@@ -28,6 +40,9 @@ enum PackageRefusal: string
     case PayBeforeActivationNeedsCharge = 'package_pay_before_activation_needs_charge';
     case SetupFeeAtSignupNeedsSetupFee = 'package_setup_fee_at_signup_needs_setup_fee';
     case MinimumTermNeedsRecurringCadence = 'package_minimum_term_needs_recurring_cadence';
+    case FirstPeriodNeedsRecurringCadence = 'package_first_period_needs_recurring_cadence';
+    case CurrencyNotChargeable = 'package_currency_not_chargeable';
+    case StripeCurrenciesUnknown = 'package_stripe_currencies_unknown';
 
     public function message(): string
     {
@@ -42,6 +57,21 @@ enum PackageRefusal: string
             self::PackageNotOffered => 'This package is not published, so it cannot be offered. Publish it again first.',
             self::InvitationsOff => 'Portal invitations are switched off, so someone without an account here cannot be invited.',
             self::AddressHeldElsewhere => 'That email address belongs to an account that does not sign in through the identity provider, so it cannot be given portal access.',
+            self::NotAddable => 'This service can\'t be added from the portal.',
+            self::OfferNotOpen => 'This offer is no longer open.',
+            self::AlreadyAccepted => 'This service has already been accepted by someone else.',
+            self::PaymentUnavailable => 'This service takes a payment at sign-up, and online payment is not available right now. Please contact us to sign up.',
+            // X-2: Square is read-only here, so SVC never asks for money it collects.
+            self::CollectedInSquare => 'This service\'s agreement is billed in Square, so SVC cannot take its sign-up payment. Please contact us to sign up.',
+            self::FirstPeriodUnbillable => 'The first period of this service cannot be invoiced yet, because it overlaps an invoice already issued. Please contact us to finish signing up.',
+            self::NotAwaitingReview => 'Only a service the client has accepted, and that is waiting for review, can be activated.',
+            self::ActivationConflict => 'This service\'s agreement would overlap another active agreement on its project. End or correct that agreement, then activate again.',
+            self::AgreementStartsWithService => 'This agreement belongs to a service package sign-up, so it starts with the service: automatically once the client has signed and paid what the package asks, or by activating the service on the agreement\'s page when it waits for review.',
+            // ACC-4: autopay's limit is in the company's billing currency.
+            self::AutopayCurrencyMismatch => 'This service is paid by autopay in its own currency, and autopay for your account is in a different currency, so it cannot be set up here. Please contact us to sign up.',
+            // The client signs the terms they reviewed, never newer ones (ACC-2, EDGE-7).
+            self::VersionChanged => 'This service\'s terms were updated while you were reviewing them. Review the current terms below, then sign again.',
+            self::AgreementTermsFixed => 'This agreement belongs to a service package sign-up, so until its service starts it carries the terms of the package version the client signs. To offer different terms, publish a new version of the package; once the service has started, its agreement can be corrected here.',
             self::NothingToPublish => 'There is no draft to publish.',
             self::NothingPriced => 'Add a component, a retainer or an hourly rate before publishing.',
             self::PaymentNeedsStripe => 'This package takes a payment at sign-up, so the workspace needs a Stripe connection before it can be published.',
@@ -50,6 +80,9 @@ enum PackageRefusal: string
             self::PayBeforeActivationNeedsCharge => 'Starting only once paid needs something to pay at sign-up: the setup fee or the first period.',
             self::SetupFeeAtSignupNeedsSetupFee => 'Add a setup fee component, or stop charging one at sign-up.',
             self::MinimumTermNeedsRecurringCadence => 'A minimum term needs a recurring billing cadence.',
+            self::FirstPeriodNeedsRecurringCadence => 'Charging the first period in advance needs a recurring billing cadence.',
+            self::CurrencyNotChargeable => 'The workspace\'s Stripe account cannot charge in this package\'s currency. Choose a currency the account supports.',
+            self::StripeCurrenciesUnknown => 'Stripe could not be asked which currencies the account can charge. Try publishing again in a few minutes.',
         };
     }
 }

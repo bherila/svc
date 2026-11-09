@@ -192,6 +192,31 @@ describe('the portal payment methods card', () => {
         );
     });
 
+    it('[EDGE-2] shows the server’s own removal warning when a service requires autopay', async () => {
+        const user = userEvent.setup();
+        render(
+            card({
+                methods: [
+                    {
+                        ...DEFAULT_METHOD,
+                        remove_warning:
+                            'Synthetic Care plan requires autopay; removing this card turns it off.',
+                    },
+                ],
+            }),
+        );
+
+        await user.click(
+            screen.getByRole('button', { name: 'Remove Visa ending 4242' }),
+        );
+
+        expect(
+            within(screen.getByRole('alertdialog')).getByText(
+                'Synthetic Care plan requires autopay; removing this card turns it off.',
+            ),
+        ).toBeVisible();
+    });
+
     it('does not claim autopay turns off when it is off, or when the method is not the default', async () => {
         const user = userEvent.setup();
         const { unmount } = render(card({ autopayEnabled: false }));

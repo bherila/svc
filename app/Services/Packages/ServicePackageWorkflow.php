@@ -9,6 +9,7 @@ use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
+use App\Services\Billing\StripeGateway;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
@@ -41,6 +42,7 @@ final class ServicePackageWorkflow
     public function __construct(
         private readonly AgentAccess $access,
         private readonly PaymentConnectionResolver $payments,
+        private readonly StripeGateway $stripe,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -116,7 +118,7 @@ final class ServicePackageWorkflow
                 }
             }
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -124,13 +126,26 @@ final class ServicePackageWorkflow
     {
         $this->requireManager($actor, $workspace);
         $stripeConnected = $this->payments->stripe($workspace) !== null;
+        // EDGE-5: which currencies the account can charge, asked of Stripe
+        // before the transaction opens and only for a draft that takes money.
+        // The draft is read again under the lock below; this read only decides
+        // whether Stripe is asked at all.
+        $unlocked = $stripeConnected && $package->workspace_id === $workspace->id ? $this->draftOf($package) : null;
+        $currencies = $unlocked !== null && PackageTerms::fromVersion($unlocked)->involvesPayment()
+            ? ($this->stripe->chargeableCurrencies($workspace) ?? throw ServicePackageRefused::because(PackageRefusal::StripeCurrenciesUnknown))
+            : null;
 
-        return DB::transaction(function () use ($actor, $workspace, $package, $expectedVersion, $stripeConnected): ServicePackage {
+        return DB::transaction(function () use ($actor, $workspace, $package, $expectedVersion, $stripeConnected, $currencies): ServicePackage {
             $locked = $this->locked($workspace, $package);
             $this->assertVersion($locked, $expectedVersion);
             $draft = $this->draftOf($locked) ?? throw ServicePackageRefused::because(PackageRefusal::NothingToPublish);
 
-            $refusals = PackagePublishRules::refusals(PackageTerms::fromVersion($draft), $stripeConnected);
+            $terms = PackageTerms::fromVersion($draft);
+            if ($stripeConnected && $currencies === null && $terms->involvesPayment()) {
+                // The draft began taking money after the read above: ask again.
+                throw ServicePackageRefused::because(PackageRefusal::StripeCurrenciesUnknown);
+            }
+            $refusals = PackagePublishRules::refusals($terms, $stripeConnected, $currencies);
             if ($refusals !== []) {
                 throw new ServicePackageRefused($refusals);
             }
@@ -146,7 +161,7 @@ final class ServicePackageWorkflow
             ])->save();
             $this->ensureCatalogToken($workspace);
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -164,7 +179,7 @@ final class ServicePackageWorkflow
 
             $locked->forceFill(['status' => PackageStatus::Retired->value])->save();
 
-            return $locked->refresh();
+            return $this->locked($workspace, $locked);
         });
     }
 
@@ -181,6 +196,11 @@ final class ServicePackageWorkflow
         return PackageTerms::fromArray(Validator::make($terms, ServicePackageRules::terms())->validate());
     }
 
+    /**
+     * The package row, locked. Also how a write reads back what it saved: an
+     * ordinary re-read would come from the caller's snapshot, which the agent
+     * API's mutation executor opens before this lock.
+     */
     private function locked(Workspace $workspace, ServicePackage $package): ServicePackage
     {
         return ServicePackage::query()

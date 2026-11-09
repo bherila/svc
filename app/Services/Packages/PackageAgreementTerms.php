@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
@@ -20,8 +21,10 @@ use DomainException;
  * Puts a package version's terms on an agreement (PKG-7).
  *
  * The one place a package's terms become an agreement's: approval writes them
- * onto a new draft, and acceptance writes them again when a newer version was
- * published in between (EDGE-7). Agreement fields go through AgreementWorkflow,
+ * onto a new draft, and acceptance writes the accepted version's terms again,
+ * whether a newer version was published in between (EDGE-7) or not, so what
+ * the client signed is what the sign-up invoice and the agreement bill
+ * (ACC-2). Agreement fields go through AgreementWorkflow,
  * so the agreement's own rules and activity apply; recurring items are written
  * here because nothing else writes them. Only a draft is ever rewritten.
  *
@@ -50,14 +53,19 @@ final class PackageAgreementTerms
         return $this->apply($workspace, $agreement, $version);
     }
 
-    /** Rewrite a draft agreement's terms and recurring items from a version. */
-    public function apply(Workspace $workspace, ClientAgreement $agreement, ServicePackageVersion $version): ClientAgreement
+    /**
+     * Rewrite a draft agreement's terms and recurring items from a version.
+     *
+     * `$enrollment` is the enrollment that owns the draft, locked by the
+     * caller; null only while the offer that creates both is being made.
+     */
+    public function apply(Workspace $workspace, ClientAgreement $agreement, ServicePackageVersion $version, ?ServicePackageEnrollment $enrollment = null): ClientAgreement
     {
         if ($agreement->status !== 'draft') {
             throw new DomainException('Only a draft agreement takes a package version\'s terms.');
         }
         $terms = PackageTerms::fromVersion($version);
-        $updated = $this->agreements->update($workspace, $agreement, self::agreementTerms($terms));
+        $updated = $this->agreements->update($workspace, $agreement, self::agreementTerms($terms), enrollment: $enrollment);
 
         ClientAgreementRecurringItem::query()
             ->where('workspace_id', $workspace->id)

@@ -9,6 +9,7 @@ import type { DeferredBacklog } from '@/components/agreements/deferred-backlog';
 import { DeferredBuyDownForm } from '@/components/agreements/deferred-buydown';
 import { AttachmentPageLinks } from '@/components/files/attachment-page-links';
 import AttachmentSharingPanel from '@/components/files/attachment-sharing-panel';
+import { ConfirmedAction } from '@/components/shared-projects/participation-panels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,10 +22,12 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import WorkspaceShell from '@/layouts/workspace-shell';
+import { apiRequest } from '@/lib/api';
 import { formatDay, formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
+import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatHours } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type {
@@ -54,6 +57,65 @@ type RecurringItem = {
  * rather than pricing at nothing, and showing either as "0" would describe an
  * agreement nobody signed.
  */
+/**
+ * Start a service the client signed and that waits for review (ACC-5).
+ * Confirmed, then sent against the version the page showed; a refusal such as
+ * an overlapping agreement is read out in the dialog rather than lost.
+ */
+function ActivateEnrollment({
+    action,
+}: {
+    action: { href: string; version: string };
+}) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Service waiting for review</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 items-start gap-3 text-sm">
+                <p className="wrap-anywhere text-muted-foreground">
+                    The client signed this agreement from a service package.
+                    Activating it starts the service and emails the client.
+                </p>
+                <div>
+                    <Button onClick={() => setOpen(true)}>
+                        Activate service…
+                    </Button>
+                </div>
+                <ConfirmedAction
+                    open={open}
+                    onOpenChange={setOpen}
+                    title="Activate this service?"
+                    description="The agreement is signed in the client’s name as they typed it, starts today in the workspace’s time zone, and the client is emailed that the service is active."
+                    confirmLabel="Activate service"
+                    run={async () => {
+                        const result = await apiRequest('POST', action.href, {
+                            expected_version: action.version,
+                            confirm: true,
+                        });
+
+                        if (!result.ok) {
+                            if (result.status === 409) {
+                                await refreshPageProps();
+
+                                return 'This service changed since the page loaded. The page now shows its current state; check it and try again.';
+                            }
+
+                            return result.message;
+                        }
+
+                        await refreshPageProps();
+
+                        return null;
+                    }}
+                />
+            </CardContent>
+        </Card>
+    );
+}
+
 function Term({
     label,
     value,
@@ -132,6 +194,10 @@ export default function ClientAgreementDetail({
                         )}
                     </div>
                 </div>
+
+                {actions.activate_enrollment && (
+                    <ActivateEnrollment action={actions.activate_enrollment} />
+                )}
 
                 {forOperator && agreement.square_series_key !== undefined && (
                     <Card>

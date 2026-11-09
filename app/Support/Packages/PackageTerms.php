@@ -161,6 +161,25 @@ final readonly class PackageTerms
     }
 
     /**
+     * The terms that differ from another version's, by their toArray() keys,
+     * sorted. Intake questions are left out: they shape a request, not the
+     * agreement a client signs (EDGE-7 shows the client only what changed in
+     * what they are agreeing to).
+     *
+     * @return list<string>
+     */
+    public function differences(self $other): array
+    {
+        $mine = $this->toArray();
+        $theirs = $other->toArray();
+        unset($mine['intake_questions'], $theirs['intake_questions']);
+        $changed = array_keys(array_filter($mine, static fn (mixed $value, string $key): bool => $value !== $theirs[$key], ARRAY_FILTER_USE_BOTH));
+        sort($changed);
+
+        return $changed;
+    }
+
+    /**
      * What a new package starts with before the caller's own terms.
      *
      * @return array<string, mixed>

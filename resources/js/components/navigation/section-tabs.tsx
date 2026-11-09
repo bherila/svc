@@ -22,7 +22,7 @@ import type {
  *
  *     Workspace tier   Dashboard  Clients  Invoices  Time  Finance
  *                      (My work first, for members who do not run the workspace)
- *     Client tier      Overview  Agreements  Invoices  Time  Tasks  Files
+ *     Client tier      Overview  Agreements  Invoices  Time  Tasks  Files  Services (portal)
  *
  * One list per tier, defined here, rather than a set each page declares: pages
  * that each name their own tabs drift. A tab with no destination is not
@@ -49,6 +49,7 @@ const CLIENT_TABS: readonly {
     { key: 'time', label: 'Time' },
     { key: 'tasks', label: 'Tasks' },
     { key: 'files', label: 'Files' },
+    { key: 'services', label: 'Services' },
 ];
 
 /** Not tabs: the client's own menu holds them, and the phone menu follows the tabs with them. */

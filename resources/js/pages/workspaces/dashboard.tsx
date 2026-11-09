@@ -29,6 +29,9 @@ export type QueueKind =
     | 'unapproved_time'
     | 'proposal_awaiting'
     | 'package_requests'
+    | 'enrollment_review'
+    | 'enrollment_paid_after_lapse'
+    | 'enrollment_autopay_off'
     | 'my_draft_time'
     | 'my_task';
 
@@ -64,6 +67,9 @@ const ICONS = {
     unapproved_time: ClockIcon,
     proposal_awaiting: FileSignatureIcon,
     package_requests: InboxIcon,
+    enrollment_review: FileSignatureIcon,
+    enrollment_paid_after_lapse: AlertCircleIcon,
+    enrollment_autopay_off: AlertCircleIcon,
     my_draft_time: ClockIcon,
     my_task: CheckSquareIcon,
 } satisfies Record<QueueKind, typeof ClockIcon>;
@@ -110,6 +116,18 @@ function detail(row: QueueRow, style: DurationStyle): string {
             ]
                 .filter((part) => part !== null)
                 .join(', ');
+            break;
+        case 'enrollment_review':
+            // The row's date is the day the client accepted.
+            fact = day === null ? 'Accepted' : `Accepted ${day}`;
+            break;
+        case 'enrollment_paid_after_lapse':
+            // The row's date is the day the sign-up lapsed.
+            fact = day === null ? 'Lapsed' : `Lapsed ${day}`;
+            break;
+        case 'enrollment_autopay_off':
+            // The row's date is the day the service started.
+            fact = day === null ? 'Active' : `Active since ${day}`;
             break;
         case 'my_task':
             fact = day === null ? 'No due date' : `Due ${day}`;

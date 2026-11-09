@@ -227,6 +227,7 @@ class ClientPortalController extends Controller
             'actions' => [
                 'update' => null,
                 'deferred_buydown' => null,
+                'activate_enrollment' => null,
             ],
             // The files themselves are the client's to read - a countersigned
             // copy of their own agreement is the obvious one. `false` withholds

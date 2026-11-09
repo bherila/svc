@@ -200,6 +200,43 @@ describe('workspace shell', () => {
         ).not.toBeInTheDocument();
     });
 
+    it('[ACC-8] shows the portal Services tab only when the server sends the destination', () => {
+        navigation = workspaceNavigation({
+            clients: [
+                clientOption('company-1', 'Aa Synthetic Client', {
+                    services: '/portal/company-1/services',
+                }),
+            ],
+        });
+
+        const { unmount } = render(
+            <WorkspaceShell activeModule="services">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        expect(screen.getByRole('link', { name: 'Services' })).toHaveAttribute(
+            'href',
+            '/portal/company-1/services',
+        );
+        expect(screen.getByRole('link', { name: 'Services' })).toHaveAttribute(
+            'aria-current',
+            'page',
+        );
+        unmount();
+
+        navigation = workspaceNavigation();
+        render(
+            <WorkspaceShell activeModule="home">
+                <p>Body</p>
+            </WorkspaceShell>,
+        );
+
+        expect(
+            screen.queryByRole('link', { name: 'Services' }),
+        ).not.toBeInTheDocument();
+    });
+
     it('keeps the current module when the client changes', async () => {
         navigation = workspaceNavigation();
 
@@ -246,6 +283,7 @@ describe('workspace shell', () => {
                         notes: null,
                         discussions: null,
                         billing: null,
+                        services: null,
                     },
                 },
             ],

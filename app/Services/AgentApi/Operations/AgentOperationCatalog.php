@@ -1583,7 +1583,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.update',
                 'Update agreement',
-                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here.',
+                'Correct only the terms sent using the current version. Omitted fields are unchanged; nullable fields can be cleared. Status and signature cannot be edited here. A draft agreement a service package sign-up created is refused with package_agreement_terms_fixed: until its service starts it carries the package version\'s terms.',
                 [AgentMcpClientWriteTools::class, 'agreementsUpdate'],
                 Effect::LocalWrite,
                 true,
@@ -1595,7 +1595,7 @@ final class AgentOperationCatalog
             $this->tool(
                 'agreements.activate',
                 'Activate agreement',
-                'Activate a draft or paused agreement so it governs billing. Requires explicit user confirmation and the current version. Overlapping active agreements are refused.',
+                'Activate a draft or paused agreement so it governs billing. Requires explicit user confirmation and the current version. Overlapping active agreements are refused. A draft agreement a service package sign-up created is refused with package_agreement_starts_with_service: it starts with its service, through enrollments.activate when it waits for review.',
                 [AgentMcpClientWriteTools::class, 'agreementsActivate'],
                 Effect::LocalWrite,
                 true,
@@ -2005,9 +2005,10 @@ final class AgentOperationCatalog
     }
 
     /**
-     * The service package and sign-up request tools
-     * (docs/service-packages.md). Each calls its REST operation; reads and writes are manager-only, and writes sit behind
-     * the package write cutover inside the outer workflow one.
+     * The service package, sign-up request, enrollment and client service
+     * tools (docs/service-packages.md). Each calls its REST operation. All are
+     * manager-only except a client's own services (client_services.*), and
+     * writes sit behind the package write cutover inside the outer workflow one.
      *
      * @return list<Operation>
      */
@@ -2020,13 +2021,16 @@ final class AgentOperationCatalog
                 match ($id) {
                     // Erasing a request's contact details cannot be undone.
                     'packages.retire', 'package_requests.erase' => Effect::Destructive,
-                    // Approving invites through the identity provider or emails the contact; declining emails the visitor.
-                    'package_requests.approve', 'package_requests.decline' => Effect::ExternalWrite,
-                    'packages.list', 'packages.get', 'package_requests.list', 'package_requests.get' => Effect::Read,
+                    // Approving invites through the identity provider or emails the contact; declining emails the visitor;
+                    // activating emails the client.
+                    'package_requests.approve', 'package_requests.decline', 'enrollments.activate' => Effect::ExternalWrite,
+                    'packages.list', 'packages.get', 'package_requests.list', 'package_requests.get',
+                    'enrollments.list', 'enrollments.get', 'client_services.list', 'client_services.get' => Effect::Read,
                     default => Effect::LocalWrite,
                 }, true, $write ? 'mcp.write' : 'mcp.read',
                 cutovers: $write ? [AgentDeploymentFlags::PACKAGES] : [],
-                manager: true,
+                // A client's contacts read their own services (API-5); everything else is the workspace's managers'.
+                manager: ! in_array($id, ServicePackageOperations::CLIENT_OPERATIONS, true),
                 input: $write ? SchemaRef::openApi($request) : null,
                 output: SchemaRef::openApi($response),
                 availability: [AgentDeploymentFlags::SERVICE_PACKAGES]);

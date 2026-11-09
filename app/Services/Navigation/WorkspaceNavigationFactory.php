@@ -267,6 +267,8 @@ final class WorkspaceNavigationFactory
             notes: route('portal.collaboration.index', [$company, 'kind' => 'note'], absolute: false),
             discussions: route('portal.collaboration.index', [$company, 'kind' => 'discussion'], absolute: false),
             billing: route('portal.billing', $company, absolute: false),
+            // A route of a feature that is switched off is not a destination (X-1).
+            services: EnsureServicePackagesEnabled::enabled() ? route('portal.services', $company, absolute: false) : null,
         );
     }
 

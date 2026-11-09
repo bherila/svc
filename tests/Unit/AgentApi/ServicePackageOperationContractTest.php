@@ -157,6 +157,8 @@ final class ServicePackageOperationContractTest extends TestCase
             'ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestResponse',
             'ServicePackageRequestListResponse', 'ServicePackageRequestApprovalResponse',
             'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
+            'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse', 'ServicePackageSignupPayment',
+            'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
         ], ServicePackageOperations::components());
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Unknown service package component ServicePackageSecret.');
@@ -327,6 +329,46 @@ final class ServicePackageOperationContractTest extends TestCase
         foreach (['ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestApprovalResponse'] as $component) {
             $this->assertStringNotContainsString('invitation', strtolower(json_encode(ServicePackageOperations::schema($component), JSON_THROW_ON_ERROR)), $component);
         }
+    }
+
+    /**
+     * Enrollments are the owners' and admins'; a client's own services are
+     * the one family a portal contact is offered (API-5). Accepting and adding
+     * are not agent operations at all.
+     */
+    #[Requirement('API-1', 'API-2', 'API-5')]
+    public function test_each_enrollment_and_client_service_operation_is_declared_once(): void
+    {
+        $catalog = new AgentOperationCatalog;
+        $contract = $catalog->contract();
+        foreach ([
+            'enrollments.list' => ['GET', 'enrollments.index', Effect::Read, '/workspaces/{workspace}/enrollments', true],
+            'enrollments.get' => ['GET', 'enrollments.show', Effect::Read, '/workspaces/{workspace}/enrollments/{enrollment}', true],
+            'enrollments.activate' => ['POST', 'enrollments.activate', Effect::ExternalWrite, '/workspaces/{workspace}/enrollments/{enrollment}/activate', true],
+            'client_services.list' => ['GET', 'client-services.index', Effect::Read, '/workspaces/{workspace}/client-services', false],
+            'client_services.get' => ['GET', 'client-services.show', Effect::Read, '/workspaces/{workspace}/client-services/{service}', false],
+        ] as $id => [$method, $route, $effect, $path, $manager]) {
+            $this->assertNull($catalog->registry()->find($id), "{$id} exists only while service packages are on");
+            $operation = $contract->find($id);
+            $this->assertNotNull($operation, $id);
+            $write = $method !== 'GET';
+            $this->assertSame($effect, $operation->effect, $id);
+            $this->assertSame($manager, $catalog->isManagerOnly($id), $id);
+            $this->assertSame([AgentMcpPackageTools::class, ServicePackageOperations::DEFINITIONS[$id][0]], $operation->mcp?->handler, $id);
+            $this->assertSame('agent-api.v1.'.$route, $operation->rest?->routeName, $id);
+            $this->assertSame($path, $operation->rest->path, $id);
+            $this->assertSame($write ? ['packages:write', 'packages:read'] : ['packages:read'], $operation->requirement->scopes, $id);
+            $this->assertSame($write, $operation->safety->expectedVersion, $id);
+            $this->assertSame($write, $operation->safety->confirm, $id);
+        }
+        $this->assertSame(['client_services.list', 'client_services.get'], ServicePackageOperations::CLIENT_OPERATIONS);
+        foreach (['enrollments.accept', 'client_services.add', 'client_services.accept'] as $absent) {
+            $this->assertNull($contract->find($absent), $absent.' is the portal\'s, not an agent operation');
+        }
+        // What a client reads carries none of the operator's settings.
+        $terms = array_keys(ServicePackageOperations::schema('ClientServiceTerms')['properties']);
+        $this->assertSame([], array_values(array_intersect($terms, ['invoice_issuing', 'payment_lapse_days', 'require_autopay', 'intake_questions'])));
+        $this->assertSame(['data', 'addable_packages', 'meta'], ServicePackageOperations::schema('ClientServiceListResponse')['required']);
     }
 
     /** The request schemas are the workflow's own rules, so the contract accepts exactly what it validates. */

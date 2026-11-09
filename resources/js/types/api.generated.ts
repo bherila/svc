@@ -415,6 +415,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    '/workspaces/{workspace}/client-services/{service}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description For a client's portal contact: read one of your company's services with its terms, status, acceptance and portal links. Another company's service, or one outside your projects, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['client_services.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/client-services': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description For a client's portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date) and portal links; a contact limited to some projects sees only those projects' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['client_services.list'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     '/workspaces/{workspace}/clients/{client}/archive': {
         parameters: {
             query?: never;
@@ -948,6 +982,57 @@ export interface paths {
         };
         /** @description Manager-only FIFO whole-entry deferred settlement quote. Supply exactly one of hours or amount (gross minor units before discount). round_up optionally includes the next entry. Contract rates are unchanged; any discount requires a reason. Entry-backed deferred work only; carried ledger balances remain for termination. No writes. */
         get: operations['deferred_backlog.preview'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/enrollments/{enrollment}/activate': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Only after explicit user confirmation, start a service the client has accepted that waits for review (status awaiting_review): its agreement starts today, is activated through the same rule as agreements.activate and signed as the contact who accepted, the enrollment becomes active, and the client is emailed. Activating one already active changes nothing. Refused with package_enrollment_not_awaiting_review before acceptance (or while a payment is due), and package_activation_conflict when the agreement would overlap another active agreement on its project. Current version and confirm: true required. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED. */
+        post: operations['enrollments.activate'];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/enrollments/{enrollment}': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date) and the version to send with enrollments.activate. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['enrollments.get'];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    '/workspaces/{workspace}/enrollments': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List the workspace's package enrollments (each client's subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement's page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up's own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. Workspace owners and admins only: anyone else, a client's own contacts included (they use client_services), and any other workspace's enrollment, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. */
+        get: operations['enrollments.list'];
         put?: never;
         post?: never;
         delete?: never;
@@ -3558,6 +3643,56 @@ export interface components {
              */
             watermark: string;
         };
+        ClientAddablePackage: {
+            id: components['schemas']['Uuid'];
+            name: string;
+            summary: string | null;
+            currency: string;
+            /** @enum {string} */
+            billing_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'one_time';
+            cycle_amount: number;
+            setup_fee_amount: number | null;
+            minimum_term_months: number | null;
+            /** Format: uri */
+            url: string | null;
+            add_refusal: {
+                /** @enum {string} */
+                code:
+                    | 'package_link_name_taken'
+                    | 'package_not_published'
+                    | 'package_request_refused'
+                    | 'package_request_not_open'
+                    | 'package_request_not_closed'
+                    | 'package_not_offered'
+                    | 'package_invitations_off'
+                    | 'package_address_held_elsewhere'
+                    | 'package_not_addable'
+                    | 'package_offer_not_open'
+                    | 'package_already_accepted'
+                    | 'package_payment_unavailable'
+                    | 'package_collected_in_square'
+                    | 'package_first_period_unbillable'
+                    | 'package_enrollment_not_awaiting_review'
+                    | 'package_activation_conflict'
+                    | 'package_agreement_starts_with_service'
+                    | 'package_autopay_currency_mismatch'
+                    | 'package_version_changed'
+                    | 'package_agreement_terms_fixed'
+                    | 'package_nothing_to_publish'
+                    | 'package_nothing_priced'
+                    | 'package_payment_needs_stripe'
+                    | 'package_auto_issue_needs_fixed_price'
+                    | 'package_autopay_needs_limit'
+                    | 'package_pay_before_activation_needs_charge'
+                    | 'package_setup_fee_at_signup_needs_setup_fee'
+                    | 'package_minimum_term_needs_recurring_cadence'
+                    | 'package_first_period_needs_recurring_cadence'
+                    | 'package_currency_not_chargeable'
+                    | 'package_stripe_currencies_unknown';
+                message: string;
+            } | null;
+        };
         ClientBusinessContact: {
             /** Format: uuid */
             id: string;
@@ -3637,6 +3772,84 @@ export interface components {
             reply: string | null;
             /** Format: date-time */
             settled_at: string | null;
+        };
+        ClientService: {
+            id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            status:
+                | 'offered'
+                | 'awaiting_payment'
+                | 'awaiting_review'
+                | 'active'
+                | 'lapsed'
+                | 'withdrawn';
+            company: {
+                id: components['schemas']['Uuid'];
+                name: string;
+            };
+            project_id: components['schemas']['Uuid'];
+            name: string;
+            version_number: number;
+            version_changed: boolean;
+            terms: components['schemas']['ClientServiceTerms'];
+            acceptance: {
+                /** Format: date-time */
+                accepted_at: string;
+                signer_name: string;
+                signer_title: string | null;
+            } | null;
+            /** Format: date-time */
+            activated_at: string | null;
+            /** Format: uri */
+            agreement_url: string | null;
+            payment: components['schemas']['ServicePackageSignupPayment'];
+            /** Format: uri */
+            url: string;
+        };
+        ClientServiceListResponse: {
+            data: components['schemas']['ClientService'][];
+            addable_packages: components['schemas']['ClientAddablePackage'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ClientServiceResponse: {
+            data: components['schemas']['ClientService'];
+        };
+        ClientServiceTerms: {
+            name: string;
+            summary: string | null;
+            body_markdown: string | null;
+            agreement_text: string | null;
+            currency: string;
+            /** @enum {string} */
+            billing_cadence:
+                'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'one_time';
+            cycle_amount: number;
+            setup_fee_amount: number | null;
+            components: {
+                description: string;
+                /** @enum {string} */
+                kind: 'recurring' | 'setup_fee';
+                /** @enum {string} */
+                cadence:
+                    | 'monthly'
+                    | 'quarterly'
+                    | 'semi_annual'
+                    | 'annual'
+                    | 'one_time';
+                amount: number;
+            }[];
+            hourly_rate_amount: number | null;
+            retainer_amount: number | null;
+            retainer_minutes: number | null;
+            rollover_months: number | null;
+            /** @enum {string} */
+            activation_mode: 'automatic' | 'review';
+            notice_days: number;
+            minimum_term_months: number | null;
+            /** @enum {string} */
+            cancellation_mode: 'none' | 'request' | 'self_serve';
         };
         CollaborationAttachment: {
             /** Format: uuid */
@@ -6070,6 +6283,18 @@ export interface components {
                     | 'package_not_offered'
                     | 'package_invitations_off'
                     | 'package_address_held_elsewhere'
+                    | 'package_not_addable'
+                    | 'package_offer_not_open'
+                    | 'package_already_accepted'
+                    | 'package_payment_unavailable'
+                    | 'package_collected_in_square'
+                    | 'package_first_period_unbillable'
+                    | 'package_enrollment_not_awaiting_review'
+                    | 'package_activation_conflict'
+                    | 'package_agreement_starts_with_service'
+                    | 'package_autopay_currency_mismatch'
+                    | 'package_version_changed'
+                    | 'package_agreement_terms_fixed'
                     | 'package_nothing_to_publish'
                     | 'package_nothing_priced'
                     | 'package_payment_needs_stripe'
@@ -6077,7 +6302,10 @@ export interface components {
                     | 'package_autopay_needs_limit'
                     | 'package_pay_before_activation_needs_charge'
                     | 'package_setup_fee_at_signup_needs_setup_fee'
-                    | 'package_minimum_term_needs_recurring_cadence';
+                    | 'package_minimum_term_needs_recurring_cadence'
+                    | 'package_first_period_needs_recurring_cadence'
+                    | 'package_currency_not_chargeable'
+                    | 'package_stripe_currencies_unknown';
                 message: string;
             }[];
             version: components['schemas']['Version'];
@@ -6147,6 +6375,64 @@ export interface components {
                 kind: 'short_text' | 'paragraph';
                 required?: boolean | null;
             }[];
+        };
+        ServicePackageEnrollment: {
+            id: components['schemas']['Uuid'];
+            /** @enum {string} */
+            status:
+                | 'offered'
+                | 'awaiting_payment'
+                | 'awaiting_review'
+                | 'active'
+                | 'lapsed'
+                | 'withdrawn';
+            package: {
+                id: components['schemas']['Uuid'];
+                link_name: string;
+                name: string;
+            };
+            offered_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            };
+            accepted_version: {
+                id: components['schemas']['Uuid'];
+                number: number;
+            } | null;
+            version_changed: boolean;
+            client: {
+                id: components['schemas']['Uuid'];
+                name: string;
+            };
+            project_id: components['schemas']['Uuid'];
+            agreement_id: components['schemas']['Uuid'];
+            /** Format: uri */
+            agreement_url: string;
+            /** Format: uuid */
+            request_id: string | null;
+            /** Format: date-time */
+            offered_at: string;
+            acceptance: {
+                /** Format: date-time */
+                accepted_at: string;
+                signer_name: string;
+                signer_title: string | null;
+            } | null;
+            /** Format: date-time */
+            activated_at: string | null;
+            /** Format: date-time */
+            lapsed_at: string | null;
+            payment: components['schemas']['ServicePackageSignupPayment'];
+            version: components['schemas']['Version'];
+        };
+        ServicePackageEnrollmentListResponse: {
+            data: components['schemas']['ServicePackageEnrollment'][];
+            meta: {
+                next_cursor: string | null;
+            };
+        };
+        ServicePackageEnrollmentResponse: {
+            data: components['schemas']['ServicePackageEnrollment'];
         };
         ServicePackageEnrollmentSummary: {
             id: components['schemas']['Uuid'];
@@ -6239,6 +6525,33 @@ export interface components {
         };
         ServicePackageResponse: {
             data: components['schemas']['ServicePackage'];
+        };
+        ServicePackageSignupPayment: {
+            /** @enum {string} */
+            state: 'not_charged' | 'not_invoiced' | 'due' | 'paid' | 'voided';
+            waiting_for: ('payment' | 'autopay')[];
+            signup_invoice: {
+                id: components['schemas']['Uuid'];
+                number: string;
+                /** @enum {string} */
+                status:
+                    | 'draft'
+                    | 'issued'
+                    | 'partially_paid'
+                    | 'paid'
+                    | 'disputed'
+                    | 'void';
+                currency: string;
+                total_amount: number;
+                balance_amount: number;
+                /** Format: uri */
+                url: string | null;
+            } | null;
+            requires_autopay: boolean;
+            autopay_limit_amount: number | null;
+            pay_before_activation: boolean;
+            /** Format: date */
+            lapses_on: string | null;
         };
         ServicePackageTerms: {
             name: string;
@@ -9241,6 +9554,147 @@ export interface operations {
             default: components['responses']['Error'];
         };
     };
+    'client_services.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your service */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientServiceResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or service is not visible to the caller: it is another company's, outside the caller's projects, or the caller is not a portal contact of its company. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description company_id or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'client_services.list': {
+        parameters: {
+            query?: {
+                company_id?: string;
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your services and the packages you could add */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ClientServiceListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or service is not visible to the caller: it is another company's, outside the caller's projects, or the caller is not a portal contact of its company. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description company_id or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
     'clients.archive': {
         parameters: {
             query?: never;
@@ -11976,6 +12430,237 @@ export interface operations {
                 };
                 content: {
                     'application/json': components['schemas']['DeferredBuyDownPreviewResponse'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'enrollments.activate': {
+        parameters: {
+            query?: never;
+            header: {
+                'Idempotency-Key': components['parameters']['IdempotencyKey'];
+            };
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                enrollment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                'application/json': components['schemas']['ServicePackageConfirmRequest'];
+            };
+        };
+        responses: {
+            /** @description Package enrollment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageEnrollmentResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or enrollment is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description expected_version is no longer current (read the enrollment again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_enrollment_not_awaiting_review or package_activation_conflict. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'enrollments.get': {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+                enrollment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package enrollment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageEnrollmentResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or enrollment is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            default: components['responses']['Error'];
+        };
+    };
+    'enrollments.list': {
+        parameters: {
+            query?: {
+                status?:
+                    | 'offered'
+                    | 'awaiting_payment'
+                    | 'awaiting_review'
+                    | 'active'
+                    | 'lapsed'
+                    | 'withdrawn';
+                limit?: components['parameters']['Limit'];
+                cursor?: components['parameters']['Cursor'];
+            };
+            header?: never;
+            path: {
+                workspace: components['parameters']['WorkspaceId'];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Package enrollments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['ServicePackageEnrollmentListResponse'];
+                };
+            };
+            /** @description Not signed in, or the token is missing, expired or revoked. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The token lacks the operation's scopes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description The workspace or enrollment is not visible to the caller, or the caller is not a workspace owner or admin. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description status or limit is out of range, or the cursor is malformed or belongs to another query. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
+                };
+            };
+            /** @description Too many requests (retry after Retry-After). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    'application/json': components['schemas']['Error'];
                 };
             };
             default: components['responses']['Error'];

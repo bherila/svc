@@ -9,8 +9,11 @@ use App\Models\Workspace;
 use App\Services\AgentApi\AgentMutationContextFactory;
 use App\Services\AgentApi\AgentPackageMutationAction;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
+use App\Services\Packages\ClientServiceReadService;
+use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
+use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use Illuminate\Http\JsonResponse;
@@ -18,9 +21,9 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * The service package and sign-up request operations
- * (docs/service-packages.md); every decision is the read services' or the
- * workflows'.
+ * The service package, sign-up request, enrollment and client service
+ * operations (docs/service-packages.md); every decision is the read services'
+ * or the workflows'.
  */
 final class AgentPackageController extends Controller
 {
@@ -29,6 +32,8 @@ final class AgentPackageController extends Controller
         private readonly PackageRequestReadService $requestReads,
         private readonly AgentPackageMutationAction $writes,
         private readonly AgentMutationContextFactory $contexts,
+        private readonly PackageEnrollmentReadService $enrollmentReads,
+        private readonly ClientServiceReadService $services,
     ) {}
 
     public function index(Request $request, Workspace $workspace): JsonResponse
@@ -100,6 +105,44 @@ final class AgentPackageController extends Controller
         return response()->json(['data' => $this->requestReads->get($user, $workspace, $packageRequest)]);
     }
 
+    public function enrollments(Request $request, Workspace $workspace): JsonResponse
+    {
+        [$actor, $status, $limit, $cursor] = $this->listing($request, EnrollmentStatus::class);
+
+        return response()->json($this->enrollmentReads->list($actor, $workspace, $status, $limit, $cursor));
+    }
+
+    public function showEnrollment(Request $request, Workspace $workspace, string $enrollment): JsonResponse
+    {
+        return response()->json(['data' => $this->enrollmentReads->get($this->reader($request), $workspace, $enrollment)]);
+    }
+
+    public function activateEnrollment(Request $request, Workspace $workspace, string $enrollment): JsonResponse
+    {
+        $context = $this->contexts->fromAuthenticatedClient($request);
+        $this->writes->activate($context->user, $workspace, $context->oauthClientId, $context->idempotencyKey, $enrollment, $request->all());
+
+        return response()->json(['data' => $this->enrollmentReads->get($context->user, $workspace, $enrollment)]);
+    }
+
+    /** A client's own services (API-5): the caller's companies and projects only. */
+    public function clientServices(Request $request, Workspace $workspace): JsonResponse
+    {
+        $actor = $this->reader($request);
+        $data = $request->validate([
+            'company_id' => ['nullable', 'string', 'uuid'],
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:'.ServicePackageOperations::MAX_LIMIT],
+            'cursor' => ['nullable', 'string', 'max:2048'],
+        ]);
+
+        return response()->json($this->services->list($actor, $workspace, $data['company_id'] ?? null, (int) ($data['limit'] ?? 25), $data['cursor'] ?? null));
+    }
+
+    public function showClientService(Request $request, Workspace $workspace, string $service): JsonResponse
+    {
+        return response()->json(['data' => $this->services->get($this->reader($request), $workspace, $service)]);
+    }
+
     private function mutate(Request $request, Workspace $workspace, string $operation, ?string $package, int $status = 200): JsonResponse
     {
         $context = $this->contexts->fromAuthenticatedClient($request);
@@ -127,7 +170,7 @@ final class AgentPackageController extends Controller
     /**
      * A list's caller and its validated filters.
      *
-     * @template T of PackageStatus|PackageRequestStatus
+     * @template T of PackageStatus|PackageRequestStatus|EnrollmentStatus
      *
      * @param  class-string<T>  $statuses
      * @return array{User|AgentPrincipal, T|null, int, string|null}

@@ -1439,6 +1439,74 @@ try {
 
         await capture(screen, 'loaded', width, false);
 
+        if (screen === 'packages_portal_services') {
+            // Read as the company's contact: the table, one badge per row, and the add cards.
+            await expect(page.getByRole('heading', { name: 'Your services' })).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Add a service' })).toBeVisible();
+
+            // The client tier's strip shows from xl; narrower, the tabs are in the section menu.
+            if (width >= 1280) {
+                await expect(page.getByRole('navigation', { name: 'Client sections' }).getByRole('link', { name: 'Services' })).toBeVisible();
+            }
+
+            const rows = await page.locator('main tbody tr').count();
+
+            if (rows !== 3) {
+                failures.push(`${screen} at ${width}px lists ${rows} services, expected 3.`);
+            }
+
+            for (const forbidden of ['awaiting_review', 'Awaiting_review']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
+        if (screen === 'packages_portal_review') {
+            await expect(page.getByText(/^Updated since you were offered:/)).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Agreement text', exact: true })).toBeVisible();
+            await page.getByRole('button', { name: 'Accept and sign' }).click();
+            await expect(page.getByText('Enter your full name.')).toBeVisible();
+            await capture(screen, 'unsigned', width, false);
+            await page.getByLabel('Full name').fill('Signer'.repeat(20));
+            await page.getByLabel('Title (optional)').fill('Title'.repeat(20));
+            await page.getByRole('checkbox').check();
+            await page.locator('details > summary').click();
+            await capture(screen, 'filled', width, false);
+        }
+
+        if (
+            screen === 'packages_portal_checkout_estimate' ||
+            screen === 'packages_portal_checkout_invoice'
+        ) {
+            // The checkout card: what sign-up charges, line by line, and autopay consent.
+            const card = page.getByLabel('Due now', { exact: true });
+            await expect(card).toBeVisible();
+            await expect(card.getByText('Autopay required')).toBeVisible();
+            await expect(card.getByRole('button', { name: 'Save a card' })).toBeVisible();
+
+            if (screen === 'packages_portal_checkout_estimate') {
+                await expect(card.getByText('Due now (estimate)')).toBeVisible();
+            } else {
+                await expect(card.getByText('Due now (estimate)')).toHaveCount(0);
+                await expect(card.getByRole('link', { name: 'Open the invoice to pay' })).toBeVisible();
+            }
+
+            for (const forbidden of ['awaiting_payment', 'Awaiting_payment', 'setup_fee', 'first_period']) {
+                if (text.includes(forbidden)) {
+                    failures.push(`${screen} at ${width}px prints the stored value "${forbidden}".`);
+                }
+            }
+        }
+
+        if (screen === 'packages_operator_agreement') {
+            await page.getByRole('button', { name: 'Activate service…' }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await capture(screen, 'activate-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        }
+
         if (screen === 'packages_public') {
             // The server's own submit is not called: the form is shown filled, with the
             // oversized values a visitor could type, then with a refusal and with the sent state.
@@ -2390,6 +2458,11 @@ try {
                   'packages_catalog',
                   'packages_public',
                   'packages_public_short',
+                  'packages_portal_services',
+                  'packages_portal_review',
+                  'packages_portal_checkout_estimate',
+                  'packages_portal_checkout_invoice',
+                  'packages_operator_agreement',
               ]
             : paletteOnly
             ? ['palette_owner', 'palette_owner_client', 'palette_member', 'palette_portal']

@@ -22,6 +22,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useSetupIntentReturn } from '@/hooks/use-setup-intent-return';
+import type { SetupConfirmation } from '@/hooks/use-setup-intent-return';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { loadStripe } from '@/lib/stripe-js';
@@ -37,6 +39,12 @@ export type SavedMethod = {
     is_default: boolean;
     default_href: string | null;
     remove_href: string | null;
+    /**
+     * The server's warning to show before removing this method, when a
+     * service requires autopay and removing it turns autopay off (EDGE-2);
+     * null when there is nothing to warn about.
+     */
+    remove_warning?: string | null;
 };
 
 /** Where the add form talks to the server, and the key Stripe's form is mounted with. Null when the viewer may not add. */
@@ -46,10 +54,7 @@ export type MethodSetup = {
     publishable_key: string;
 };
 
-type Confirmation = {
-    outcome: 'saved' | 'pending' | 'failed';
-    message: string;
-};
+type Confirmation = SetupConfirmation;
 
 const RESULTS: Record<string, string> = {
     default: 'Default payment method changed.',
@@ -85,43 +90,9 @@ export function PaymentMethodsCard({
     const [removing, setRemoving] = useState<SavedMethod | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [returned, setReturned] = useState<Confirmation | null>(null);
 
-    // Stripe sends a client back here after a bank or 3-D Secure redirect with
-    // the SetupIntent in the address: read it back, then tidy the address.
-    useEffect(() => {
-        if (setup === null) {
-            return;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const intent = params.get('setup_intent');
-
-        if (intent === null || !/^seti_[A-Za-z0-9_]+$/.test(intent)) {
-            return;
-        }
-
-        const clean = new URL(window.location.href);
-        [
-            'setup_intent',
-            'setup_intent_client_secret',
-            'redirect_status',
-        ].forEach((name) => clean.searchParams.delete(name));
-        window.history.replaceState(null, '', clean.pathname + clean.search);
-        void apiRequest<Confirmation>('POST', setup.confirm_href, {
-            setup_intent: intent,
-        }).then((response) => {
-            setReturned(
-                response.ok
-                    ? response.data
-                    : { outcome: 'failed', message: response.message },
-            );
-
-            if (response.ok) {
-                void refreshPageProps({ requireSuccess: false });
-            }
-        });
-    }, [setup]);
+    // Stripe sends a client back here after a bank or 3-D Secure redirect.
+    const returned = useSetupIntentReturn(setup?.confirm_href ?? null);
 
     const makeDefault = (method: SavedMethod) => {
         if (method.default_href === null || busy) {
@@ -346,6 +317,11 @@ export function PaymentMethodsCard({
 
 /** What removing this method changes, said before it is done. */
 function removalWarning(method: SavedMethod, autopayEnabled: boolean): string {
+    // The server's own sentence wins: it knows a service requires autopay (EDGE-2).
+    if (method.remove_warning) {
+        return method.remove_warning;
+    }
+
     if (!method.is_default) {
         return 'It will no longer be available to pay invoices. Your default method and autopay are not affected.';
     }
@@ -362,7 +338,7 @@ type Phase = 'consent' | 'starting' | 'ready' | 'saving' | 'done';
  * future payments, then enters it in Stripe's own form: SVC receives only the
  * outcome, read back from Stripe by the server.
  */
-function AddMethodDialog({
+export function AddMethodDialog({
     providerName,
     companyName,
     setup,

@@ -25,6 +25,9 @@ use App\Models\ClientTimeEntry;
 use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
 use App\Models\PaletteRecent;
+use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -42,8 +45,10 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Mcp\McpCredentialSettings;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Review\ReviewerGrants;
 use App\Services\SharedProjects\SharedProjectParticipations;
@@ -63,6 +68,7 @@ use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
+use App\Support\Packages\EnrollmentVersions;
 use App\Support\Packages\PackageTerms;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
@@ -1358,6 +1364,99 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $requests->decline($owner, $workspace, $erased->refresh());
     $requests->erase($owner, $workspace, $erased->refresh());
 
+    // Slice 3a: the client's Services tab and review-and-sign page, read as the company
+    // contact, and the operator's agreement page for a signed service waiting for review.
+    // One offer was made and then a new version published (EDGE-7), one signed service waits
+    // for review, one signed and started on its own; every name is oversized.
+    $enrollments = app(PackageEnrollmentWorkflow::class);
+    $signer = ['signer_name' => str_repeat('Signer', 20), 'signer_title' => str_repeat('Title', 20), 'accepted_terms' => true];
+    // A signature on what the review page shows now (the version the client reviewed).
+    $signs = static function (ServicePackageEnrollment $enrollment) use ($signer): array {
+        $package = ServicePackage::query()->whereKey($enrollment->service_package_id)->sole();
+
+        return [...$signer, 'reviewed_version' => ServicePackageVersion::query()->whereKey(EnrollmentVersions::shown($package, $enrollment->refresh()))->sole()->public_id];
+    };
+    $portalPackage = $packages->create($owner, $workspace, [
+        ...$oversized, 'name' => 'Offered '.$word, 'link_name' => 'offered-care', 'is_listed' => false,
+        'billing_cadence' => 'monthly', 'activation_mode' => 'review',
+    ]);
+    $packages->publish($owner, $workspace, $portalPackage);
+    $offered = $enrollments->addFromPortal($squarePortalContact, $company, $portalPackage->refresh());
+    $packages->update($owner, $workspace, $portalPackage->refresh(), [
+        'notice_days' => 45, 'rollover_months' => 3,
+        'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 5500, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => 'Setup and migration', 'cadence' => 'one_time', 'amount' => 25000, 'quantity' => 1, 'is_taxable' => false],
+        ],
+    ]);
+    $packages->publish($owner, $workspace, $portalPackage->refresh());
+    $reviewPackage = $packages->create($owner, $workspace, [
+        'name' => 'Review '.$word, 'link_name' => 'review-care', 'is_listed' => false, 'activation_mode' => 'review',
+        'agreement_text' => str_repeat('This agreement covers the services described above. ', 30),
+        'components' => [['kind' => 'recurring', 'description' => 'Care plan', 'cadence' => 'monthly', 'amount' => 64500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $reviewPackage);
+    $waiting = $enrollments->addFromPortal($squarePortalContact, $company, $reviewPackage->refresh());
+    $waiting = $enrollments->accept($squarePortalContact, $company, $waiting, $signs($waiting));
+    $autoPackage = $packages->create($owner, $workspace, [
+        'name' => 'Automatic '.$word, 'link_name' => 'automatic-care', 'is_listed' => false, 'activation_mode' => 'automatic',
+        'components' => [['kind' => 'recurring', 'description' => 'Hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $autoPackage);
+    $started = $enrollments->addFromPortal($squarePortalContact, $company, $autoPackage->refresh());
+    $enrollments->accept($squarePortalContact, $company, $started, $signs($started));
+
+    // Slice 3b: the sign-up checkout card on the review page. One package charges a setup fee and
+    // the first period and requires autopay; one offer is still an estimate, one accepted service
+    // waits for payment (the invoice's own lines). The checkout asks for payment, so the
+    // workspace needs a Stripe connection, written locally: no seed here asks Stripe. A version
+    // that takes money is published by writing the publish the workflow would, because the
+    // workflow asks Stripe which currencies the account can charge before it publishes. A
+    // dedicated company keeps the first period clear of every other invoice the seed writes.
+    if (app(PaymentConnectionResolver::class)->stripe($workspace) === null) {
+        app(WorkspacePaymentConnections::class)->connect($workspace, PaymentProcessor::Stripe, ConnectionOrigin::Entered, $owner, [
+            'external_account_id' => 'acct_synthetic_packages', 'display_name' => 'Synthetic', 'environment' => 'test',
+            'secret' => 'sk_test_'.str_repeat('synthetic', 4).'0003', 'webhook_secret' => 'whsec_synthetic',
+            'publishable_key' => 'pk_test_layout_synthetic',
+        ]);
+    }
+    $checkoutCompany = ClientCompany::query()->create([
+        'workspace_id' => $workspace->id, 'name' => str_repeat('SyntheticCheckoutClient', 5), 'slug' => 'layout-checkout',
+        'billing_email' => 'billing@checkout.example.test', 'currency' => 'USD',
+    ]);
+    $checkoutContact = User::factory()->create([
+        'name' => str_repeat('SyntheticCheckoutContact', 5), 'email' => 'layout-checkout@client.example.test',
+        'oauth_provider' => 'synthetic', 'oauth_subject' => 'synthetic-checkout-contact',
+    ]);
+    app(WorkspaceAccess::class)->grantPortal(AccessMutationContext::system(), $checkoutCompany, $checkoutContact, PortalAccessScope::Company, []);
+    // Two packages: a company holds one open offer per package, so the estimate and the
+    // accepted sign-up need one each.
+    $checkoutPackageInput = static fn (string $name, string $link): array => [
+        ...$oversized, 'name' => $name, 'link_name' => $link, 'is_listed' => false,
+        'billing_cadence' => 'monthly', 'activation_mode' => 'automatic', 'invoice_issuing' => 'automatic',
+        'charge_setup_fee_at_signup' => true, 'charge_first_period' => true, 'require_autopay' => true,
+        'autopay_limit_amount' => 150_000, 'pay_before_activation' => true,
+        'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting '.str_repeat('RecurringLineWithoutBreaks', 4), 'cadence' => 'monthly', 'amount' => 54_500, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => 'Setup '.str_repeat('SetupFeeLineWithoutBreaks', 4), 'cadence' => 'one_time', 'amount' => 25_000, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'setup_fee', 'description' => str_repeat('SecondSetupFeeWithoutBreaks', 6), 'cadence' => 'one_time', 'amount' => 12_500, 'quantity' => 1, 'is_taxable' => false],
+        ],
+    ];
+    $publishCheckoutPackage = static function (ServicePackage $package) use ($owner): ServicePackage {
+        $version = $package->refresh()->versions()->where('draft_marker', 1)->firstOrFail();
+        $version->forceFill(['draft_marker' => null, 'published_at' => now(), 'published_by_user_id' => $owner->id])->save();
+        $package->forceFill(['status' => 'published', 'published_version_id' => $version->id])->save();
+
+        return $package->refresh();
+    };
+    $estimatePackage = $publishCheckoutPackage($packages->create($owner, $workspace, $checkoutPackageInput('Checkout estimate '.$word, 'estimate-'.str_repeat('checkoutname', 4))));
+    $checkoutPackage = $publishCheckoutPackage($packages->create($owner, $workspace, $checkoutPackageInput('Checkout '.$word, 'checkout-'.str_repeat('checkoutname', 4))));
+    $checkoutOffered = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $estimatePackage);
+    $checkoutAccepted = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage);
+    $checkoutAccepted = $enrollments->accept($checkoutContact, $checkoutCompany, $checkoutAccepted, $signs($checkoutAccepted));
+    $workspace->refresh();
+    $waitingAgreement = $waiting->refresh()->agreement;
+
     $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
     $packagePages = [
         'packages_list' => route('packages.index', $workspace, absolute: false),
@@ -1369,6 +1468,18 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
         'packages_catalog' => route('packages.public.catalog', $workspace->package_catalog_token, absolute: false),
         'packages_public' => route('packages.public.show', [$workspace->package_catalog_token, $live->link_name], absolute: false),
         'packages_public_short' => route('packages.public.show', [$workspace->package_catalog_token, $unlisted->link_name], absolute: false),
+        'packages_portal_services' => route('portal.services', $company, absolute: false),
+        'packages_portal_review' => route('portal.services.show', [$company, $offered->public_id], absolute: false),
+        'packages_operator_agreement' => route('clients.agreement', [$workspace, $company, $waitingAgreement], absolute: false),
+        'packages_portal_checkout_estimate' => route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false),
+        'packages_portal_checkout_invoice' => route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false),
+        // Read as the company's contact rather than the owner.
+        'package_viewers' => [
+            route('portal.services.show', [$checkoutCompany, $checkoutOffered->public_id], absolute: false) => $checkoutContact->id,
+            route('portal.services.show', [$checkoutCompany, $checkoutAccepted->public_id], absolute: false) => $checkoutContact->id,
+            route('portal.services', $company, absolute: false) => $squarePortalContact->id,
+            route('portal.services.show', [$company, $offered->public_id], absolute: false) => $squarePortalContact->id,
+        ],
     ];
 }
 

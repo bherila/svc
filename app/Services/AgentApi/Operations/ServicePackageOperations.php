@@ -3,6 +3,9 @@
 namespace App\Services\AgentApi\Operations;
 
 use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Services\Packages\ClientServiceReadService;
+use App\Services\Packages\PackageEnrollmentReadService;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageReadService;
@@ -10,6 +13,7 @@ use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\FirstCycleProration;
+use App\Support\Billing\InvoiceStatus;
 use App\Support\Packages\CancellationMode;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\IntakeQuestionKind;
@@ -21,6 +25,8 @@ use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use App\Support\Packages\ServicePackageRules;
+use App\Support\Packages\SignupPaymentState;
+use App\Support\Packages\SignupWait;
 use BackedEnum;
 use InvalidArgumentException;
 use LogicException;
@@ -29,13 +35,18 @@ use Stringable;
 /**
  * The service package operations (docs/service-packages.md, "MCP and REST
  * surface"): list, read, create, edit, publish and retire a workspace's
- * packages, and list, read, approve, decline and erase the sign-up requests
- * visitors make for them, as an owner or admin. Code-owned schemas,
+ * packages, list, read, approve, decline and erase the sign-up requests
+ * visitors make for them, and list, read and activate enrollments, as an owner
+ * or admin; and, for a client's portal contacts, read their own services
+ * (`client_services.*`, API-5). Accepting and adding a package are the
+ * portal's, never an agent's. Code-owned schemas,
  * regenerated into the public contract by scripts/generate-package-contract.php.
  *
  * Nothing here decides anything about a package or a request: the routes call
  * {@see ServicePackageWorkflow}, {@see PackageRequestWorkflow},
- * {@see ServicePackageReadService} and {@see PackageRequestReadService}, and
+ * {@see ServicePackageReadService}, {@see PackageRequestReadService},
+ * {@see PackageEnrollmentWorkflow}, {@see PackageEnrollmentReadService} and
+ * {@see ClientServiceReadService}, and
  * the request schemas are generated from {@see ServicePackageRules} and
  * {@see self::DECISION_RULES}, the rules those workflows validate with, so the
  * contract cannot accept what they refuse.
@@ -60,6 +71,11 @@ final class ServicePackageOperations
         'package_requests.approve' => ['package-requests.approve', '/workspaces/{workspace}/package-requests/{request}/approve', [200]],
         'package_requests.decline' => ['package-requests.decline', '/workspaces/{workspace}/package-requests/{request}/decline', [200]],
         'package_requests.erase' => ['package-requests.erase', '/workspaces/{workspace}/package-requests/{request}/erase', [200]],
+        'enrollments.list' => ['enrollments.index', '/workspaces/{workspace}/enrollments', [200]],
+        'enrollments.get' => ['enrollments.show', '/workspaces/{workspace}/enrollments/{enrollment}', [200]],
+        'enrollments.activate' => ['enrollments.activate', '/workspaces/{workspace}/enrollments/{enrollment}/activate', [200]],
+        'client_services.list' => ['client-services.index', '/workspaces/{workspace}/client-services', [200]],
+        'client_services.get' => ['client-services.show', '/workspaces/{workspace}/client-services/{service}', [200]],
     ];
 
     /** Operation id => [MCP handler, title, method, response component, request component|null]. */
@@ -75,7 +91,15 @@ final class ServicePackageOperations
         'package_requests.approve' => ['approveRequest', 'Approve package sign-up request', 'POST', 'ServicePackageRequestApprovalResponse', 'ServicePackageRequestApproveRequest'],
         'package_requests.decline' => ['declineRequest', 'Decline package sign-up request', 'POST', 'ServicePackageRequestResponse', 'ServicePackageRequestDeclineRequest'],
         'package_requests.erase' => ['eraseRequest', 'Erase package sign-up request', 'POST', 'ServicePackageRequestResponse', 'ServicePackageConfirmRequest'],
+        'enrollments.list' => ['listEnrollments', 'List package enrollments', 'GET', 'ServicePackageEnrollmentListResponse', null],
+        'enrollments.get' => ['getEnrollment', 'Get package enrollment', 'GET', 'ServicePackageEnrollmentResponse', null],
+        'enrollments.activate' => ['activateEnrollment', 'Activate package enrollment', 'POST', 'ServicePackageEnrollmentResponse', 'ServicePackageConfirmRequest'],
+        'client_services.list' => ['listClientServices', 'List your services', 'GET', 'ClientServiceListResponse', null],
+        'client_services.get' => ['getClientService', 'Get your service', 'GET', 'ClientServiceResponse', null],
     ];
+
+    /** The client-side operations: a company contact's own services, read-only (API-5). Everything else is owner/admin only. */
+    public const array CLIENT_OPERATIONS = ['client_services.list', 'client_services.get'];
 
     /**
      * The rules of a request decision's own fields, beyond `expected_version`
@@ -113,6 +137,8 @@ final class ServicePackageOperations
             'ServicePackageRequest', 'ServicePackageEnrollmentSummary',
             'ServicePackageRequestResponse', 'ServicePackageRequestListResponse', 'ServicePackageRequestApprovalResponse',
             'ServicePackageRequestApproveRequest', 'ServicePackageRequestDeclineRequest',
+            'ServicePackageEnrollment', 'ServicePackageEnrollmentResponse', 'ServicePackageEnrollmentListResponse',
+            'ServicePackageSignupPayment', 'ClientService', 'ClientServiceTerms', 'ClientAddablePackage', 'ClientServiceResponse', 'ClientServiceListResponse',
         ];
     }
 
@@ -121,6 +147,7 @@ final class ServicePackageOperations
     {
         $who = 'Workspace owners and admins only: anyone else, and any other workspace\'s package, is answered as not found.';
         $whoRequests = 'Workspace owners and admins only: anyone else, and any other workspace\'s request, is answered as not found.';
+        $whoEnrollments = 'Workspace owners and admins only: anyone else, a client\'s own contacts included (they use client_services), and any other workspace\'s enrollment, is answered as not found.';
         $flag = 'Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.';
         $writeFlags = $flag.' Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.';
         // API-3: a reader of the tool description is told before it reads a word of the visitor's.
@@ -136,6 +163,11 @@ final class ServicePackageOperations
             'package_requests.get' => 'Read one sign-up request with its package, decision, client or suggested_client, and the version to send with a decision. '.$untrusted.' '.$whoRequests.' '.$flag,
             'package_requests.approve' => 'Only after explicit user confirmation, approve an open sign-up request: create the client (or attach it to the existing client named by client_id, such as suggested_client), give the subscription its own project and a draft agreement from the package\'s currently published version, and offer it to the contact. Someone who already signs in here is given company-wide portal access and an email; anyone else is invited through the identity provider as the token\'s user, and if the provider refuses, nothing is created. Answers with the request and its enrollment; never with the invitation or its link. Refused with package_request_not_open once decided, package_not_offered when the package is no longer published, package_invitations_off or package_address_held_elsewhere when the contact cannot be admitted. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
             'package_requests.decline' => 'Only after explicit user confirmation, decline an open sign-up request and email the visitor, with the optional reason (which the visitor reads). Creates nothing. Refused with package_request_not_open once decided. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
+            'enrollments.list' => 'List the workspace\'s package enrollments (each client\'s subscription to a package), newest first, optionally by status (offered, awaiting_payment, awaiting_review, active, lapsed or withdrawn). Each names its package, the version offered and the version accepted (version_changed when a newer version was published before acceptance), its client, project and agreement with the agreement\'s page, the request it answers, the acceptance: who signed (signer_name and signer_title as the client typed them) and when, and payment: where the sign-up\'s own payment stands (state not_charged, not_invoiced, due, paid or voided), the sign-up invoice with its page, what an enrollment awaiting_payment waits for (payment, autopay or both), the payment terms that decide it, and lapses_on, the day an open offer or unpaid acceptance lapses. An enrollment awaiting_review waits for enrollments.activate. No card, processor id, secret or invitation link is ever returned. '.$whoEnrollments.' '.$flag,
+            'enrollments.get' => 'Read one package enrollment with its package, versions, client, project, agreement, acceptance, payment (the sign-up invoice and its page, what it waits for and the lapse date) and the version to send with enrollments.activate. '.$whoEnrollments.' '.$flag,
+            'enrollments.activate' => 'Only after explicit user confirmation, start a service the client has accepted that waits for review (status awaiting_review): its agreement starts today, is activated through the same rule as agreements.activate and signed as the contact who accepted, the enrollment becomes active, and the client is emailed. Activating one already active changes nothing. Refused with package_enrollment_not_awaiting_review before acceptance (or while a payment is due), and package_activation_conflict when the agreement would overlap another active agreement on its project. Current version and confirm: true required. '.$whoEnrollments.' '.$writeFlags,
+            'client_services.list' => 'For a client\'s portal contact: list the services (package enrollments) of the client companies you are a contact of, newest first, optionally for one company_id, with the terms you agreed to (or, before acceptance, the terms on offer), status, acceptance, payment (the sign-up invoice and its portal page, what it waits for and the lapse date) and portal links; a contact limited to some projects sees only those projects\' services. addable_packages lists the packages a company-wide contact could add from the portal, each with add_refusal when it cannot be added now. Read-only: adding, signing and paying happen in the portal. Workspace staff who are not portal contacts see none. '.$flag,
+            'client_services.get' => 'For a client\'s portal contact: read one of your company\'s services with its terms, status, acceptance and portal links. Another company\'s service, or one outside your projects, is answered as not found. '.$flag,
             'package_requests.erase' => 'Only after explicit user confirmation, irreversibly erase what the visitor typed into a decided request (contact details, answers and the decline reason), leaving a stub with its package, dates and outcome. Refused with package_request_not_closed while the request is open. Current version and confirm: true required. '.$whoRequests.' '.$writeFlags,
         ];
         $errors = [
@@ -158,6 +190,18 @@ final class ServicePackageOperations
             409 => 'expected_version is no longer current (read the request again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
             422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_request_not_open, package_request_not_closed, package_not_offered, package_invitations_off or package_address_held_elsewhere.',
         ]);
+        $enrollmentErrors = array_replace($errors, [
+            404 => 'The workspace or enrollment is not visible to the caller, or the caller is not a workspace owner or admin.',
+        ]);
+        $activateErrors = array_replace($decisionErrors, [
+            404 => 'The workspace or enrollment is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.',
+            409 => 'expected_version is no longer current (read the enrollment again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.',
+            422 => 'The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_enrollment_not_awaiting_review or package_activation_conflict.',
+        ]);
+        $serviceErrors = array_replace($errors, [
+            404 => 'The workspace or service is not visible to the caller: it is another company\'s, outside the caller\'s projects, or the caller is not a portal contact of its company.',
+            422 => 'company_id or limit is out of range, or the cursor is malformed or belongs to another query.',
+        ]);
         $approveErrors = array_replace($decisionErrors, [
             403 => 'The token lacks the operation\'s scopes, or the identity provider will not let this account send invitations.',
             409 => $decisionErrors[409].' Also when another invitation to this address is being sent (retry after Retry-After).',
@@ -170,17 +214,30 @@ final class ServicePackageOperations
         $status = ['name' => 'status', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => self::values(PackageStatus::cases())]];
         $requestStatus = ['name' => 'status', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => self::values(PackageRequestStatus::cases())]];
 
+        $enrollment = ['name' => 'enrollment', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $service = ['name' => 'service', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'format' => 'uuid']];
+        $enrollmentStatus = ['name' => 'status', 'in' => 'query', 'schema' => ['type' => 'string', 'enum' => self::values(EnrollmentStatus::cases())]];
+        $company = ['name' => 'company_id', 'in' => 'query', 'schema' => ['type' => 'string', 'format' => 'uuid']];
+
         $operations = [];
         foreach (self::DEFINITIONS as $id => [, $title, $method, $response, $body]) {
-            $requests = str_starts_with($id, 'package_requests.');
+            $family = strstr($id, '.', true);
+            $requests = $family === 'package_requests';
             // Approving is the one decision that reaches the identity provider.
             $decisionErrorsFor = $id === 'package_requests.approve' ? $approveErrors : $decisionErrors;
-            $target = $requests ? $request : $package;
+            $target = match ($family) {
+                'package_requests' => $request,
+                'enrollments' => $enrollment,
+                'client_services' => $service,
+                default => $package,
+            };
             $parameters = match ($id) {
                 'packages.list' => ['WorkspaceId', $status, 'Limit', 'Cursor'],
                 'package_requests.list' => ['WorkspaceId', $requestStatus, 'Limit', 'Cursor'],
+                'enrollments.list' => ['WorkspaceId', $enrollmentStatus, 'Limit', 'Cursor'],
+                'client_services.list' => ['WorkspaceId', $company, 'Limit', 'Cursor'],
                 'packages.create' => ['WorkspaceId', 'IdempotencyKey'],
-                'packages.get', 'package_requests.get' => ['WorkspaceId', $target],
+                'packages.get', 'package_requests.get', 'enrollments.get', 'client_services.get' => ['WorkspaceId', $target],
                 default => ['WorkspaceId', $target, 'IdempotencyKey'],
             };
             $read = $body === null;
@@ -195,12 +252,17 @@ final class ServicePackageOperations
                     'packages.list' => 'Service packages',
                     'package_requests.list' => 'Sign-up requests',
                     'package_requests.approve' => 'The approved request and its enrollment',
+                    'enrollments.list' => 'Package enrollments',
+                    'enrollments.get', 'enrollments.activate' => 'Package enrollment',
+                    'client_services.list' => 'Your services and the packages you could add',
+                    'client_services.get' => 'Your service',
                     default => $requests ? 'Sign-up request' : 'Service package',
                 },
-                'errors' => match (true) {
-                    ! $requests => $read ? $errors : $writeErrors,
-                    $read => $requestErrors,
-                    default => $decisionErrorsFor,
+                'errors' => match ($family) {
+                    'package_requests' => $read ? $requestErrors : $decisionErrorsFor,
+                    'enrollments' => $read ? $enrollmentErrors : $activateErrors,
+                    'client_services' => $serviceErrors,
+                    default => $read ? $errors : $writeErrors,
                 },
             ] + ($read ? [] : ['request' => $body]);
         }
@@ -221,6 +283,13 @@ final class ServicePackageOperations
         $nullableInstant = ['type' => ['string', 'null'], 'format' => 'date-time'];
         $named = self::object(['id' => $uuid, 'name' => $text]);
         $nullableNamed = ['oneOf' => [$named, ['type' => 'null']]];
+        $versionRef = self::object(['id' => $uuid, 'number' => ['type' => 'integer', 'minimum' => 1]]);
+        // Signed by a company contact, who typed the name and title (ACC-2).
+        $acceptance = ['oneOf' => [self::object([
+            'accepted_at' => ['type' => 'string', 'format' => 'date-time'],
+            'signer_name' => $text,
+            'signer_title' => $nullableText,
+        ]), ['type' => 'null']]];
 
         return match ($component) {
             'ServicePackage' => self::object([
@@ -328,6 +397,111 @@ final class ServicePackageOperations
                 'client' => $named,
                 'project_id' => $uuid,
                 'agreement_id' => $uuid,
+            ]),
+            // The owner's and admin's shape of an enrollment (PackageEnrollmentPresenter::forManager).
+            'ServicePackageEnrollment' => self::object([
+                'id' => $uuid,
+                'status' => ['type' => 'string', 'enum' => self::values(EnrollmentStatus::cases())],
+                'package' => self::object(['id' => $uuid, 'link_name' => $text, 'name' => $text]),
+                'offered_version' => $versionRef,
+                'accepted_version' => ['oneOf' => [$versionRef, ['type' => 'null']]],
+                'version_changed' => $bool,
+                'client' => $named,
+                'project_id' => $uuid,
+                'agreement_id' => $uuid,
+                'agreement_url' => ['type' => 'string', 'format' => 'uri'],
+                'request_id' => ['type' => ['string', 'null'], 'format' => 'uuid'],
+                'offered_at' => ['type' => 'string', 'format' => 'date-time'],
+                'acceptance' => $acceptance,
+                'activated_at' => $nullableInstant,
+                'lapsed_at' => $nullableInstant,
+                'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
+                'version' => $version,
+            ]),
+            // Where a sign-up's own payment stands (PackageEnrollmentPresenter::payment).
+            // Nothing about the card or the processor (API-4).
+            'ServicePackageSignupPayment' => self::object([
+                'state' => ['type' => 'string', 'enum' => self::values(SignupPaymentState::cases())],
+                'waiting_for' => ['type' => 'array', 'maxItems' => count(SignupWait::cases()), 'items' => ['type' => 'string', 'enum' => self::values(SignupWait::cases())]],
+                'signup_invoice' => ['oneOf' => [self::object([
+                    'id' => $uuid,
+                    'number' => $text,
+                    'status' => ['type' => 'string', 'enum' => InvoiceStatus::all()],
+                    'currency' => ['type' => 'string', 'pattern' => '^[A-Z]{3}$'],
+                    'total_amount' => ['type' => 'integer', 'minimum' => 0],
+                    'balance_amount' => ['type' => 'integer', 'minimum' => 0],
+                    'url' => ['type' => ['string', 'null'], 'format' => 'uri'],
+                ]), ['type' => 'null']]],
+                'requires_autopay' => $bool,
+                'autopay_limit_amount' => $nullableInt,
+                'pay_before_activation' => $bool,
+                'lapses_on' => ['type' => ['string', 'null'], 'format' => 'date'],
+            ]),
+            'ServicePackageEnrollmentResponse' => self::object(['data' => ['$ref' => '#/components/schemas/ServicePackageEnrollment']]),
+            'ServicePackageEnrollmentListResponse' => self::object([
+                'data' => ['type' => 'array', 'maxItems' => self::MAX_LIMIT, 'items' => ['$ref' => '#/components/schemas/ServicePackageEnrollment']],
+                'meta' => self::object(['next_cursor' => $nullableText]),
+            ]),
+            // A client's shape of their own service (PackageEnrollmentPresenter::forClient).
+            'ClientService' => self::object([
+                'id' => $uuid,
+                'status' => ['type' => 'string', 'enum' => self::values(EnrollmentStatus::cases())],
+                'company' => $named,
+                'project_id' => $uuid,
+                'name' => $text,
+                'version_number' => ['type' => 'integer', 'minimum' => 1],
+                'version_changed' => $bool,
+                'terms' => ['$ref' => '#/components/schemas/ClientServiceTerms'],
+                'acceptance' => $acceptance,
+                'activated_at' => $nullableInstant,
+                'agreement_url' => ['type' => ['string', 'null'], 'format' => 'uri'],
+                'payment' => ['$ref' => '#/components/schemas/ServicePackageSignupPayment'],
+                'url' => ['type' => 'string', 'format' => 'uri'],
+            ]),
+            'ClientServiceTerms' => self::object([
+                'name' => $text,
+                'summary' => $nullableText,
+                'body_markdown' => $nullableText,
+                'agreement_text' => $nullableText,
+                'currency' => ['type' => 'string', 'pattern' => '^[A-Z]{3}$'],
+                'billing_cadence' => ['type' => 'string', 'enum' => self::values(ChargeCadence::cases())],
+                'cycle_amount' => ['type' => 'integer', 'minimum' => 0],
+                'setup_fee_amount' => $nullableInt,
+                'components' => ['type' => 'array', 'maxItems' => ServicePackageRules::MAX_COMPONENTS, 'items' => self::object([
+                    'description' => $text,
+                    'kind' => ['type' => 'string', 'enum' => self::values(PackageComponentKind::cases())],
+                    'cadence' => ['type' => 'string', 'enum' => self::values(ChargeCadence::cases())],
+                    'amount' => $int,
+                ])],
+                'hourly_rate_amount' => $nullableInt,
+                'retainer_amount' => $nullableInt,
+                'retainer_minutes' => $nullableInt,
+                'rollover_months' => $nullableInt,
+                'activation_mode' => ['type' => 'string', 'enum' => self::values(PackageActivationMode::cases())],
+                'notice_days' => $int,
+                'minimum_term_months' => $nullableInt,
+                'cancellation_mode' => ['type' => 'string', 'enum' => self::values(CancellationMode::cases())],
+            ]),
+            'ClientAddablePackage' => self::object([
+                'id' => $uuid,
+                'name' => $text,
+                'summary' => $nullableText,
+                'currency' => ['type' => 'string', 'pattern' => '^[A-Z]{3}$'],
+                'billing_cadence' => ['type' => 'string', 'enum' => self::values(ChargeCadence::cases())],
+                'cycle_amount' => ['type' => 'integer', 'minimum' => 0],
+                'setup_fee_amount' => $nullableInt,
+                'minimum_term_months' => $nullableInt,
+                'url' => ['type' => ['string', 'null'], 'format' => 'uri'],
+                'add_refusal' => ['oneOf' => [self::object([
+                    'code' => ['type' => 'string', 'enum' => self::values(PackageRefusal::cases())],
+                    'message' => $text,
+                ]), ['type' => 'null']]],
+            ]),
+            'ClientServiceResponse' => self::object(['data' => ['$ref' => '#/components/schemas/ClientService']]),
+            'ClientServiceListResponse' => self::object([
+                'data' => ['type' => 'array', 'maxItems' => self::MAX_LIMIT, 'items' => ['$ref' => '#/components/schemas/ClientService']],
+                'addable_packages' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/ClientAddablePackage']],
+                'meta' => self::object(['next_cursor' => $nullableText]),
             ]),
             'ServicePackageRequestResponse' => self::object(['data' => ['$ref' => '#/components/schemas/ServicePackageRequest']]),
             'ServicePackageRequestListResponse' => self::object([

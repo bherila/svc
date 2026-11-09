@@ -244,3 +244,177 @@ export type PackageRequestsProps = {
     requests_url: string;
     open_requests_count: number;
 };
+
+/**
+ * What a client reads of a version's terms in the portal (slice 3a): the offer
+ * and the agreement text, never the operator's settings.
+ */
+export type ClientTerms = {
+    name: string;
+    summary: string | null;
+    body_markdown: string | null;
+    agreement_text: string | null;
+    currency: string;
+    billing_cadence: string;
+    /** Minor units; one billing cycle at the headline. */
+    cycle_amount: number;
+    setup_fee_amount: number | null;
+    components: Pick<
+        PackageComponentTerms,
+        'kind' | 'description' | 'cadence' | 'amount'
+    >[];
+    hourly_rate_amount: number | null;
+    retainer_amount: number | null;
+    retainer_minutes: number | null;
+    rollover_months: number | null;
+    activation_mode: string;
+    notice_days: number;
+    minimum_term_months: number | null;
+    cancellation_mode: string;
+};
+
+/** One of a company's services as the portal presents it. */
+export type PortalService = {
+    id: string;
+    status: string;
+    company: { id: string; name: string };
+    project_id: string;
+    name: string;
+    version_number: number;
+    /** Signed on a newer version than the one offered (EDGE-7). */
+    version_changed: boolean;
+    terms: ClientTerms;
+    acceptance: {
+        accepted_at: string;
+        signer_name: string;
+        signer_title: string | null;
+    } | null;
+    activated_at: string | null;
+    /** The agreement's own portal page, once it is active. */
+    agreement_url: string | null;
+    /** Where the sign-up's own payment stands (slice 3b). */
+    payment: PortalServicePayment;
+    /** This service's own portal page: review and sign while offered. */
+    url: string;
+};
+
+/** Where a sign-up's own payment stands: the server decides every value. */
+export type PortalServicePayment = {
+    state: 'not_charged' | 'not_invoiced' | 'due' | 'paid' | 'voided';
+    /** What an enrollment `awaiting_payment` still waits for; empty otherwise. */
+    waiting_for: ('payment' | 'autopay')[];
+    signup_invoice: {
+        id: string;
+        number: string;
+        status: string;
+        currency: string;
+        total_amount: number;
+        balance_amount: number;
+        /** The invoice's own portal page, finished; null when it is not the reader's to open. */
+        url: string | null;
+    } | null;
+    requires_autopay: boolean;
+    autopay_limit_amount: number | null;
+    pay_before_activation: boolean;
+    /** The workspace-local day an open offer or unpaid acceptance lapses. */
+    lapses_on: string | null;
+};
+
+/** One line of "Due now": a setup fee, or the first period with its dates. */
+export type SignupChargeLine = {
+    kind: 'setup_fee' | 'first_period';
+    description: string;
+    /** Minor units. */
+    amount: number;
+    period_start: string | null;
+    period_end: string | null;
+};
+
+/**
+ * What sign-up asks for on the review page (ACC-3, ACC-4), or null when it
+ * asks for nothing. Every URL is finished by the server and null when the
+ * viewer may not use it.
+ */
+export type PortalCheckout = {
+    due_now: {
+        currency: string;
+        lines: SignupChargeLine[];
+        total: number;
+        /** Present once the sign-up invoice exists: what is still owed on it. */
+        balance?: number;
+        /** True before acceptance: the engine's estimate, not yet an invoice. */
+        estimate: boolean;
+    };
+    pay_before_activation: boolean;
+    /** The sign-up invoice's portal page, while something is owed on it. */
+    pay_url: string | null;
+    /** The invoice's existing Stripe pay flow (PaymentIntent route and publishable key). */
+    payment_options: { intent_href: string; publishable_key: string } | null;
+    /** The existing SetupIntent save-card endpoints, when autopay is required. */
+    card_setup: {
+        setup_url: string;
+        confirm_url: string;
+        publishable_key: string;
+    } | null;
+    autopay: {
+        limit_amount: number;
+        currency: string;
+        limit_label: string;
+        satisfied: boolean;
+        /** Why autopay cannot meet this service here (its currency differs from the account's); null when it can. */
+        unavailable: string | null;
+        /** The exact sentence the client authorizes; null until a default card is saved. */
+        wording: string | null;
+        /** The existing autopay enable endpoint; null until it may be used. */
+        enable_url: string | null;
+        /** The fields to post to enable_url, exactly. */
+        enable_fields: {
+            limit_amount: number;
+            wording: string;
+            service: string;
+        } | null;
+        billing_url: string;
+    } | null;
+};
+
+export type PortalAddablePackage = {
+    id: string;
+    name: string;
+    summary: string | null;
+    currency: string;
+    billing_cadence: string;
+    cycle_amount: number;
+    setup_fee_amount: number | null;
+    minimum_term_months: number | null;
+    url: string;
+    add_refusal: PackageRefusal | null;
+    /** Where adding posts; null when it cannot be added now. */
+    add_url: string | null;
+};
+
+export type PortalServicesProps = {
+    company: { id: string; name: string };
+    services: PortalService[];
+    /** Null for a contact who may not add; the section is then not drawn. */
+    addable_packages: PortalAddablePackage[] | null;
+};
+
+export type PortalServiceProps = {
+    company: { id: string; name: string };
+    service: PortalService;
+    /** Present only when a newer version was published after the offer (EDGE-7). */
+    offered_terms: ClientTerms | null;
+    /** The terms (by their server keys) that differ between the offer and what is signed. */
+    changed_terms: string[];
+    /** Null while the viewer may not sign, or nothing is open to sign. */
+    accept_url: string | null;
+    /**
+     * Sent with the signature, exactly: the version shown, so the acceptance
+     * signs these terms and is refused if a newer version was published since.
+     * Null exactly when `accept_url` is.
+     */
+    accept_fields: { reviewed_version: string } | null;
+    accept_refusal: PackageRefusal | null;
+    /** What sign-up asks for: null when it asks for nothing. */
+    checkout: PortalCheckout | null;
+};

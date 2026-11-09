@@ -183,6 +183,32 @@ describe('dashboard', () => {
 
         expect(screen.getByText(/^2 waiting, oldest /)).toBeInTheDocument();
     });
+
+    it('[ACC-5] lists a signed service waiting to be activated, with who signed and when', () => {
+        render(
+            <Dashboard
+                workspace={WORKSPACE}
+                audience="workspace"
+                queue={[
+                    row({
+                        kind: 'enrollment_review',
+                        title: 'Synthetic Care plan to activate',
+                        client: 'Synthetic Client',
+                        date: '2026-11-09',
+                        count: null,
+                        minutes: null,
+                    }),
+                ]}
+            />,
+        );
+
+        expect(
+            screen.getByText('Synthetic Care plan to activate'),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(/^Synthetic Client · Accepted /),
+        ).toBeInTheDocument();
+    });
 });
 
 describe('cross-client lists', () => {
