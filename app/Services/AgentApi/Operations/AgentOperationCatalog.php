@@ -65,7 +65,7 @@ final class AgentOperationCatalog
     private const string ROUTE_PREFIX = 'agent-api.v1.';
 
     /** What both dispute settlements say to an MCP client (docs/ux-overhaul.md 7b″). */
-    public const string SETTLE_DESCRIPTION = 'Only after the user explicitly confirms, and only with the reply the user wrote. Settle a client\'s dispute on one row (client_review.state disputed) using its current version: outcome answered clears the dispute and offers the row to the client again, so it bills on the next draft (correct the row first with its update if it needs it); outcome written_off means it is never billed. The reply is shown to the client as written. A row an issued invoice already charges cannot be written off; correct the invoice instead.';
+    public const string SETTLE_DESCRIPTION = 'Only after the user explicitly confirms, and only with the reply the user wrote. Settle a client\'s dispute on one row (client_review.state disputed) using its current version: outcome answered clears the dispute and offers the row to the client again, so it bills on the next draft (correct the row first with its update if it needs it), and an hour whose own period was already invoiced becomes deferred work, billed from later free capacity or a buy-down; outcome written_off means it is never billed. The reply is shown to the client as written. A row an issued invoice already charges cannot be written off; correct the invoice instead.';
 
     /**
      * REST binding of each documented operation: route name (after the

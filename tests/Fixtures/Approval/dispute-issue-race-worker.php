@@ -52,9 +52,10 @@ $pause = static function () use ($input): void {
 $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFail();
 
 try {
-    // The client's dispute, stamped under the locks ClientApprovals::dispose()
-    // takes - the maintenance share, then the row - with its draft rebuild
-    // left out: the case the issue guard exists for is a rebuild that did not
+    // The client's dispute, stamped under the row lock ClientApprovals::dispose()
+    // takes - plus the maintenance share, which is compatible with the
+    // issue's own and so changes no contention - with its draft rebuild left
+    // out: the case the issue guard exists for is a rebuild that did not
     // happen.
     if ($input['mode'] === 'dispute') {
         DB::transaction(static function () use ($workspace, $input): void {

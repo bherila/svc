@@ -31,9 +31,10 @@ use Tests\TestCase;
  * does. What must not happen is the dispute committing while the issue is
  * past its guard, and the disputed row being charged anyway.
  *
- * The dispute here is the stamp under ClientApprovals::dispose()'s own locks,
- * without the draft rebuild that follows it: the guard exists for the rebuild
- * that did not happen.
+ * The dispute here is the stamp under the row lock ClientApprovals::dispose()
+ * takes (with a maintenance share the issue's own share does not contend
+ * with), without the draft rebuild that follows it: the guard exists for the
+ * rebuild that did not happen.
  */
 final class DisputeIssueRaceTest extends TestCase
 {

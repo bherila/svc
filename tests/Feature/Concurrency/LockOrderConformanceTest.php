@@ -116,6 +116,7 @@ final class LockOrderConformanceTest extends TestCase
         'App\\Services\\Approval\\DisputeSettlements::settleTime',
         'App\\Services\\Billing\\AllocationService::group',
         'App\\Services\\Billing\\DeferredBuyDownAction::create',
+        'App\\Services\\Billing\\HeldWorkBasisRecorder::rows',
         'App\\Services\\Billing\\InterimOverageGenerator::timeFingerprint',
         'App\\Services\\Billing\\InvoiceFromTimeService::prepareLines',
         'App\\Services\\Billing\\InvoiceFromTimeService::regenerateDraftSelection',

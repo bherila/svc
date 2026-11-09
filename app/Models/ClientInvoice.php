@@ -55,6 +55,7 @@ use RuntimeException;
  * @property array<string, mixed>|null $hours_statement
  * @property array<string, mixed>|null $deferred_work_statement
  * @property array<string, mixed>|null $catch_up_basis
+ * @property array<string, mixed>|null $held_work_basis what a cadence draft was priced from, as far as disputes go; see HeldWorkBasis
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
@@ -73,12 +74,12 @@ use RuntimeException;
     'automatic_delivery_delay_days', 'automatic_delivery_due_at', 'automatic_delivery_held_at',
     'automatic_delivery_note',
     // What a generated monthly invoice was sized against; see CatchUpBasis.
-    'catch_up_basis', 'deferred_work_statement',
+    'catch_up_basis', 'deferred_work_statement', 'held_work_basis',
     // The day an operator plans to issue a draft (#381). A plan the
     // stale-draft audit reads, never a trigger: nothing issues on it.
     'scheduled_issue_date',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'deferred_work_statement', 'catch_up_basis'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'deferred_work_statement', 'catch_up_basis', 'held_work_basis'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -111,6 +112,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
             'hours_statement' => 'array',
             'deferred_work_statement' => 'array',
             'catch_up_basis' => 'array',
+            'held_work_basis' => 'array',
             'issued_at' => 'datetime',
             'voided_at' => 'datetime',
             'reopened_at' => 'datetime',

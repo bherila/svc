@@ -3,6 +3,7 @@
 namespace App\Services\Billing;
 
 use App\Exceptions\DisputedRowsOnDraft;
+use App\Exceptions\DisputedWorkChanged;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
@@ -881,6 +882,10 @@ final class InvoiceLifecycleService
     private function assertChargesNoDisputedRows(ClientInvoice $draft, array $lineIds): void
     {
         if ($lineIds === []) {
+            if (! app(HeldWorkBasisRecorder::class)->isCurrent($draft)) {
+                throw new DisputedWorkChanged;
+            }
+
             return;
         }
 
@@ -900,6 +905,10 @@ final class InvoiceLifecycleService
                 || $entry->getAttributes()['client_dispute_settlement'] === DisputeSettlement::WrittenOff->value)
             ->unique('id')
             ->count();
+        // Disputed work the draft does not link: it left the ledger, or came
+        // back, and the capacity these charges were sized against moved with
+        // it. Also time entries, so between the hours and the expenses.
+        $basisCurrent = app(HeldWorkBasisRecorder::class)->isCurrent($draft);
         $expenses = ClientExpense::query()
             ->where('workspace_id', $draft->workspace_id)
             ->whereIn('client_invoice_line_id', $lineIds)
@@ -910,8 +919,13 @@ final class InvoiceLifecycleService
                 || $expense->getAttributes()['client_dispute_settlement'] === DisputeSettlement::WrittenOff->value)
             ->count();
 
+        // The rows the draft charges are the more specific refusal, and
+        // settling them rebuilds the draft, which renews its basis too.
         if ($hours > 0 || $expenses > 0) {
             throw new DisputedRowsOnDraft($hours, $expenses);
+        }
+        if (! $basisCurrent) {
+            throw new DisputedWorkChanged;
         }
     }
 

@@ -4,6 +4,7 @@ namespace App\Services\Approval;
 
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
+use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -14,6 +15,8 @@ use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\BillingMaintenance;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Approval\LateAnswer;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -89,7 +92,12 @@ final class DisputeSettlements
                 && ! ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)->heldForDispute()->exists(),
                 409, self::CHARGED_MESSAGE);
             $this->write(ClientTimeEntry::query(), $workspace, $entry, $actor, $outcome, $reply, match ($outcome) {
-                DisputeSettlement::Answered => [],
+                // Answered after its own period was reconciled: it can no
+                // longer bill there, so it becomes deferred work.
+                DisputeSettlement::Answered => LateAnswer::defers(
+                    is_string($mode = $entry->getRawOriginal('subcontractor_billing_mode')) ? $mode : null,
+                    $this->periodCharged($workspace, $entry),
+                ) ? ['is_deferred' => true] : [],
                 DisputeSettlement::WrittenOff => ['is_billable' => false],
             });
             $this->record($workspace, (int) $entry->client_company_id, 'time', $entry->public_id, (int) $entry->lock_version, $entry->client_dispute_note, $outcome, $reply, $actor);
@@ -142,6 +150,29 @@ final class DisputeSettlements
         abort_if(mb_strlen($reply) > self::REPLY_MAX, 422, 'A reply is at most '.self::REPLY_MAX.' characters.');
 
         return $reply;
+    }
+
+    /**
+     * Whether a charged cadence invoice of the entry's agreement scope covers
+     * its date: the invoice that reconciled its period. An ordinary read - it
+     * decides only how the answered hour waits, and the hour's own lock is
+     * what this transaction serialises on.
+     */
+    private function periodCharged(Workspace $workspace, ClientTimeEntry $entry): bool
+    {
+        $day = $entry->worked_on->toDateString();
+
+        return ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $entry->client_company_id)
+            ->whereIn('status', InvoiceStatus::charged())
+            ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+            ->whereHas('agreement', fn ($agreement) => $agreement
+                ->where('workspace_id', $workspace->id)
+                ->where(fn ($scope) => $scope->whereNull('client_project_id')->orWhere('client_project_id', $entry->client_project_id)))
+            ->whereDate('service_period_start', '<=', $day)
+            ->whereDate('service_period_end', '>=', $day)
+            ->exists();
     }
 
     private function assertOpen(ClientTimeEntry|ClientExpense $row, string $expectedVersion): void

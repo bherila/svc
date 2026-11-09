@@ -11,6 +11,7 @@ use Tests\Feature\AgentApi\AgentInvoiceOperationsParityTest;
 use Tests\Feature\AgentApi\AgentReadApiTest;
 use Tests\Feature\AgentApi\AgentTimeBillingWorkflowTest;
 use Tests\Feature\Approval\ClientApprovalTest;
+use Tests\Feature\Approval\DisputeLedgerDependencyTest;
 use Tests\Feature\Approval\DisputeSettlementTest;
 use Tests\Feature\Billing\AgreementBillingRateResolverTest;
 use Tests\Feature\Billing\AllocationServiceTest;
@@ -204,6 +205,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.automatic_delivery_note => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.automatic_delivery_status => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.catch_up_basis => covered_by:Tests\Feature\Billing\EarlierDraftCatchUpTest::test_an_invoice_with_no_recorded_basis_is_treated_as_before',
+        'client_invoices.held_work_basis => covered_by:Tests\Feature\Approval\DisputeLedgerDependencyTest::test_an_undisturbed_draft_issues_and_one_generated_before_the_basis_existed_is_not_refused',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
@@ -373,6 +375,13 @@ final class NullSemanticsRegistryTest extends TestCase
             'catch_up_basis' => [
                 'covered_by' => EarlierDraftCatchUpTest::class,
                 'method' => 'test_an_invoice_with_no_recorded_basis_is_treated_as_before',
+            ],
+            // Null for every invoice generated before the basis existed and
+            // every kind that is not a cadence draft: nothing was recorded to
+            // compare, so it issues as it did rather than being refused.
+            'held_work_basis' => [
+                'covered_by' => DisputeLedgerDependencyTest::class,
+                'method' => 'test_an_undisturbed_draft_issues_and_one_generated_before_the_basis_existed_is_not_refused',
             ],
             'deferred_work_statement' => [
                 'covered_by' => DeferredBuyDownOnInvoiceTest::class,

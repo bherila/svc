@@ -377,6 +377,24 @@ interim claim's time fingerprint includes the dispute, settlement and version
 columns, so a dispute on time the claim does not link still refuses a claim
 priced from an older snapshot.
 
+**Disputed work a later draft does not link.** A held row leaves the ledger
+and an answered one comes back, so a draft's charges can depend on historical
+work it never links - an hour logged late into a reconciled month, say. Two
+things keep those charges current:
+
+- *The rebuild reaches every dependent draft.* A dispute, an answer or a
+  write-off rebuilds every generated draft of the row's company and agreement
+  scope whose period ends on or after the day worked, earliest first and
+  interim before cadence, not only the draft that carries the row.
+- *The issue checks what the draft was priced from.* A cadence draft records
+  its held-work basis when it is generated (`HeldWorkBasisRecorder`): its
+  project scope, the last day its ledger read, and a digest of the dispute and
+  settlement state of that scope's time through that day. Issuing re-reads
+  that state with row locks - after the lines, before the company - and
+  refuses a draft whose basis has moved (422, code `disputed_work_changed`);
+  regenerating it prices it from the current state. A draft generated before
+  the basis existed is issued as before.
+
 #### Settling a dispute
 
 Only the provider's side settles a dispute. A client contact or reviewer
@@ -417,11 +435,19 @@ A new dispute clears the previous reply. Every settlement is a compare-and-set
 on the row's version, under its lock. After it commits, the drafts it affects
 are rebuilt, as after a dispute: an answered row goes back on the generated
 draft whose period covers it, and a written-off one comes off any draft.
-When no draft covers its period - the period was invoiced while it was held -
-an answered subcontractor hour, priced alone at its own date and rate, is
-carried to the next cadence draft. Retainer time needs no carrying: the ledger
-is rebuilt from current rows, so the answered hour counts in its own month
-again, reducing what rolls over or carrying forward as debt. A row
+When the invoice reconciling its period was charged while it was held, that
+period can no longer bill it (decided 2026-11-09, `LateAnswer`):
+
+- Work the retainer ledger reads becomes **deferred work**. It joins the
+  deferred backlog and is listed under the draft's *Still deferred*. It is
+  drawn from a later draft's free capacity, or settled by a buy-down - on an
+  agreement with no retainer, only by a buy-down. Waiting, it takes no
+  capacity, so no later draft's charges depend on it until a line takes it,
+  and a dispute on it after that finds the draft that carries it.
+- A flat-hourly subcontractor hour, priced alone at its own date and rate, is
+  carried to the next cadence draft that can bill it.
+
+A row
 an issued invoice already charges can't be written off (409); answer it, and
 correct the invoice. Each settlement is written to the client history
 (`ClientActivityRecorder`, actions `dispute.answered` and

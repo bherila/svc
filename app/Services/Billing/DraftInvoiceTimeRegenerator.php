@@ -72,25 +72,6 @@ final class DraftInvoiceTimeRegenerator
     }
 
     /**
-     * Rebuild every generated draft whose period covers the entry, after a
-     * change that makes the entry billable again without it having been on
-     * any draft: a client's dispute answered or approved away
-     * (docs/ux-overhaul.md 7b″). The entry is put back on its period's draft,
-     * which is where the next issue would have billed it.
-     *
-     * Each draft rebuilds in its own transaction through the ordinary
-     * generators; a refusal leaves the entry unallocated for the next run.
-     */
-    public function regenerateCovering(Workspace $workspace, ClientTimeEntry $entry): void
-    {
-        abort_unless((int) $entry->workspace_id === (int) $workspace->id, 404);
-
-        foreach ($this->generatedDraftsCovering($workspace, (int) $entry->client_company_id, $entry, null) as $draft) {
-            $this->generated->regenerateDraftInvoice($draft);
-        }
-    }
-
-    /**
      * Generated drafts of the entry's company and project whose stated period
      * holds its date, interim first and cadence last. Cadence regeneration
      * deliberately releases unissued interim claims before reconciling the

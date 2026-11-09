@@ -435,8 +435,9 @@ of the invoice, because nothing may be read or locked ahead of it — then the
 invoice, and refuses if the locked invoice names a different agreement. The
 cycle's charged interim claims are then locked (`lockCycleClaims()`, a current
 read, so a claim voided or charged a moment ago is seen as it is), then the
-draft's lines, then its time (`lockTimeFingerprint()`, and the dispute guard's
-locking read of the charged time and its pivots), then its expenses, then the
+draft's lines, then its time (`lockTimeFingerprint()`, the dispute guard's
+locking read of the charged time and its pivots, and a cadence draft's
+held-work basis, `HeldWorkBasisRecorder::assertCurrent()`), then its expenses, then the
 company, and only then is the ledger read. The order is agreement → invoice →
 cycle claims → lines → time → expenses → company, which the registry already
 declares; nothing is locked inside an invoice-locked body that ranks before
