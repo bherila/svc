@@ -139,20 +139,27 @@ final class DisputeSettlements
     /**
      * Does a draft's buy-down line hold this hour? A dispute's rebuild leaves such
      * a line in place, so writing the hour off would strand the draft: it could
-     * not issue, and no dispute would be left to answer. A locking read, so that
-     * a buy-down committed since this transaction's snapshot is seen.
+     * not issue, and no dispute would be left to answer. The allocation is read
+     * with a lock, so a buy-down committed since this transaction's snapshot is
+     * seen; the line and invoice are not locked, because discarding a draft locks
+     * its invoice before this entry and taking them here would walk that backwards.
      */
     private function onADraftBuyDown(Workspace $workspace, ClientTimeEntry $entry): bool
     {
-        return DB::table('client_invoice_line_time_entries')
-            ->join('client_invoice_lines', 'client_invoice_lines.id', '=', 'client_invoice_line_time_entries.client_invoice_line_id')
-            ->join('client_invoices', 'client_invoices.id', '=', 'client_invoice_lines.client_invoice_id')
-            ->where('client_invoice_line_time_entries.client_time_entry_id', $entry->id)
-            ->where('client_invoice_lines.workspace_id', $workspace->id)
-            ->where('client_invoice_lines.type', InvoiceLineType::DeferredBuyDown->value)
-            ->where('client_invoices.status', InvoiceStatus::Draft->value)
+        $lines = DB::table('client_invoice_line_time_entries')
+            ->where('client_time_entry_id', $entry->id)
+            ->orderBy('client_invoice_line_id')
             ->tap(Locks::forUpdate())
-            ->first(['client_invoice_line_time_entries.client_time_entry_id']) !== null;
+            ->pluck('client_invoice_line_id');
+
+        return ClientInvoiceLine::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($lines)
+            ->where('type', InvoiceLineType::DeferredBuyDown->value)
+            ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                ->where('client_invoices.workspace_id', $workspace->id)
+                ->where('client_invoices.status', InvoiceStatus::Draft->value))
+            ->exists();
     }
 
     /** Does an issued, partially paid, paid or disputed invoice of this workspace carry the expense? */
