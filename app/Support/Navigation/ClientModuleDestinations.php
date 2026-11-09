@@ -20,7 +20,8 @@ namespace App\Support\Navigation;
  *
  * The client tier's tabs are Overview, Agreements, Invoices, Time, Tasks and
  * Files. `settings`, `expenses`, `notes` and `discussions` are not tabs: they
- * live in the menu on the client's name, as does the portal's `billing`.
+ * live in the menu on the client's name, as does the portal's `billing`. The
+ * portal's `services` exists only while service packages are switched on.
  */
 final class ClientModuleDestinations
 {
@@ -37,10 +38,12 @@ final class ClientModuleDestinations
         public readonly ?string $discussions,
         /** The client's own billing page in the portal (#636): saved methods and autopay. Null for the operator family. */
         public readonly ?string $billing = null,
+        /** The client's service packages in the portal (docs/service-packages.md); null for the operator family and while packages are off. */
+        public readonly ?string $services = null,
     ) {}
 
     /**
-     * @return array{home: string, agreements: string|null, invoices: string|null, time: string|null, tasks: string|null, files: string|null, settings: string|null, expenses: string|null, notes: string|null, discussions: string|null, billing: string|null}
+     * @return array{home: string, agreements: string|null, invoices: string|null, time: string|null, tasks: string|null, files: string|null, settings: string|null, expenses: string|null, notes: string|null, discussions: string|null, billing: string|null, services: string|null}
      */
     public function toArray(): array
     {
@@ -56,6 +59,7 @@ final class ClientModuleDestinations
             'notes' => $this->notes,
             'discussions' => $this->discussions,
             'billing' => $this->billing,
+            'services' => $this->services,
         ];
     }
 }

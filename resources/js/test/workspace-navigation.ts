@@ -29,6 +29,7 @@ export function clientOption(
             files: `/workspaces/workspace-1/attachment-records/company/${id}/files`,
             settings: `/workspaces/workspace-1/clients/${id}/settings`,
             billing: null,
+            services: null,
             expenses: null,
             notes: `/workspaces/workspace-1/clients/${id}/collaboration?kind=note`,
             discussions: `/workspaces/workspace-1/clients/${id}/collaboration?kind=discussion`,

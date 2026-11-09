@@ -18,8 +18,8 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
 use App\Support\Packages\EnrollmentSigner;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\EnrollmentVersions;
 use App\Support\Packages\PackageRefusal;
-use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use App\Support\Packages\PortalAddRule;
 use App\Support\WorkspaceClock;
@@ -233,17 +233,10 @@ final class PackageEnrollmentWorkflow
         });
     }
 
-    /**
-     * The version an acceptance signs: the package's published one, or a
-     * retired package's offer as it was made (EDGE-8).
-     */
+    /** The version an acceptance signs ({@see EnrollmentVersions::toAccept()}). */
     private function versionToAccept(Workspace $workspace, ServicePackage $package, ServicePackageEnrollment $enrollment): ServicePackageVersion
     {
-        $versionId = match ($package->packageStatus()) {
-            PackageStatus::Published => $package->published_version_id ?? $enrollment->service_package_version_id,
-            PackageStatus::Retired => $enrollment->service_package_version_id,
-            PackageStatus::Draft => throw ServicePackageRefused::because(PackageRefusal::OfferNotOpen),
-        };
+        $versionId = EnrollmentVersions::toAccept($package, $enrollment) ?? throw ServicePackageRefused::because(PackageRefusal::OfferNotOpen);
 
         return $this->offers->version($workspace, $versionId);
     }

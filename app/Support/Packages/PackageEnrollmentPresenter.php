@@ -54,10 +54,10 @@ final class PackageEnrollmentPresenter
      * before acceptance, the terms on offer), never the operator's settings.
      *
      * @param  ServicePackageVersion  $terms  the version whose terms to show, components loaded
-     * @param  string|null  $reviewUrl  the review-and-sign page, while the offer is open
+     * @param  string  $url  the service's own portal page: review and sign while offered, its record after
      * @return array<string, mixed>
      */
-    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, ?string $reviewUrl): array
+    public static function forClient(ServicePackageEnrollment $enrollment, ServicePackageVersion $terms, string $url): array
     {
         [$company, $project, $agreement] = self::loaded($enrollment);
         $base = rtrim((string) config('app.url'), '/');
@@ -75,11 +75,13 @@ final class PackageEnrollmentPresenter
             'project_id' => $project->public_id,
             'name' => $terms->name,
             'version_number' => $terms->number,
+            // Accepted on a newer version than the one offered (EDGE-7).
+            'version_changed' => self::versionChanged($enrollment),
             'terms' => self::clientTerms(PackageTerms::fromVersion($terms)),
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'agreement_url' => $agreementUrl,
-            'review_url' => $reviewUrl,
+            'url' => $url,
         ];
     }
 
