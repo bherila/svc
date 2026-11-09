@@ -9,6 +9,7 @@ use App\Models\ClientProject;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Support\Billing\BillingCadence;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageComponentTerms;
 use App\Support\Packages\PackageTerms;
@@ -43,8 +44,7 @@ final class PackageAgreementTerms
             'billing_cadence' => $terms->billingCadence->value,
             'currency' => $terms->currency,
             'hourly_rate_amount' => $terms->hourlyRateAmount,
-            'retainer_amount' => $terms->retainerAmount,
-            'retainer_minutes' => $terms->retainerMinutes,
+            ...array_intersect_key(self::retainerTerms($terms), array_flip(['retainer_amount', 'retainer_minutes'])),
         ]);
 
         return $this->apply($workspace, $agreement, $version);
@@ -89,10 +89,44 @@ final class PackageAgreementTerms
             'billing_cadence' => $terms->billingCadence->value,
             'currency' => $terms->currency,
             'hourly_rate_amount' => $terms->hourlyRateAmount,
-            'retainer_amount' => $terms->retainerAmount,
-            'retainer_minutes' => $terms->retainerMinutes,
+            ...self::retainerTerms($terms),
             'rollover_months' => $terms->rolloverMonths,
             'first_cycle_proration' => $terms->firstCycleProration?->value,
+        ];
+    }
+
+    /**
+     * A package's retainer is what one billing cycle includes; an agreement's
+     * `retainer_*` columns are per month and are scaled by the cycle length
+     * unless the `period_retainer_*` overrides say what one cycle includes.
+     *
+     * So a monthly package writes the monthly columns as they are. A
+     * quarterly, half-yearly or annual one writes the per-cycle overrides with
+     * the package's own figures - which the billing engine prefers - and the
+     * monthly columns with the matching per-month share, so the two never
+     * disagree (Codex P1 on #666: copying the cycle figures into the monthly
+     * columns tripled a quarterly package's price and hours).
+     *
+     * @return array{retainer_amount: int|null, retainer_minutes: int|null, period_retainer_amount: int|null, period_retainer_minutes: int|null}
+     */
+    public static function retainerTerms(PackageTerms $terms): array
+    {
+        $cadence = BillingCadence::tryFrom($terms->billingCadence->value);
+        $months = $cadence?->monthsInCycle() ?? 1;
+        if ($months === 1) {
+            return [
+                'retainer_amount' => $terms->retainerAmount,
+                'retainer_minutes' => $terms->retainerMinutes,
+                'period_retainer_amount' => null,
+                'period_retainer_minutes' => null,
+            ];
+        }
+
+        return [
+            'retainer_amount' => $terms->retainerAmount === null ? null : (int) round($terms->retainerAmount / $months),
+            'retainer_minutes' => $terms->retainerMinutes === null ? null : (int) round($terms->retainerMinutes / $months),
+            'period_retainer_amount' => $terms->retainerAmount,
+            'period_retainer_minutes' => $terms->retainerMinutes,
         ];
     }
 

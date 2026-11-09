@@ -104,7 +104,11 @@ final class PackageRequestReadService
             return [];
         }
         $packages = ServicePackage::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('service_package_id')->unique()->all())->get()->keyBy('id');
-        $versions = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('service_package_version_id')->unique()->all())->get()->keyBy('id');
+        // With their components: presenting a request reads its version's
+        // terms, so one bounded load serves the page (Codex P2 on #666).
+        $versions = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('service_package_version_id')->unique()->all())
+            ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])
+            ->get()->keyBy('id');
         $clients = ClientCompany::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('client_company_id')->filter()->unique()->all())->get()->keyBy('id');
         $suggested = $this->suggestedClients($workspace, $requests);
 

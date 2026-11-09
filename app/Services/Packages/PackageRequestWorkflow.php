@@ -8,6 +8,7 @@ use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientProject;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageComponent;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
 use App\Models\ServicePackageVersion;
@@ -141,19 +142,30 @@ final class PackageRequestWorkflow
         $existingAccount = null;
 
         $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, &$existingAccount): ServicePackageEnrollment {
+            // Current reads, not the snapshot an enclosing transaction may
+            // already hold (the agent API's receipt reads open one before this
+            // runs): the package under a shared lock - which waits out a
+            // publish or retire in flight and holds them off until this commits
+            // - then the request, in registry order (Codex P1 on #666).
+            $package = ServicePackage::query()->where('workspace_id', $workspace->id)->whereKey($request->service_package_id)
+                ->tap(Locks::forShare())->firstOrFail();
             $locked = $this->locked($workspace, $request);
             $this->assertVersion($locked, $expectedVersion);
             $this->refuseUnlessOpen($locked);
 
-            $package = ServicePackage::query()->where('workspace_id', $workspace->id)->whereKey($locked->service_package_id)->firstOrFail();
             if ($package->packageStatus() !== PackageStatus::Published || $package->published_version_id === null) {
                 throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
             }
             // The package as offered now, which may be newer than the one the
-            // visitor read (EDGE-7).
+            // visitor read (EDGE-7). Read current too: a version published
+            // after the enclosing snapshot is invisible to a plain read.
             $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($package->published_version_id)
-                ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])
-                ->firstOrFail();
+                ->tap(Locks::forShare())->firstOrFail();
+            $version->setRelation('components', ServicePackageComponent::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('service_package_version_id', $version->id)
+                ->orderBy('sort_order')->orderBy('id')
+                ->tap(Locks::forShare())->get());
 
             $email = (string) $locked->email;
             $existingAccount = $this->accountFor($email);
@@ -349,16 +361,23 @@ final class PackageRequestWorkflow
         return $user;
     }
 
-    /** Company-wide portal access for someone who already signs in here, unless they already have access. */
+    /**
+     * Company-wide portal access for someone who already signs in here. A
+     * project-limited contact is widened to the company: the new subscription
+     * project is in none of their grants, and the people who accept and pay
+     * for a package are company-wide contacts (Codex P2 on #666).
+     */
     private function admitExistingAccount(AccessMutationContext $context, ClientCompany $company, User $user): void
     {
-        $member = ClientCompanyMembership::query()
+        $scope = ClientCompanyMembership::query()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->where('user_id', $user->id)
-            ->exists();
-        if (! $member) {
+            ->value('access_scope');
+        if ($scope === null) {
             $this->workspaceAccess->grantPortal($context, $company, $user, PortalAccessScope::Company);
+        } elseif ($scope !== PortalAccessScope::Company->value) {
+            $this->workspaceAccess->changePortalScope($context, $company, $user, PortalAccessScope::Company);
         }
     }
 

@@ -234,6 +234,10 @@ export type PackageRequestRow = {
 
 export type PackageRequestsProps = {
     requests: PackageRequestRow[];
+    /** The next page of requests, when there is one. */
+    next_page_url: string | null;
+    /** Back to the first page, when this is a later one. */
+    first_page_url: string | null;
     clients: { id: string; name: string }[];
     catalog_url: string | null;
     stripe_connected: boolean;

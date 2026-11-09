@@ -109,6 +109,50 @@ describe('public request form', () => {
         ).not.toBeInTheDocument();
     });
 
+    it('reads an unanswered question keyed like an Object property as empty', async () => {
+        const user = userEvent.setup();
+        vi.mocked(apiRequest).mockResolvedValue({
+            ok: true,
+            status: 201,
+            data: { status: 'sent' },
+        });
+        render(
+            <PublicPackageShow
+                {...props({
+                    questions: [
+                        ...requestForm().questions,
+                        {
+                            key: 'constructor',
+                            label: 'Constructor',
+                            kind: 'short_text',
+                            required: false,
+                            max_length: 255,
+                        },
+                        {
+                            key: '__proto__',
+                            label: 'Proto',
+                            kind: 'short_text',
+                            required: false,
+                            max_length: 255,
+                        },
+                    ],
+                })}
+            />,
+        );
+        await fill(user);
+        await user.click(screen.getByRole('button', { name: 'Send request' }));
+
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(1));
+        const body = vi.mocked(apiRequest).mock.calls[0][2] as {
+            answers: Record<string, string>;
+        };
+        expect(Object.hasOwn(body.answers, 'constructor')).toBe(true);
+        expect(body.answers.constructor).toBe('');
+        expect(
+            Object.getOwnPropertyDescriptor(body.answers, '__proto__')?.value,
+        ).toBe('');
+    });
+
     it('keeps the honeypot out of sight, out of the tab order and unannounced', () => {
         const { container } = render(<PublicPackageShow {...props()} />);
         const trap = container.querySelector<HTMLInputElement>(

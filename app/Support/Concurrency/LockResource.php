@@ -51,6 +51,10 @@ enum LockResource: string
     // produces; package writes lock only the package row (its versions and
     // components are written under it).
     case ServicePackage = 'service_packages';
+    // Read under a shared lock when a decision derives an agreement from them,
+    // so a version published after the transaction's snapshot is seen.
+    case ServicePackageVersion = 'service_package_versions';
+    case ServicePackageComponent = 'service_package_components';
     // A sign-up request is decided under its own lock, before the client,
     // project, agreement and access its approval writes (and before
     // PortalInvitations' workspace lock).
