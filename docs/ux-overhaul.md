@@ -391,7 +391,9 @@ things keep those charges current:
   project scope, the last day its ledger read, and a digest of the dispute,
   settlement and allocation state of that scope's disputed and settled time
   through that day, with the type and placement of every invoice line that
-  holds each row. The allocation is what makes a disputed row charged rather
+  holds each row, and whether the row waits as deferred work - a late
+  answer moves only that, and a waiting row takes no capacity it took
+  before. The allocation is what makes a disputed row charged rather
   than held, and its type and placement are what it does to capacity: a void
   releases it without the dispute columns moving, and a later allocation of
   another kind - a buy-down after the void, say - draws differently, so
@@ -457,7 +459,9 @@ period can no longer bill it (decided 2026-11-09, `LateAnswer`):
   or - like
   all deferred work - collected at the hourly rate when the agreement
   terminates: the reconciliation of the last cycle, monthly or not, sells
-  nothing, so it collects what still waits. With no retainer there is no
+  nothing, so it collects what still waits - through the agreement's last
+  day, from the balance its ledger carries in that month, and dated there,
+  so a successor's deferred work is left to the successor. With no retainer there is no
   free capacity, so a buy-down or termination collects it. Waiting, it takes no
   capacity, so no later draft's charges depend on it until a line takes it,
   and a dispute on it after that finds the draft that carries it.

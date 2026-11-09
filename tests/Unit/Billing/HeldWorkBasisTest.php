@@ -8,16 +8,16 @@ use PHPUnit\Framework\TestCase;
 
 final class HeldWorkBasisTest extends TestCase
 {
-    /** @return list<array{int, bool, string|null, bool, string}> */
+    /** @return list<array{int, bool, string|null, bool, string, bool}> */
     private static function rows(): array
     {
-        return [[3, true, null, false, ''], [7, false, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']];
+        return [[3, true, null, false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]];
     }
 
     public function test_the_same_state_gives_the_same_basis_and_round_trips(): void
     {
         $basis = HeldWorkBasis::of(12, '2026-02-28', self::rows());
-        $this->assertSame(hash('sha256', "3|d|-|-|\n7|-|answered|-|retainer_draw@2026-02-28\n9|-|written_off|x|\n"), $basis->digest);
+        $this->assertSame(hash('sha256', "3|d|-|-||-\n7|-|answered|-|retainer_draw@2026-02-28|-\n9|-|written_off|x||-\n"), $basis->digest);
         $this->assertSame(['version' => 1, 'project_id' => 12, 'through' => '2026-02-28', 'digest' => $basis->digest], $basis->toStored());
         $stored = HeldWorkBasis::fromStored($basis->toStored());
         $this->assertNotNull($stored);
@@ -25,23 +25,24 @@ final class HeldWorkBasisTest extends TestCase
         $this->assertSame(hash('sha256', ''), HeldWorkBasis::digest([]));
     }
 
-    /** @return iterable<string, array{list<array{int, bool, string|null, bool, string}>}> */
+    /** @return iterable<string, array{list<array{int, bool, string|null, bool, string, bool}>}> */
     public static function changes(): iterable
     {
-        yield 'a row disputed again' => [[[3, true, null, false, ''], [7, true, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']]];
-        yield 'a dispute settled' => [[[3, false, 'answered', false, ''], [7, false, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']]];
-        yield 'another outcome' => [[[3, true, null, false, ''], [7, false, 'written_off', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']]];
-        yield 'a row deleted' => [[[3, true, null, true, ''], [7, false, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']]];
-        yield 'a row restored' => [[[3, true, null, false, ''], [7, false, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', false, '']]];
-        yield 'a charged row loses its invoice line, as a void does' => [[[3, true, null, false, ''], [7, false, 'answered', false, ''], [9, false, 'written_off', true, '']]];
-        yield 'a row held by a line of another kind, as a buy-down after a void' => [[[3, true, null, false, ''], [7, false, 'answered', false, 'deferred_buydown@2026-04-30'], [9, false, 'written_off', true, '']]];
-        yield 'a row placed in another month' => [[[3, true, null, false, ''], [7, false, 'answered', false, 'retainer_draw@2026-03-31'], [9, false, 'written_off', true, '']]];
-        yield 'a held row gains one' => [[[3, true, null, false, 'retainer_draw@2026-02-28'], [7, false, 'answered', false, 'retainer_draw@2026-02-28'], [9, false, 'written_off', true, '']]];
-        yield 'a new row' => [[...self::rows(), [11, true, null, false, '']]];
-        yield 'a row gone' => [[[3, true, null, false, ''], [7, false, 'answered', false, 'retainer_draw@2026-02-28']]];
+        yield 'a row disputed again' => [[[3, true, null, false, '', false], [7, true, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a dispute settled' => [[[3, false, 'answered', false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]]];
+        yield 'another outcome' => [[[3, true, null, false, '', false], [7, false, 'written_off', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a row deleted' => [[[3, true, null, true, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a row restored' => [[[3, true, null, false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', false, '', false]]];
+        yield 'a charged row loses its invoice line, as a void does' => [[[3, true, null, false, '', false], [7, false, 'answered', false, '', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a row held by a line of another kind, as a buy-down after a void' => [[[3, true, null, false, '', false], [7, false, 'answered', false, 'deferred_buydown@2026-04-30', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a row placed in another month' => [[[3, true, null, false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-03-31', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a held row gains one' => [[[3, true, null, false, 'retainer_draw@2026-02-28', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false], [9, false, 'written_off', true, '', false]]];
+        yield 'a row now waiting as deferred work, as a late answer leaves it' => [[[3, true, null, false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', true], [9, false, 'written_off', true, '', false]]];
+        yield 'a new row' => [[...self::rows(), [11, true, null, false, '', false]]];
+        yield 'a row gone' => [[[3, true, null, false, '', false], [7, false, 'answered', false, 'retainer_draw@2026-02-28', false]]];
     }
 
-    /** @param list<array{int, bool, string|null, bool, string}> $rows */
+    /** @param list<array{int, bool, string|null, bool, string, bool}> $rows */
     #[DataProvider('changes')]
     public function test_any_change_to_the_disputed_state_is_a_different_basis(array $rows): void
     {

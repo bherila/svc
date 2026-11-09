@@ -32,19 +32,19 @@ final readonly class HeldWorkBasis
     /**
      * @param  int|null  $projectId  the agreement's project, or null for the whole company
      * @param  string  $through  `Y-m-d`, the last day the ledger read
-     * @param  iterable<array{int, bool, string|null, bool, string}>  $rows  id, disputed, settlement, deleted, allocations - in id order
+     * @param  iterable<array{int, bool, string|null, bool, string, bool}>  $rows  id, disputed, settlement, deleted, allocations, deferred - in id order
      */
     public static function of(?int $projectId, string $through, iterable $rows): self
     {
         return new self($projectId, $through, self::digest($rows));
     }
 
-    /** @param  iterable<array{int, bool, string|null, bool, string}>  $rows */
+    /** @param  iterable<array{int, bool, string|null, bool, string, bool}>  $rows */
     public static function digest(iterable $rows): string
     {
         $context = hash_init('sha256');
-        foreach ($rows as [$id, $disputed, $settlement, $deleted, $allocations]) {
-            hash_update($context, $id.'|'.($disputed ? 'd' : '-').'|'.($settlement ?? '-').'|'.($deleted ? 'x' : '-').'|'.$allocations."\n");
+        foreach ($rows as [$id, $disputed, $settlement, $deleted, $allocations, $deferred]) {
+            hash_update($context, $id.'|'.($disputed ? 'd' : '-').'|'.($settlement ?? '-').'|'.($deleted ? 'x' : '-').'|'.$allocations.'|'.($deferred ? 'w' : '-')."\n");
         }
 
         return hash_final($context);

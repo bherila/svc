@@ -78,13 +78,16 @@ final class HeldWorkBasisRecorder
      * invoice when the line has none; both survive a regeneration, which
      * recreates the line on the same invoice for the same day.
      *
+     * And whether it waits as deferred work, which takes no capacity until a
+     * line takes it: a late answer moves only that.
+     *
      * Only work the retainer ledger reads: flat-hourly and direct time is
      * priced alone, and its allocation moves no pool.
      *
      * The allocations are read first, starting from the lines, which rank
      * before time entries; then the rows themselves. Both locking when asked.
      *
-     * @return list<array{int, bool, string|null, bool, string}>
+     * @return list<array{int, bool, string|null, bool, string, bool}>
      */
     private function rows(ClientInvoice $invoice, ?int $projectId, string $through, bool $locking): array
     {
@@ -95,6 +98,7 @@ final class HeldWorkBasisRecorder
             ->select([
                 'client_time_entries.id', 'client_time_entries.client_disputed_at',
                 'client_time_entries.client_dispute_settlement', 'client_time_entries.deleted_at',
+                'client_time_entries.is_deferred',
             ]);
         if ($locking) {
             $query->tap(Locks::forUpdate());
@@ -111,6 +115,7 @@ final class HeldWorkBasisRecorder
                 is_string($row->client_dispute_settlement) ? $row->client_dispute_settlement : null,
                 $row->deleted_at !== null,
                 implode(',', $held),
+                (bool) $row->is_deferred,
             ];
         }
 

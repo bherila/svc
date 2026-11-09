@@ -32,6 +32,7 @@ use App\Support\Billing\RetainerLineDescription;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -1424,20 +1425,32 @@ final class ClientInvoicingService
             // final reconciliation collects waiting deferred work at the
             // hourly rate, as the monthly path does, rather than placing it on
             // a pool nothing will charge for.
+            // Only the agreement's own segment, though: through its end, or the
+            // day before a successor for the same scope begins, as the backlog
+            // reads it. The natural cycle can run past both, into work that is
+            // the successor's to bill, and the ledger stops at the end, so the
+            // carried balance is read, and the settlement dated, there too.
             $terminationDate = $this->agreementEnd($agreement);
+            $isFinalCycle = $terminationDate instanceof Carbon && $retainerStart->gt($terminationDate);
+            $deferredThrough = $periodEnd->copy();
+            if ($isFinalCycle) {
+                $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
+                $segmentEnd = Carbon::instance($this->deferredBacklogReader->segmentEnd($workspace, $agreement, CarbonImmutable::instance($periodEnd)));
+                $deferredThrough = $segmentEnd->lt($periodEnd) ? $segmentEnd : $deferredThrough;
+            }
             $this->applyDeferredWork(
                 $company,
                 $invoice,
                 $agreement,
-                $periodEnd,
-                $terminationDate instanceof Carbon && $retainerStart->gt($terminationDate),
+                $deferredThrough,
+                $isFinalCycle,
                 // What the cycle's pool has left once its own work drew on it:
                 // the ledger's closing unused hours, which already count that
                 // work. Covered hours less the draw is the work's own share of
                 // the pool, which left deferred work no room even in a cycle
                 // whose pool went unused (docs/ux-overhaul.md 7b″).
                 max(0.0, (float) $cycleLedger['unused_hours']),
-                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $periodEnd->format('Y-m'))->recarriedDeferredHours ?? 0.0,
+                $this->invoiceLedgerBuilder->findLedgerMonth($ledger, $deferredThrough->format('Y-m'))->recarriedDeferredHours ?? 0.0,
                 $sortOrder,
             );
 

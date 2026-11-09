@@ -19,6 +19,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredBuyDownRequest;
+use App\Support\Billing\InvoiceLineType;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -721,5 +722,100 @@ final class DisputeLedgerDependencyTest extends TestCase
         app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [], [$expense->id]);
 
         $this->assertNull($expense->fresh()->client_invoice_line_id);
+    }
+
+    /**
+     * The fifth review: an agreement ending mid-quarter, succeeded the next day
+     * for the same scope. Its final reconciliation collects its own waiting
+     * deferred work at its rate, and leaves the successor's to the successor.
+     */
+    public function test_a_final_quarter_ending_mid_cycle_collects_only_its_own_segment(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->quarterly('segment');
+        $agreement->forceFill(['ends_on' => '2026-05-15', 'retainer_minutes' => 0, 'retainer_amount' => 0, 'period_retainer_minutes' => 0, 'period_retainer_amount' => 0])->save();
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic successor', 'status' => 'active',
+            'starts_on' => '2026-05-16', 'billing_cadence' => 'quarterly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'bill_overage_interim' => false,
+        ]);
+        $own = $this->hours($workspace, $company, $project, $owner, '2026-05-01', 120);
+        $successors = $this->hours($workspace, $company, $project, $owner, '2026-06-10', 120);
+        ClientTimeEntry::query()->whereKey([$own->id, $successors->id])->update(['is_deferred' => true]);
+
+        $final = $this->period($company, $agreement, '2026-07-01');
+
+        $this->assertSame(1, $this->onAnyLine($own->fresh()), 'Its own May work is collected.');
+        $this->assertSame(20000, (int) DB::table('client_invoice_lines')
+            ->join('client_invoice_line_time_entries as allocation', 'allocation.client_invoice_line_id', '=', 'client_invoice_lines.id')
+            ->where('allocation.client_time_entry_id', $own->id)->sum('client_invoice_lines.total_amount'));
+        $this->assertSame(0, $this->onAnyLine($successors->fresh()), "June is the successor's to bill.");
+        $this->assertSame(1, ClientTimeEntry::query()->whereKey($successors->id)->awaitingDeferredBilling()->count());
+        app(InvoiceLifecycleService::class)->issue($final->fresh(), $workspace);
+        $this->assertSame(0, $this->onAnyLine($successors->fresh()));
+    }
+
+    /**
+     * The fifth review: a late answer can change only `is_deferred`. Answered
+     * early, the hour counted in January's ledger when March was priced; once
+     * it waits as deferred work it takes no capacity, so March is refused until
+     * it is regenerated. The answer's own rebuild is left out, as a refused or
+     * not-yet-run rebuild would leave it.
+     */
+    public function test_a_late_answer_that_only_defers_the_hour_refuses_a_draft_priced_before_it(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('late-defer', 600);
+        $a = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 1200);
+        ClientTimeEntry::query()->whereKey($a->id)->update(['client_dispute_settlement' => 'answered', 'client_dispute_reply' => 'Synthetic reply']);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 1800);
+        $march = $this->period($company, $agreement, '2026-03-01');
+
+        ClientTimeEntry::query()->whereKey($a->id)->update(['is_deferred' => true, 'lock_version' => DB::raw('lock_version + 1')]);
+        try {
+            app(InvoiceLifecycleService::class)->issue($march->fresh(), $workspace);
+            $this->fail('A draft priced while the hour counted was issued after it began to wait.');
+        } catch (DisputedWorkChanged $refused) {
+            $this->assertSame('disputed_work_changed', $refused->refusalCode());
+        }
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($march->fresh());
+        app(InvoiceLifecycleService::class)->issue($rebuilt->fresh(), $workspace);
+        $this->assertSame('issued', $rebuilt->fresh()->status);
+    }
+
+    /**
+     * The fifth review: a re-carried deferred balance - deferred work an old
+     * invoice applied beyond March's free capacity - is collected by the final
+     * reconciliation of an agreement that ends mid-quarter, from the month its
+     * ledger ends in, once.
+     */
+    public function test_a_mid_cycle_final_quarter_collects_a_re_carried_deferred_balance(): void
+    {
+        [$workspace, $company, $project, $agreement, $owner] = $this->world('recarried', 600);
+        CarbonImmutable::setTestNow('2026-07-10 12:00:00');
+        $agreement->forceFill(['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'period_retainer_minutes' => null, 'ends_on' => '2026-05-15'])->save();
+        $ordinary = $this->hours($workspace, $company, $project, $owner, '2026-03-10', 600);
+        $deferred = $this->hours($workspace, $company, $project, $owner, '2026-03-20', 120);
+        ClientTimeEntry::query()->whereKey($deferred->id)->update(['is_deferred' => true]);
+        $history = ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_agreement_id' => $agreement->id,
+            'invoice_number' => 'SYNTH-RECARRIED', 'currency' => 'USD', 'status' => 'paid', 'invoice_kind' => 'cadence_period',
+            'service_period_start' => '2026-01-01', 'service_period_end' => '2026-03-31', 'cycle_start' => '2026-04-01', 'cycle_end' => '2026-06-30',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'paid_amount' => 0, 'balance_amount' => 0,
+        ]);
+        foreach ([[$ordinary, 'prior_month_retainer', 1], [$deferred, 'prior_month_retainer', 2]] as [$entry, $type, $sort]) {
+            $line = $history->lines()->create([
+                'workspace_id' => $workspace->id, 'client_project_id' => $project->id, 'type' => $type, 'description' => 'Synthetic history',
+                'quantity' => 0, 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'line_date' => '2026-03-31', 'sort_order' => $sort,
+            ]);
+            $line->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+        }
+
+        $final = $this->period($company, $agreement, '2026-07-01');
+        $carried = fn (): int => (int) $final->fresh()->lines()->where('type', InvoiceLineType::CarriedDeferredBilled->value)->sum('total_amount');
+
+        $this->assertSame(20000, $carried(), 'The two re-carried hours at the hourly rate.');
+        app(ClientInvoicingService::class)->regenerateDraftInvoice($final->fresh());
+        $this->assertSame(20000, $carried());
+        app(InvoiceLifecycleService::class)->issue($final->fresh(), $workspace);
+        $this->assertSame('issued', $final->fresh()->status);
     }
 }
