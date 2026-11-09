@@ -97,6 +97,9 @@ final class ServicePackageRulesTest extends TestCase
             'retainer_minutes' => ['integer', 'min:0'],
             'rollover_months' => ['integer', 'min:0', 'max:120'],
             'first_cycle_proration' => ['in:"prorate_hours","full_period","align_next_cycle"'],
+            'notice_days' => ['integer', 'min:0', 'max:365'],
+            'minimum_term_months' => ['integer', 'min:1', 'max:120'],
+            'cancellation_mode' => ['in:"none","request","self_serve"'],
         ], array_map(self::strings(...), AgreementTermRules::constraints()));
         $this->assertSame(['sometimes', 'required', 'integer', 'min:0'], AgreementTermRules::rule('retainer_minutes', 'sometimes', 'required'));
         // Presence passed by name is still a list.

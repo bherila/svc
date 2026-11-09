@@ -65,6 +65,12 @@ enum LockResource: string
     case ClientProposal = 'client_proposals';
     case ClientBillingSchedule = 'client_billing_schedules';
     case ClientAgreement = 'client_agreements';
+    // Cancellation (EDGE-9): every path - a client's request or self-serve
+    // end, a decision, an undo, an operator's edit of the end date, and the
+    // scheduled termination - locks the agreement first, then the request,
+    // then the scheduled end it writes or undoes.
+    case AgreementCancellationRequest = 'agreement_cancellation_requests';
+    case AgreementScheduledTermination = 'agreement_scheduled_terminations';
 
     // Money already taken, before the invoice it is taken against: payment
     // status and refund both start from the payment row and reach the invoice

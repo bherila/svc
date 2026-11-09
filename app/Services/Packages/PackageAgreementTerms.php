@@ -92,6 +92,10 @@ final class PackageAgreementTerms
             ...self::retainerTerms($terms),
             'rollover_months' => $terms->rolloverMonths,
             'first_cycle_proration' => $terms->firstCycleProration?->value,
+            // CAN-1: the agreement keeps its own copy of the cancellation terms.
+            'notice_days' => $terms->noticeDays,
+            'minimum_term_months' => $terms->minimumTermMonths,
+            'cancellation_mode' => $terms->cancellationMode->value,
         ];
     }
 
