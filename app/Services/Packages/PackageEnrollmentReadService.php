@@ -48,10 +48,10 @@ final class PackageEnrollmentReadService
         }
         $last = $enrollments->last();
 
-        $limits = $this->autopay->clientLimits($workspace, array_values($enrollments->pluck('client_company_id')->all()));
+        $autopay = $this->autopay->clientAutopay($workspace, array_values($enrollments->pluck('client_company_id')->all()));
 
         return [
-            'data' => array_values($enrollments->map(static fn (ServicePackageEnrollment $enrollment): array => PackageEnrollmentPresenter::forManager($workspace, $enrollment, $limits[$enrollment->client_company_id] ?? null))->all()),
+            'data' => array_values($enrollments->map(static fn (ServicePackageEnrollment $enrollment): array => PackageEnrollmentPresenter::forManager($workspace, $enrollment, $autopay[$enrollment->client_company_id] ?? null))->all()),
             'meta' => ['next_cursor' => $more && $last !== null ? AgentApiCursor::encode($last->id, $workspace->public_id, $key) : null],
         ];
     }
@@ -64,7 +64,7 @@ final class PackageEnrollmentReadService
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        return PackageEnrollmentPresenter::forManager($workspace, $enrollment, $this->autopay->clientLimits($workspace, [$enrollment->client_company_id])[$enrollment->client_company_id] ?? null);
+        return PackageEnrollmentPresenter::forManager($workspace, $enrollment, $this->autopay->clientAutopay($workspace, [$enrollment->client_company_id])[$enrollment->client_company_id] ?? null);
     }
 
     public function find(User|AgentPrincipal $actor, Workspace $workspace, string $publicId): ServicePackageEnrollment

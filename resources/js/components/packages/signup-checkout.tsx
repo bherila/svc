@@ -5,6 +5,7 @@ import { StripeCardPayment } from '@/components/billing/stripe-card-payment';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSetupIntentReturn } from '@/hooks/use-setup-intent-return';
 import { formatDay, formatShortDay } from '@/lib/datetime';
 import { formatMoney } from '@/lib/money';
 import { paymentStateLabel } from '@/lib/packages';
@@ -111,6 +112,17 @@ function AutopayStep({
             },
         );
     };
+
+    if (autopay.unavailable !== null) {
+        return (
+            <div className="grid grid-cols-1 gap-3">
+                <AutopayBlock autopay={autopay} companyName={companyName} />
+                <p role="alert" className="wrap-anywhere">
+                    {autopay.unavailable}
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="grid grid-cols-1 gap-3">
@@ -226,6 +238,10 @@ export function SignupCheckout({
     accepted: boolean;
 }) {
     const { due_now: dueNow, autopay } = checkout;
+    // The save-card form returns here after a bank or 3-D Secure redirect.
+    const returned = useSetupIntentReturn(
+        checkout.card_setup?.confirm_url ?? null,
+    );
     const state = paymentStateLabel(payment.state);
     const waiting = waitingText(payment);
     const owed = dueNow.balance ?? dueNow.total;
@@ -308,6 +324,16 @@ export function SignupCheckout({
                     </div>
                 )}
 
+                {returned !== null && (
+                    <p
+                        role={
+                            returned.outcome === 'failed' ? 'alert' : 'status'
+                        }
+                        className="wrap-anywhere"
+                    >
+                        {returned.message}
+                    </p>
+                )}
                 {autopay !== null && (
                     <AutopayStep
                         autopay={autopay}

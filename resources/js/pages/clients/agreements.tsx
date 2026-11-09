@@ -28,6 +28,8 @@ type Agreement = {
     version: string;
     href: string;
     activate_href: string | null;
+    /** A service package sign-up's agreement waiting for review: its enrollment's activation, with the enrollment's version. */
+    activate_enrollment: { href: string; version: string } | null;
     create_schedule_href: string | null;
     title: string;
     status: string;
@@ -200,6 +202,7 @@ export default function ClientAgreements({
                                 </p>
                             </CardHeader>
                             {(agreement.activate_href !== null ||
+                                agreement.activate_enrollment !== null ||
                                 agreement.create_schedule_href !== null) && (
                                 <CardContent className="grid grid-cols-1 gap-3">
                                     {agreement.activate_href !== null && (
@@ -209,6 +212,24 @@ export default function ClientAgreements({
                                                 version={agreement.version}
                                                 label="Activate"
                                                 description="Activate this agreement using its current terms. This enables its billing workflow."
+                                            />
+                                        </div>
+                                    )}
+                                    {agreement.activate_enrollment !== null && (
+                                        <div className="flex flex-wrap gap-2">
+                                            <EngagementAction
+                                                href={
+                                                    agreement
+                                                        .activate_enrollment
+                                                        .href
+                                                }
+                                                version={
+                                                    agreement
+                                                        .activate_enrollment
+                                                        .version
+                                                }
+                                                label="Activate service"
+                                                description="The client signed this agreement from a service package. Activating it starts the service today in the workspace’s time zone, signs the agreement in the client’s name as they typed it, and emails the client."
                                             />
                                         </div>
                                     )}

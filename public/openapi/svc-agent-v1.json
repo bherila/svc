@@ -23975,6 +23975,8 @@
                                             "package_first_period_unbillable",
                                             "package_enrollment_not_awaiting_review",
                                             "package_activation_conflict",
+                                            "package_agreement_starts_with_service",
+                                            "package_autopay_currency_mismatch",
                                             "package_nothing_to_publish",
                                             "package_nothing_priced",
                                             "package_payment_needs_stripe",
@@ -33721,7 +33723,7 @@
                     },
                     "publish_refusals": {
                         "type": "array",
-                        "maxItems": 27,
+                        "maxItems": 29,
                         "items": {
                             "type": "object",
                             "additionalProperties": false,
@@ -33749,6 +33751,8 @@
                                         "package_first_period_unbillable",
                                         "package_enrollment_not_awaiting_review",
                                         "package_activation_conflict",
+                                        "package_agreement_starts_with_service",
+                                        "package_autopay_currency_mismatch",
                                         "package_nothing_to_publish",
                                         "package_nothing_priced",
                                         "package_payment_needs_stripe",

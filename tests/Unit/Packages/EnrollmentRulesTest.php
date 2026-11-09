@@ -7,6 +7,7 @@ use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Packages\ClientAutopay;
 use App\Support\Packages\EnrollmentLapse;
 use App\Support\Packages\EnrollmentSigner;
 use App\Support\Packages\EnrollmentStatus;
@@ -298,6 +299,19 @@ final class EnrollmentRulesTest extends TestCase
         $this->assertSame([], $before->differences($this->terms()));
         $this->assertSame(['agreement_text', 'components', 'notice_days'], $after->differences($before));
         $this->assertSame($after->differences($before), $before->differences($after));
+    }
+
+    /** ACC-4: the client's autopay meets a version only at its limit, in its currency. */
+    #[Requirement('ACC-4')]
+    public function test_client_autopay_meets_a_version_only_at_its_limit_in_its_currency(): void
+    {
+        $terms = $this->terms(['require_autopay' => true, 'autopay_limit_amount' => 120000, 'currency' => 'EUR']);
+
+        $this->assertTrue(ClientAutopay::meets(new ClientAutopay(120000, 'EUR'), $terms));
+        $this->assertFalse(ClientAutopay::meets(new ClientAutopay(120000, 'USD'), $terms), 'the same number in another currency');
+        $this->assertFalse(ClientAutopay::meets(new ClientAutopay(150000, 'EUR'), $terms), 'another limit');
+        $this->assertFalse(ClientAutopay::meets(null, $terms), 'no client consent');
+        $this->assertFalse(ClientAutopay::meets(new ClientAutopay(120000, 'EUR'), $this->terms(['currency' => 'EUR'])), 'a version that requires none');
     }
 
     /** @param array<string, mixed> $overrides */

@@ -498,10 +498,31 @@ Slice 3b (payment at sign-up) settled these:
 - **Lapsing (ACC-6)** is `svc:packages:lapse-enrollments`, hourly, behind the
   feature flag. An offer not accepted lapses `payment_lapse_days` after it was
   made, an unpaid acceptance that many days after it was signed, on that day
-  in the workspace's timezone. A lapsed offer cannot be accepted. Each is
-  decided under its own lock against the invoice as it stands: a paid one is
-  moved on instead, and one with a payment in flight is held (the void refuses
-  it) for a later run.
+  in the workspace's timezone. A lapsed offer cannot be accepted. Each run
+  walks every open enrollment in pages by id (no elapsed-time filter: a
+  one-day offer made late in the evening is due at the workspace's next
+  midnight) and locks only those due on the workspace's calendar. Each is
+  decided under its own lock against the invoice as it stands: one whose wait
+  is over (paid, autopay on) is moved on instead, a paid invoice still waiting
+  for autopay is held, one with a payment in flight is held (the void refuses
+  it) for a later run, and an autopay-only sign-up with no invoice lapses.
+- **Event times are UTC instants** (`offered_at`, `accepted_at`,
+  `activated_at`, `lapsed_at`); the dates the workspace's calendar decides
+  (`starts_on`, the lapse day) are the workspace's.
+- **A sign-up's agreement starts only with its service.**
+  `AgreementWorkflow::activate()` refuses a draft agreement an enrollment owns
+  with `package_agreement_starts_with_service` unless the enrollment workflow
+  passes that enrollment, so `agreements.activate` (and the Agreements
+  screen's control behind it) cannot start an unpaid or unreviewed sign-up.
+  The Agreements screen offers such an agreement the enrollment's own
+  activation while it waits for review.
+- **Autopay's currency.** Autopay's limit is in the company's billing
+  currency. Required autopay is met only by a client consent in the
+  version's currency; a version in another currency is refused at
+  acceptance with `package_autopay_currency_mismatch`, and the review page
+  says why instead of offering the consent. A client authorizing the limit a
+  provider already turned on is recorded as the client's own consent (no
+  second notice); a replay by the same side records nothing.
 - **Money after the lapse (EDGE-1)** follows the existing path: a payment
   succeeding on a void invoice is refused and its Stripe event recorded as
   failed for review. Nothing is refunded or activated; Needs you shows

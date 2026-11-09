@@ -1020,7 +1020,9 @@ directly, consuming a proposal through `agreements.create`, scoping one to a pro
 and any removal of a row. Proposal-derived agreements instead come from confirmed
 `proposals.accept`. `agreements.create` makes a draft that bills nothing until
 `agreements.activate`, which refuses an overlap with another active agreement for
-the same client.
+the same client. A draft agreement a service package sign-up created never starts
+through `agreements.activate` (`package_agreement_starts_with_service`): it starts
+with its service, automatically or through `enrollments.activate`.
 
 ## Received-payment bookkeeping
 

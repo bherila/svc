@@ -2,21 +2,26 @@
 
 namespace App\Services\Engagement;
 
+use App\Exceptions\ServicePackageRefused;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
 use App\Models\ClientProposal;
+use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
+use App\Support\Packages\PackageRefusal;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use LogicException;
 
 class AgreementWorkflow
 {
@@ -185,9 +190,20 @@ class AgreementWorkflow
         });
     }
 
-    public function activate(ClientAgreement $agreement, ?string $expectedVersion = null): ClientAgreement
+    /**
+     * Start a draft agreement, or resume a paused one.
+     *
+     * A draft a service package sign-up created starts with its service, not
+     * on its own: only once the client has accepted, any payment it waits for
+     * has arrived and, where the package asks, an owner or admin has activated
+     * the enrollment (ACC-5). So it is refused here with
+     * `package_agreement_starts_with_service` unless `$enrollment` - passed
+     * only by {@see PackageEnrollmentWorkflow}, which has checked all of that
+     * under the enrollment's lock - is the enrollment that owns it.
+     */
+    public function activate(ClientAgreement $agreement, ?string $expectedVersion = null, ?ServicePackageEnrollment $enrollment = null): ClientAgreement
     {
-        return DB::transaction(function () use ($agreement, $expectedVersion): ClientAgreement {
+        return DB::transaction(function () use ($agreement, $expectedVersion, $enrollment): ClientAgreement {
             $locked = ClientAgreement::query()->where('workspace_id', $agreement->workspace_id)->tap(Locks::forUpdate())->findOrFail($agreement->id);
 
             $this->assertVersion($locked, $expectedVersion);
@@ -197,6 +213,9 @@ class AgreementWorkflow
 
             if ($locked->status !== 'draft' && $locked->status !== 'paused') {
                 throw new EngagementException('Only draft or paused agreements can be activated.');
+            }
+            if ($locked->status === 'draft') {
+                $this->assertNotAPackageSignup($locked, $enrollment);
             }
 
             $this->assertNoOverlappingActiveAgreement($locked);
@@ -217,6 +236,29 @@ class AgreementWorkflow
 
             return $locked;
         });
+    }
+
+    /**
+     * Refuse to start a sign-up's draft agreement anywhere but in its
+     * enrollment. An enrollment's agreement is fixed when the offer is made,
+     * in the transaction that creates both, so an ordinary read decides it.
+     */
+    private function assertNotAPackageSignup(ClientAgreement $agreement, ?ServicePackageEnrollment $starting): void
+    {
+        if ($starting instanceof ServicePackageEnrollment) {
+            if ((int) $starting->workspace_id !== (int) $agreement->workspace_id || (int) $starting->client_agreement_id !== (int) $agreement->id) {
+                throw new LogicException('An enrollment can start only its own agreement.');
+            }
+
+            return;
+        }
+        $owned = ServicePackageEnrollment::query()
+            ->where('workspace_id', $agreement->workspace_id)
+            ->where('client_agreement_id', $agreement->id)
+            ->exists();
+        if ($owned) {
+            throw ServicePackageRefused::because(PackageRefusal::AgreementStartsWithService);
+        }
     }
 
     /**

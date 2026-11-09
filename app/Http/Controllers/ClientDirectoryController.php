@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
@@ -18,7 +17,6 @@ use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
-use App\Models\ServicePackageEnrollment;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\ClientHome\ClientOverviewQuery;
@@ -40,6 +38,7 @@ use App\Services\Files\AttachmentFilePage;
 use App\Services\Files\AttachmentParentReference;
 use App\Services\Files\AttachmentSharingNativeView;
 use App\Services\Finance\FinanceReconciliationBadges;
+use App\Services\Packages\PackageAgreementActivations;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Services\Revenue\RevenuePagePresenter;
 use App\Services\Revenue\RevenueReadService;
@@ -73,7 +72,6 @@ use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Files\AttachmentListing;
-use App\Support\Packages\EnrollmentStatus;
 use App\Support\Revenue\ClientRosterView;
 use App\Support\Revenue\RevenueQuery;
 use App\Support\Revenue\ServiceMonth;
@@ -82,7 +80,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -1605,18 +1602,6 @@ class ClientDirectoryController extends Controller
     /** @return array{href: string, version: string}|null */
     private function enrollmentActivation(Workspace $workspace, ClientAgreement $agreement): ?array
     {
-        if (! EnsureServicePackagesEnabled::enabled() || ! Route::has('agent-api.v1.enrollments.activate')) {
-            return null;
-        }
-        $enrollment = ServicePackageEnrollment::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('client_agreement_id', $agreement->id)
-            ->where('status', EnrollmentStatus::AwaitingReview->value)
-            ->first();
-
-        return $enrollment === null ? null : [
-            'href' => route('agent-api.v1.enrollments.activate', [$workspace, $enrollment->public_id], absolute: false),
-            'version' => AgentApiVersion::for($enrollment),
-        ];
+        return app(PackageAgreementActivations::class)->forAgreements($workspace, [(int) $agreement->id])[(int) $agreement->id] ?? null;
     }
 }

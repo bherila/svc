@@ -46,7 +46,7 @@ Schedule::command('svc:billing:generate-cadence-drafts --apply --limit=50')->hou
 // and its draft agreement left a draft, so a repeated run changes nothing.
 // Hourly, so a lapse date is reached in every workspace's own time zone; only
 // while the feature is on (X-1). In process; no queue worker.
-Schedule::command('svc:packages:lapse-enrollments --apply --limit=200')->hourly()->when(static fn (): bool => (bool) config('svc.service_packages.enabled'))->withoutOverlapping(30);
+Schedule::command('svc:packages:lapse-enrollments --apply --page=200')->hourly()->when(static fn (): bool => (bool) config('svc.service_packages.enabled'))->withoutOverlapping(30);
 // Is each workspace's Stripe webhook endpoint subscribed to every event SVC needs?
 // One read of Stripe per connection, recorded for the Payments page; it changes
 // nothing at Stripe (the fix is a button an owner or admin presses). No queue.

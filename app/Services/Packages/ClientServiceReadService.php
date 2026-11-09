@@ -259,7 +259,7 @@ final class ClientServiceReadService
                 'confirm_url' => route('portal.payment-methods.confirm', $company, absolute: false),
                 'publishable_key' => $publishableKey,
             ] : null,
-            'autopay' => $limit === null ? null : $this->autopayStep($workspace, $company, $enrollment, $terms->currency, $limit, $acting && $open && $status !== EnrollmentStatus::Offered),
+            'autopay' => $limit === null ? null : $this->autopayStep($workspace, $company, $enrollment, $terms, $limit, $acting && $open && $status !== EnrollmentStatus::Offered),
         ];
     }
 
@@ -268,19 +268,25 @@ final class ClientServiceReadService
      * client authorizes (with their default method; null until one is saved),
      * and the existing enable endpoint with the fields it takes. The enable
      * URL is offered once the offer is accepted, to a company-wide contact.
+     * Autopay in a currency other than the version's can never meet it, so
+     * then nothing is offered and `unavailable` says why.
      *
      * @return array<string, mixed>
      */
-    private function autopayStep(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, string $currency, int $limit, bool $mayEnable): array
+    private function autopayStep(Workspace $workspace, ClientCompany $company, ServicePackageEnrollment $enrollment, PackageTerms $terms, int $limit, bool $mayEnable): array
     {
-        $satisfied = $this->autopay->satisfied($workspace, $company, $limit);
-        $wording = $this->autopay->wording($workspace, $company, $limit);
+        $currency = $terms->currency;
+        $satisfied = $this->autopay->satisfied($workspace, $company, $terms);
+        $unavailable = $satisfied || $this->autopay->currencyMatches($workspace, $company, $terms) ? null
+            : PackageRefusal::AutopayCurrencyMismatch->message();
+        $wording = $unavailable === null ? $this->autopay->wording($workspace, $company, $limit) : null;
 
         return [
             'limit_amount' => $limit,
             'currency' => $currency,
             'limit_label' => AutopayWording::money($limit, $currency),
             'satisfied' => $satisfied,
+            'unavailable' => $unavailable,
             'wording' => $wording,
             'enable_url' => $mayEnable && ! $satisfied && $wording !== null ? route('portal.autopay.enable', $company, absolute: false) : null,
             'enable_fields' => $mayEnable && ! $satisfied && $wording !== null ? ['limit_amount' => $limit, 'wording' => $wording, 'service' => $enrollment->public_id] : null,
@@ -434,17 +440,17 @@ final class ClientServiceReadService
         }
         $versions = $this->versions($workspace, array_values(array_unique($shown)));
         $base = rtrim((string) config('app.url'), '/');
-        $limits = $this->autopay->clientLimits($workspace, array_values($enrollments->pluck('client_company_id')->all()));
+        $autopay = $this->autopay->clientAutopay($workspace, array_values($enrollments->pluck('client_company_id')->all()));
         $timezone = $this->clock->now($workspace)->tzName;
 
-        return array_values($enrollments->map(static function (ServicePackageEnrollment $enrollment) use ($versions, $shown, $base, $limits, $timezone): array {
+        return array_values($enrollments->map(static function (ServicePackageEnrollment $enrollment) use ($versions, $shown, $base, $autopay, $timezone): array {
             $company = $enrollment->clientCompany ?? throw new \LogicException('An enrollment names a company outside its workspace.');
 
             return PackageEnrollmentPresenter::forClient(
                 $enrollment,
                 $versions->get($shown[$enrollment->id]) ?? throw new \LogicException('An enrollment names a version outside its workspace.'),
                 $base.route('portal.services.show', [$company, $enrollment->public_id], false),
-                $limits[$enrollment->client_company_id] ?? null,
+                $autopay[$enrollment->client_company_id] ?? null,
                 $timezone,
             );
         })->all());

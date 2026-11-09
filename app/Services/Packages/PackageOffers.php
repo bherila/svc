@@ -96,7 +96,8 @@ final class PackageOffers
             'service_package_request_id' => $request?->id,
             'status' => EnrollmentStatus::Offered->value,
             'offered_by_user_id' => $offeredBy?->id,
-            'offered_at' => $now,
+            // An instant, in UTC: a local one would be stored shifted by the zone.
+            'offered_at' => $now->utc(),
         ])->save();
 
         return $enrollment;

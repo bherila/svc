@@ -5,10 +5,14 @@ namespace App\Console\Commands\Packages;
 use App\Console\Commands\MutationCommand;
 use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Packages\PackageEnrollmentWorkflow;
+use App\Support\Packages\EnrollmentLapse;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\LapseOutcome;
+use App\Support\WorkspaceClock;
+use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
 /**
@@ -24,47 +28,83 @@ use Throwable;
  */
 final class LapseEnrollmentsCommand extends MutationCommand
 {
-    protected $signature = 'svc:packages:lapse-enrollments {--limit=200 : Maximum open enrollments to consider in this run}';
+    protected $signature = 'svc:packages:lapse-enrollments {--page=200 : Open enrollments read at a time; every open enrollment is considered, a page after another}';
 
     protected $description = 'Lapse service package sign-ups left unaccepted or unpaid past their lapse date';
 
-    public function handle(PackageEnrollmentWorkflow $workflow): int
+    public function handle(PackageEnrollmentWorkflow $workflow, WorkspaceClock $clock): int
     {
         $apply = (bool) $this->applying();
         if (! EnsureServicePackagesEnabled::enabled()) {
             return $this->report($apply, [], 'Service packages are switched off; nothing was considered.');
         }
-        $limit = max(1, min(1000, (int) $this->option('limit')));
+        $page = max(1, min(1000, (int) $this->option('page')));
 
-        // Oldest first: an enrollment can lapse no sooner than a day after it
-        // was offered, and whichever lapses first was offered first.
-        $open = ServicePackageEnrollment::query()
-            ->whereIn('status', [EnrollmentStatus::Offered->value, EnrollmentStatus::AwaitingPayment->value])
-            ->where('offered_at', '<=', now()->subDay())
-            ->orderBy('offered_at')
-            ->orderBy('id')
-            ->limit($limit)
-            ->get(['id', 'public_id', 'workspace_id', 'status']);
-        $workspaces = Workspace::query()->whereIn('id', $open->pluck('workspace_id')->unique()->all())->get()->keyBy('id');
-
+        // Every open enrollment, a page at a time by id, so a run never stops
+        // at the oldest few and leaves a newer one waiting behind them. No
+        // elapsed-time filter here: an enrollment lapses on a day of its
+        // workspace's calendar, which for a one-day offer made late in the
+        // evening is minutes away. EnrollmentLapse decides, on the workspace's
+        // calendar, which are due, and only those are locked and lapsed.
         $outcomes = [];
+        $after = 0;
+        do {
+            $open = ServicePackageEnrollment::query()
+                ->whereIn('status', [EnrollmentStatus::Offered->value, EnrollmentStatus::AwaitingPayment->value])
+                ->where('id', '>', $after)
+                ->orderBy('id')
+                ->limit($page)
+                ->get(['id', 'public_id', 'workspace_id', 'status', 'service_package_version_id', 'accepted_version_id', 'offered_at', 'accepted_at']);
+            $after = (int) ($open->last()->id ?? $after);
+            foreach ($this->due($open, $clock) as [$workspace, $enrollment]) {
+                try {
+                    $outcome = $this->preview(fn (): LapseOutcome => $workflow->lapse($workspace, $enrollment))->value;
+                } catch (Throwable $failure) {
+                    report($failure);
+                    $outcome = 'failed';
+                }
+                if ($outcome !== LapseOutcome::NotDue->value) {
+                    $outcomes[] = ['workspace_id' => $workspace->public_id, 'enrollment_id' => $enrollment->public_id, 'outcome' => $outcome];
+                }
+            }
+        } while ($open->count() === $page);
+
+        return $this->report($apply, $outcomes, null);
+    }
+
+    /**
+     * The page's enrollments due to lapse today on their workspace's calendar,
+     * with their workspace. Read without locks: lapse() decides again under
+     * the enrollment's lock. Two bounded reads per page.
+     *
+     * @param  Collection<int, ServicePackageEnrollment>  $open
+     * @return list<array{Workspace, ServicePackageEnrollment}>
+     */
+    private function due(Collection $open, WorkspaceClock $clock): array
+    {
+        if ($open->isEmpty()) {
+            return [];
+        }
+        $workspaces = Workspace::query()->whereIn('id', $open->pluck('workspace_id')->unique()->all())->get()->keyBy('id');
+        $versions = ServicePackageVersion::query()
+            ->whereIn('id', $open->map(static fn (ServicePackageEnrollment $enrollment): int => $enrollment->carriedVersionId())->unique()->all())
+            ->get(['id', 'workspace_id', 'payment_lapse_days'])
+            ->keyBy('id');
+
+        $due = [];
         foreach ($open as $enrollment) {
             $workspace = $workspaces->get($enrollment->workspace_id);
-            if (! $workspace instanceof Workspace) {
+            $version = $versions->get($enrollment->carriedVersionId());
+            if (! $workspace instanceof Workspace || ! $version instanceof ServicePackageVersion || (int) $version->workspace_id !== (int) $workspace->id) {
                 continue;
             }
-            try {
-                $outcome = $this->preview(fn (): LapseOutcome => $workflow->lapse($workspace, $enrollment))->value;
-            } catch (Throwable $failure) {
-                report($failure);
-                $outcome = 'failed';
-            }
-            if ($outcome !== LapseOutcome::NotDue->value) {
-                $outcomes[] = ['workspace_id' => $workspace->public_id, 'enrollment_id' => $enrollment->public_id, 'outcome' => $outcome];
+            $today = $clock->today($workspace);
+            if (EnrollmentLapse::hasLapsed($enrollment->enrollmentStatus(), $enrollment->offered_at, $enrollment->accepted_at, (int) $version->payment_lapse_days, $today->tzName, $today)) {
+                $due[] = [$workspace, $enrollment];
             }
         }
 
-        return $this->report($apply, $outcomes, null);
+        return $due;
     }
 
     /** @param list<array{workspace_id: string, enrollment_id: string, outcome: string}> $outcomes */

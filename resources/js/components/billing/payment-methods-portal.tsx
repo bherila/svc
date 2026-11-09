@@ -22,6 +22,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useSetupIntentReturn } from '@/hooks/use-setup-intent-return';
+import type { SetupConfirmation } from '@/hooks/use-setup-intent-return';
 import { apiRequest, newIdempotencyKey } from '@/lib/api';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { loadStripe } from '@/lib/stripe-js';
@@ -52,10 +54,7 @@ export type MethodSetup = {
     publishable_key: string;
 };
 
-type Confirmation = {
-    outcome: 'saved' | 'pending' | 'failed';
-    message: string;
-};
+type Confirmation = SetupConfirmation;
 
 const RESULTS: Record<string, string> = {
     default: 'Default payment method changed.',
@@ -91,43 +90,9 @@ export function PaymentMethodsCard({
     const [removing, setRemoving] = useState<SavedMethod | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [returned, setReturned] = useState<Confirmation | null>(null);
 
-    // Stripe sends a client back here after a bank or 3-D Secure redirect with
-    // the SetupIntent in the address: read it back, then tidy the address.
-    useEffect(() => {
-        if (setup === null) {
-            return;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const intent = params.get('setup_intent');
-
-        if (intent === null || !/^seti_[A-Za-z0-9_]+$/.test(intent)) {
-            return;
-        }
-
-        const clean = new URL(window.location.href);
-        [
-            'setup_intent',
-            'setup_intent_client_secret',
-            'redirect_status',
-        ].forEach((name) => clean.searchParams.delete(name));
-        window.history.replaceState(null, '', clean.pathname + clean.search);
-        void apiRequest<Confirmation>('POST', setup.confirm_href, {
-            setup_intent: intent,
-        }).then((response) => {
-            setReturned(
-                response.ok
-                    ? response.data
-                    : { outcome: 'failed', message: response.message },
-            );
-
-            if (response.ok) {
-                void refreshPageProps({ requireSuccess: false });
-            }
-        });
-    }, [setup]);
+    // Stripe sends a client back here after a bank or 3-D Secure redirect.
+    const returned = useSetupIntentReturn(setup?.confirm_href ?? null);
 
     const makeDefault = (method: SavedMethod) => {
         if (method.default_href === null || busy) {

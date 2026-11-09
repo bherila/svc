@@ -47,6 +47,7 @@ function autopay(): NonNullable<PortalCheckout['autopay']> {
         currency: 'USD',
         limit_label: '$500.00',
         satisfied: false,
+        unavailable: null,
         wording: null,
         enable_url: null,
         enable_fields: null,
@@ -470,6 +471,35 @@ describe('portal service review and sign', () => {
         expect(screen.getByRole('status')).toHaveTextContent(
             'Autopay is on, up to $500.00 per invoice.',
         );
+    });
+
+    it('[ACC-4] says why autopay cannot meet the version, and offers nothing to act on', () => {
+        const reason =
+            'This service is paid by autopay in its own currency, and autopay for your account is in a different currency, so it cannot be set up here. Please contact us to sign up.';
+        render(
+            <PortalService
+                {...portalServiceProps({
+                    checkout: checkout({
+                        card_setup: {
+                            setup_url:
+                                '/portal/company-1/payment-methods/setup',
+                            confirm_url:
+                                '/portal/company-1/payment-methods/confirm',
+                            publishable_key: 'pk_test_fixture',
+                        },
+                        autopay: { ...autopay(), unavailable: reason },
+                    }),
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent(reason);
+        expect(
+            screen.queryByRole('button', { name: 'Save a card' }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', { name: 'Turn on autopay' }),
+        ).not.toBeInTheDocument();
     });
 
     it('[ACC-6] has no layout risk with oversized line descriptions and wording', () => {

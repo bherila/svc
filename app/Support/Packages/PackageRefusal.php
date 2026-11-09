@@ -27,6 +27,8 @@ enum PackageRefusal: string
     case FirstPeriodUnbillable = 'package_first_period_unbillable';
     case NotAwaitingReview = 'package_enrollment_not_awaiting_review';
     case ActivationConflict = 'package_activation_conflict';
+    case AgreementStartsWithService = 'package_agreement_starts_with_service';
+    case AutopayCurrencyMismatch = 'package_autopay_currency_mismatch';
 
     case NothingToPublish = 'package_nothing_to_publish';
     case NothingPriced = 'package_nothing_priced';
@@ -62,6 +64,9 @@ enum PackageRefusal: string
             self::FirstPeriodUnbillable => 'The first period of this service cannot be invoiced yet, because it overlaps an invoice already issued. Please contact us to finish signing up.',
             self::NotAwaitingReview => 'Only a service the client has accepted, and that is waiting for review, can be activated.',
             self::ActivationConflict => 'This service\'s agreement would overlap another active agreement on its project. End or correct that agreement, then activate again.',
+            self::AgreementStartsWithService => 'This agreement belongs to a service package sign-up, so it starts with the service: automatically once the client has signed and paid what the package asks, or by activating the service on the agreement\'s page when it waits for review.',
+            // ACC-4: autopay's limit is in the company's billing currency.
+            self::AutopayCurrencyMismatch => 'This service is paid by autopay in its own currency, and autopay for your account is in a different currency, so it cannot be set up here. Please contact us to sign up.',
             self::NothingToPublish => 'There is no draft to publish.',
             self::NothingPriced => 'Add a component, a retainer or an hourly rate before publishing.',
             self::PaymentNeedsStripe => 'This package takes a payment at sign-up, so the workspace needs a Stripe connection before it can be published.',
