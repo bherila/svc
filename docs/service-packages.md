@@ -447,14 +447,20 @@ Slice 3b (payment at sign-up) settled these:
   overlap guards make the next regular run bill the next cycle and refuse this
   one (tested: the next run bills December only, and asking for November again
   is refused).
-- **What EDGE-6's proration covers.** The engine prorates the retainer (fee
-  and hours) by the agreement's `first_cycle_proration`; it bills each
-  recurring item per incidence, so a monthly hosting item's opening month is
-  charged in full on the start date, as for every other agreement. The engine
-  was not changed: prorating recurring items would change every existing
-  agreement's first invoice. A quarterly item anchored on the 1st also bills
-  its next incidence inside a first quarter anchored mid-month. Both are
-  recorded in the tests and are an owner decision if they should change.
+- **What EDGE-6's proration covers and first cycle billing.** The engine
+  prorates the retainer (fee and hours) by the agreement's
+  `first_cycle_proration`; it bills each recurring item per incidence.
+  **First cycle billing decision: bill from the start date.** For non-monthly
+  cadences (quarterly, semi-annual, annual) on active-date-anchored cycles, an
+  unanchored recurring item (such as those created for package sign-ups) bills
+  from the agreement's start date without proration and without calendar
+  alignment. Each periodic charge lands on the cycle boundary (`start_date`,
+  `start_date + cycle`, etc.), billing exactly once per cycle at the full terms
+  price from the first invoice on. It does not default to the 1st of the month
+  (which caused an unanchored item started mid-month to charge twice on its first
+  invoice: once on the start date and once on the 1st inside that same first
+  cycle). An item with an explicit anchor set by an operator continues to place
+  charges on its explicit calendar anchor dates.
 - **The setup fee charged at sign-up** is added to that invoice as manual
   `adjustment` lines with no date (the one line type regeneration keeps, and
   undated so it never widens the work period the engine reconciles). With no
@@ -852,19 +858,16 @@ Slice 6 (moving subscribers to a new version) settled these:
   a one-time one included, is refused whole. A setup fee is not one (the
   successor never carries it, above).
 - **The charge schedule continues** (`ContinuedRecurrence`). The engine places
-  a recurring item's charges by its anchor day and month - unset, the 1st and
-  the month the item starts - and in the item's first cycle falls back to a
-  charge on its start date when the anchor has passed. A successor's items
-  started fresh on the effective date restarted that schedule: a quarterly
-  service started Nov 9 charges Nov 9, Feb 1, May 1; moved on Feb 9, it was
-  charged Feb 9 and May 1 in its first new quarter, where the never-moved
-  service is charged May 1 alone (Codex P1 on #674 - every non-monthly cadence
-  started on a day other than the 1st did the same). So the successor's items
-  carry the old items' anchors explicitly and start when the old items did
-  (`PackageAgreementTerms::createDraft(..., continuing: $recurrence)`): before
-  the successor itself, whose cycles bound every charge, so no first-charge
+  a recurring item's charges by its anchor day and month. When an item has no
+  explicit anchor, it bills from its start date on active-date-anchored cycles
+  (one incidence per cycle at cycle start). A move continues this recurrence:
+  `ContinuedRecurrence` keeps `anchor_day: null, anchor_month: null` on the
+  successor when the old items had no explicit anchor, and carries over their
+  earliest start date (`PackageAgreementTerms::createDraft(..., continuing: $recurrence)`):
+  before the successor itself, whose cycles bound every charge, so no first-charge
   fallback applies and each item charges on the dates the old ones would have,
-  a new component included. The schedule is read from the old agreement's open
+  a new component included. Explicit anchors, when set by an operator, continue
+  to be carried over to the successor. The schedule is read from the old agreement's open
   items on its cadence; when they follow no one schedule (different anchor
   days, a different place in the cycle, an item starting later - only an
   operator's edit makes these), the subscriber is refused

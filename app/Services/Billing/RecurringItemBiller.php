@@ -104,11 +104,19 @@ class RecurringItemBiller
         $effectiveStart = $rangeStart->gt($itemStart) ? $rangeStart : $itemStart;
         $effectiveEnd = ($itemEnd !== null && $itemEnd->lt($rangeEnd)) ? $itemEnd : $rangeEnd;
 
+        $isUnanchored = $item->anchor_day === null && $item->anchor_month === null;
+
         return match ($item->charge_cadence) {
             ChargeCadence::Monthly => $this->monthlyIncidences($anchorDay, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Quarterly => $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::SemiAnnual => $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Annual => $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Quarterly => $isUnanchored
+                ? $this->unanchoredPeriodicIncidences(3, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::SemiAnnual => $isUnanchored
+                ? $this->unanchoredPeriodicIncidences(6, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Annual => $isUnanchored
+                ? $this->unanchoredPeriodicIncidences(12, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::OneTime => $this->oneTimeIncidence($itemStart, $effectiveStart, $effectiveEnd),
             // An unrecognised cadence must stop here. Silently billing nothing
             // would look identical to an item that simply had no incidence.
@@ -211,6 +219,37 @@ class RecurringItemBiller
             if ($year > (int) $end->year + 2) {
                 break;
             }
+        }
+
+        return $incidences;
+    }
+
+    /**
+     * Periodic incidences without an explicit anchor: charges once per cycle,
+     * anchored to the item's start date, matching the active-date-anchored
+     * cycles of BillingCycleResolver.
+     *
+     * @return Carbon[]
+     */
+    private function unanchoredPeriodicIncidences(
+        int $periodMonths,
+        Carbon $start,
+        Carbon $end,
+        Carbon $itemStart,
+    ): array {
+        if ($end->lt($itemStart)) {
+            return [];
+        }
+
+        $incidences = [];
+        $cursor = $itemStart->copy();
+
+        while ($cursor->lte($end)) {
+            if ($cursor->gte($start)) {
+                $incidences[] = $cursor->copy();
+            }
+            $cycleEnd = $cursor->copy()->addMonths($periodMonths)->subDay();
+            $cursor = $cycleEnd->copy()->addDay();
         }
 
         return $incidences;

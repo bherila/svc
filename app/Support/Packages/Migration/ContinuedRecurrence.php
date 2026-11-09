@@ -37,8 +37,8 @@ final readonly class ContinuedRecurrence
     private function __construct(
         /** The day the continued items start: the old items' first, before the effective date. */
         public CarbonImmutable $itemsStartOn,
-        public int $anchorDay,
-        /** Null for a monthly schedule, where only the day places a charge. */
+        public ?int $anchorDay,
+        /** Null for a monthly schedule or an unanchored schedule. */
         public ?int $anchorMonth,
     ) {}
 
@@ -56,17 +56,16 @@ final readonly class ContinuedRecurrence
             if ($item['cadence'] !== $cadence->value || $start->toDateString() >= $effectiveOn->toDateString()) {
                 return null;
             }
-            // As the engine reads them: the day clamped to 1-28, the month
-            // defaulting to the item's start, and only its place in the cycle mattering.
-            $day = max(1, min(28, $item['anchor_day'] ?? 1));
-            $month = $period === 1 ? null : max(1, min(12, $item['anchor_month'] ?? $start->month));
-            $phase = $month === null ? null : ($month - 1) % $period;
-            if ($key !== null && $key !== [$day, $phase]) {
+            $day = $item['anchor_day'] !== null ? max(1, min(28, $item['anchor_day'])) : null;
+            $month = ($period === 1 || $item['anchor_month'] === null) ? null : max(1, min(12, $item['anchor_month']));
+            $phase = $period === 1 ? null : (($month ?? $start->month) - 1) % $period;
+            $cycleDay = $day ?? $start->day;
+            if ($key !== null && $key !== [$day, $phase, $cycleDay]) {
                 return null;
             }
             // The first item's month names the place in the cycle; any of them would.
             $anchorMonth = $key === null ? $month : $anchorMonth;
-            $key = [$day, $phase];
+            $key = [$day, $phase, $cycleDay];
             $starts[] = $start;
         }
         usort($starts, static fn (CarbonImmutable $a, CarbonImmutable $b): int => $a <=> $b);
@@ -77,7 +76,7 @@ final readonly class ContinuedRecurrence
     /**
      * The columns each continued item carries.
      *
-     * @return array{effective_on: string, anchor_day: int, anchor_month: int|null}
+     * @return array{effective_on: string, anchor_day: int|null, anchor_month: int|null}
      */
     public function itemColumns(): array
     {

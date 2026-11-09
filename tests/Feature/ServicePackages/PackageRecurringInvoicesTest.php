@@ -107,12 +107,10 @@ final class PackageRecurringInvoicesTest extends TestCase
 
         $this->assertSame([['period_start' => '2026-11-15', 'outcome' => 'issued']], $this->brief($this->issueRun()));
         $first = $this->invoiceFor($enrollment, '2026-11-15');
-        // The engine's quarterly item is anchored on the 1st of its start
-        // month, so a first quarter anchored mid-month also holds its next
-        // incidence (1 February): the engine's own rule, recorded in slice
-        // 3b and not changed here.
-        $this->assertSame(['issued', 24000, '2026-11-15', '2027-02-14'], [$first->status, $first->total_amount, $first->cycle_start?->toDateString(), $first->cycle_end?->toDateString()]);
-        $this->assertSame([['recurring_item', 12000], ['recurring_item', 12000]], $this->lines($first));
+        // Unanchored recurring items on non-monthly cadences bill exactly once
+        // per cycle from the start date, matching the cycle start boundary (#685).
+        $this->assertSame(['issued', 12000, '2026-11-15', '2027-02-14'], [$first->status, $first->total_amount, $first->cycle_start?->toDateString(), $first->cycle_end?->toDateString()]);
+        $this->assertSame([['recurring_item', 12000]], $this->lines($first));
         $this->assertSame([], $this->issueRun()['outcomes']);
 
         $this->travelTo(CarbonImmutable::parse('2027-01-20 10:00:00', 'UTC'));

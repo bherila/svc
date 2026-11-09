@@ -832,6 +832,69 @@ final class BillingHistoryInvariantTest extends TestCase
     }
 
     /**
+     * Property (docs/service-packages.md): a new sign-up's recurring items
+     * charge exactly once per cycle from the first invoice on, for every
+     * cadence and every start day (the 1st, 9th, and 31st at least): every
+     * period is billed once, at the price of the terms.
+     */
+    #[DataProvider('continuedScheduleWorlds')]
+    public function test_a_new_signup_bills_every_period_once_at_the_terms_price(string $cadence, int $day, string $components): void
+    {
+        config(['svc.service_packages.enabled' => true]);
+        Mail::fake();
+        $amounts = ['monthly' => 4500, 'quarterly' => 12000, 'semi_annual' => 24000, 'annual' => 48000];
+        $months = ['monthly' => 1, 'quarterly' => 3, 'semi_annual' => 6, 'annual' => 12][$cadence];
+        $terms = [
+            'billing_cadence' => $cadence, 'invoice_issuing' => 'draft', 'activation_mode' => 'automatic', 'notice_days' => 0, 'charge_setup_fee_at_signup' => false,
+            'components' => [
+                ['kind' => 'recurring', 'description' => 'Synthetic hosting', 'cadence' => $cadence, 'amount' => $amounts[$cadence]],
+                ...match ($components) {
+                    'one component' => [],
+                    'two components' => [['kind' => 'recurring', 'description' => 'Synthetic backups', 'cadence' => $cadence, 'amount' => 700]],
+                    'a setup fee with the first cycle' => [['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => 15000]],
+                },
+            ],
+        ];
+        $start = CarbonImmutable::parse(sprintf('2026-01-%02d 10:00:00', $day), 'UTC');
+
+        $this->travelTo($start);
+        [$workspace, $owner] = $this->packageWorkspace('Synthetic sign-up schedule');
+        $workspace->forceFill(['timezone' => 'UTC'])->save();
+        $packages = app(ServicePackageWorkflow::class);
+        $package = $packages->publish($owner, $workspace, $packages->create($owner, $workspace, $this->hostingPackageInput(['link_name' => 'synthetic-signup-schedule', ...$terms])));
+        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic sign-up client', 'slug' => 'synthetic-signup-client']);
+        $contact = User::factory()->create();
+        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
+        $enrollments = app(PackageEnrollmentWorkflow::class);
+        $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
+
+        $this->tickAndIssue($company, $workspace, $start->setTime(12, 0), null);
+        $end = $start->addMonthsNoOverflow(3 * $months)->setTime(12, 0);
+        $this->tickAndIssue($company, $workspace, $end, null);
+
+        $invoices = ClientInvoice::query()->where('client_company_id', $company->id)->where('status', '!=', InvoiceStatus::Void->value)->orderBy('cycle_start')->orderBy('id')->get();
+        $periods = $invoices->map(fn (ClientInvoice $invoice): string => (string) $invoice->cycle_start?->toDateString())->all();
+        $this->assertSame(array_values(array_unique($periods)), $periods, 'Every period invoiced once.');
+        $this->assertGreaterThanOrEqual(2, $invoices->count(), 'At least two cycles generated.');
+
+        $expectedFirst = $amounts[$cadence] + match ($components) {
+            'one component' => 0,
+            'two components' => 700,
+            'a setup fee with the first cycle' => 15000,
+        };
+        $expectedSubsequent = $amounts[$cadence] + match ($components) {
+            'one component' => 0,
+            'two components' => 700,
+            'a setup fee with the first cycle' => 0,
+        };
+
+        foreach ($invoices as $i => $invoice) {
+            $expected = $i === 0 ? $expectedFirst : $expectedSubsequent;
+            $this->assertSame($expected, (int) $invoice->total_amount, "Invoice for period {$invoice->cycle_start?->toDateString()} billed at terms price.");
+        }
+    }
+
+    /**
      * Property (docs/service-packages.md, MIG-3): for identical terms, a
      * service moved to a new version bills exactly as the same service never
      * moved - the same total for every period, and every period exactly

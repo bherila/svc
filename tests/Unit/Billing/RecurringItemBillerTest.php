@@ -184,6 +184,54 @@ class RecurringItemBillerTest extends TestCase
         $this->assertEquals('2024-02-15', $lines[0]['line_date']->toDateString());
     }
 
+    public function test_unanchored_quarterly_item_started_mid_month_produces_one_incidence_per_cycle(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Quarterly, '2026-01-09', null, anchorDay: null, anchorMonth: null);
+        $agreement = $this->makeAgreement([$item], startsOn: '2026-01-09', billingCadence: 'quarterly');
+
+        // Cycle 1: Jan 9 to Apr 8 (should have exactly 1 incidence on Jan 9, NOT an extra one on Apr 1)
+        $lines1 = $this->biller->linesForCycle($agreement, Carbon::parse('2026-01-09'), Carbon::parse('2026-04-08'));
+        $this->assertCount(1, $lines1);
+        $this->assertSame('2026-01-09', $lines1[0]['line_date']->toDateString());
+
+        // Cycle 2: Apr 9 to Jul 8 (should have exactly 1 incidence on Apr 9)
+        $lines2 = $this->biller->linesForCycle($agreement, Carbon::parse('2026-04-09'), Carbon::parse('2026-07-08'));
+        $this->assertCount(1, $lines2);
+        $this->assertSame('2026-04-09', $lines2[0]['line_date']->toDateString());
+    }
+
+    public function test_unanchored_annual_item_started_mid_month_produces_one_incidence_per_cycle(): void
+    {
+        $item = $this->makeItem(ChargeCadence::Annual, '2026-01-09', null, anchorDay: null, anchorMonth: null);
+        $agreement = $this->makeAgreement([$item], startsOn: '2026-01-09', billingCadence: 'annual');
+
+        $lines1 = $this->biller->linesForCycle($agreement, Carbon::parse('2026-01-09'), Carbon::parse('2027-01-08'));
+        $this->assertCount(1, $lines1);
+        $this->assertSame('2026-01-09', $lines1[0]['line_date']->toDateString());
+
+        $lines2 = $this->biller->linesForCycle($agreement, Carbon::parse('2027-01-09'), Carbon::parse('2028-01-08'));
+        $this->assertCount(1, $lines2);
+        $this->assertSame('2027-01-09', $lines2[0]['line_date']->toDateString());
+    }
+
+    public function test_unanchored_periodic_items_on_start_days_1_9_31(): void
+    {
+        foreach ([ChargeCadence::Quarterly => 3, ChargeCadence::SemiAnnual => 6, ChargeCadence::Annual => 12] as $cadence => $months) {
+            foreach ([1, 9, 31] as $day) {
+                $startDate = sprintf('2026-01-%02d', $day);
+                $item = $this->makeItem($cadence, $startDate, null, anchorDay: null, anchorMonth: null);
+                $agreement = $this->makeAgreement([$item], startsOn: $startDate, billingCadence: $cadence->value);
+
+                $start = Carbon::parse($startDate);
+                $end = $start->copy()->addMonths($months)->subDay();
+
+                $lines = $this->biller->linesForCycle($agreement, $start, $end);
+                $this->assertCount(1, $lines, "Cadence {$cadence->value} started on day {$day} has exactly 1 incidence in first cycle.");
+                $this->assertSame($startDate, $lines[0]['line_date']->toDateString());
+            }
+        }
+    }
+
     // =========================================================================
     // One-time charge cadence
     // =========================================================================
@@ -367,7 +415,7 @@ class RecurringItemBillerTest extends TestCase
         ChargeCadence $cadence,
         string $startDate,
         ?string $endDate,
-        int $anchorDay = 1,
+        ?int $anchorDay = 1,
         ?int $anchorMonth = null
     ): ClientAgreementRecurringItem {
         $item = new ClientAgreementRecurringItem;
@@ -393,13 +441,18 @@ class RecurringItemBillerTest extends TestCase
     }
 
     /** @param list<ClientAgreementRecurringItem> $items */
-    private function makeAgreement(array $items, ?string $endsOn = null): ClientAgreement
-    {
+    private function makeAgreement(
+        array $items,
+        ?string $endsOn = null,
+        string $startsOn = '2024-01-01',
+        string $billingCadence = 'monthly'
+    ): ClientAgreement {
         $agreement = new ClientAgreement;
         $agreement->setRawAttributes([
-            'active_date' => '2024-01-01',
+            'starts_on' => $startsOn,
+            'active_date' => $startsOn,
             'ends_on' => $endsOn,
-            'billing_cadence' => 'monthly',
+            'billing_cadence' => $billingCadence,
             'first_cycle_proration' => 'prorate_hours',
             'monthly_retainer_hours' => 10,
             'catch_up_threshold_hours' => 1,
