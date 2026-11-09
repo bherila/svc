@@ -3143,94 +3143,6 @@ CREATE INDEX "svpkr_ws_email_status_idx" on "service_package_requests"(
 CREATE UNIQUE INDEX "svpkr_public_id_unique" on "service_package_requests"(
   "public_id"
 );
-CREATE TABLE "service_package_enrollments"(
-  "id" integer primary key autoincrement not null,
-  "public_id" varchar not null,
-  "workspace_id" integer not null,
-  "service_package_id" integer not null,
-  "service_package_version_id" integer not null,
-  "client_company_id" integer not null,
-  "client_project_id" integer not null,
-  "client_agreement_id" integer not null,
-  "service_package_request_id" integer,
-  "status" varchar not null,
-  "offered_by_user_id" integer,
-  "offered_at" datetime not null,
-  "lock_version" integer not null default('0'),
-  "created_at" datetime,
-  "updated_at" datetime,
-  "accepted_at" datetime,
-  "accepted_by_user_id" integer,
-  "signer_name" varchar,
-  "signer_title" varchar,
-  "accepted_version_id" integer,
-  "activated_at" datetime,
-  "activated_by_user_id" integer,
-  "signup_invoice_id" integer,
-  "lapsed_at" datetime,
-  "auto_invoice_outcome" varchar,
-  "auto_invoice_period_start" date,
-  "auto_invoice_refusal" varchar,
-  "auto_invoice_detail" varchar,
-  "auto_invoice_id" integer,
-  "auto_invoice_recorded_at" datetime,
-  foreign key("workspace_id", "signup_invoice_id") references "client_invoices"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "service_package_request_id") references "service_package_requests"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "client_agreement_id") references "client_agreements"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "client_project_id") references "client_projects"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "service_package_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("workspace_id", "service_package_id") references "service_packages"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("offered_by_user_id") references "users"("id") on delete set null on update no action,
-  foreign key("workspace_id") references "workspaces"("id") on delete cascade on update no action,
-  foreign key("accepted_by_user_id") references "users"("id") on delete set null on update no action,
-  foreign key("workspace_id", "accepted_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict on update no action,
-  foreign key("activated_by_user_id") references "users"("id") on delete set null on update no action,
-  foreign key("workspace_id", "auto_invoice_id") references "client_invoices"("workspace_id", "id") on delete restrict
-);
-CREATE UNIQUE INDEX "svpke_agreement_unique" on "service_package_enrollments"(
-  "workspace_id",
-  "client_agreement_id"
-);
-CREATE UNIQUE INDEX "svpke_public_id_unique" on "service_package_enrollments"(
-  "public_id"
-);
-CREATE UNIQUE INDEX "svpke_request_unique" on "service_package_enrollments"(
-  "workspace_id",
-  "service_package_request_id"
-);
-CREATE INDEX "svpke_ws_accepted_version_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "accepted_version_id"
-);
-CREATE INDEX "svpke_ws_company_package_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "client_company_id",
-  "service_package_id",
-  "status"
-);
-CREATE INDEX "svpke_ws_company_status_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "client_company_id",
-  "status"
-);
-CREATE UNIQUE INDEX "svpke_ws_id_unique" on "service_package_enrollments"(
-  "workspace_id",
-  "id"
-);
-CREATE INDEX "svpke_ws_signup_invoice_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "signup_invoice_id"
-);
-CREATE INDEX "svpke_ws_status_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "status",
-  "id"
-);
-CREATE INDEX "svpke_ws_auto_invoice_idx" on "service_package_enrollments"(
-  "workspace_id",
-  "auto_invoice_id"
-);
 CREATE TABLE "agreement_cancellation_requests"(
   "id" integer primary key autoincrement not null,
   "public_id" varchar not null,
@@ -3316,6 +3228,205 @@ CREATE INDEX "agst_ws_request_idx" on "agreement_scheduled_terminations"(
 );
 CREATE UNIQUE INDEX "agst_public_id_unique" on "agreement_scheduled_terminations"(
   "public_id"
+);
+CREATE TABLE "service_package_migrations"(
+  "id" integer primary key autoincrement not null,
+  "public_id" varchar not null,
+  "workspace_id" integer not null,
+  "service_package_id" integer not null,
+  "from_version_id" integer not null,
+  "to_version_id" integer not null,
+  "effective_on" date not null,
+  "message" varchar,
+  "status" varchar not null,
+  "scheduled_by_user_id" integer,
+  "scheduled_at" datetime not null,
+  "cancelled_by_user_id" integer,
+  "cancelled_at" datetime,
+  "completed_at" datetime,
+  "lock_version" integer not null default '0',
+  "created_at" datetime,
+  "updated_at" datetime,
+  foreign key("workspace_id") references "workspaces"("id") on delete cascade,
+  foreign key("scheduled_by_user_id") references "users"("id") on delete set null,
+  foreign key("cancelled_by_user_id") references "users"("id") on delete set null,
+  foreign key("workspace_id", "service_package_id") references "service_packages"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "from_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "to_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict
+);
+CREATE UNIQUE INDEX "svpkm_ws_id_unique" on "service_package_migrations"(
+  "workspace_id",
+  "id"
+);
+CREATE INDEX "svpkm_ws_package_status_idx" on "service_package_migrations"(
+  "workspace_id",
+  "service_package_id",
+  "status"
+);
+CREATE INDEX "svpkm_ws_from_version_idx" on "service_package_migrations"(
+  "workspace_id",
+  "from_version_id"
+);
+CREATE INDEX "svpkm_ws_to_version_idx" on "service_package_migrations"(
+  "workspace_id",
+  "to_version_id"
+);
+CREATE UNIQUE INDEX "svpkm_public_id_unique" on "service_package_migrations"(
+  "public_id"
+);
+CREATE TABLE "service_package_migration_targets"(
+  "id" integer primary key autoincrement not null,
+  "public_id" varchar not null,
+  "workspace_id" integer not null,
+  "service_package_migration_id" integer not null,
+  "service_package_enrollment_id" integer not null,
+  "client_company_id" integer not null,
+  "client_agreement_id" integer not null,
+  "successor_agreement_id" integer,
+  "effective_on" date not null,
+  "status" varchar not null,
+  "outcome_code" varchar,
+  "outcome_detail" varchar,
+  "outcome_recorded_at" datetime,
+  "new_price_amount" integer not null,
+  "new_price_currency" varchar not null,
+  "autopay_limit_amount" integer,
+  "settled_at" datetime,
+  "lock_version" integer not null default '0',
+  "created_at" datetime,
+  "updated_at" datetime,
+  foreign key("workspace_id") references "workspaces"("id") on delete cascade,
+  foreign key("workspace_id", "service_package_migration_id") references "service_package_migrations"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "service_package_enrollment_id") references "service_package_enrollments"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "client_agreement_id") references "client_agreements"("workspace_id", "id") on delete restrict,
+  foreign key("workspace_id", "successor_agreement_id") references "client_agreements"("workspace_id", "id") on delete restrict
+);
+CREATE UNIQUE INDEX "svpkt_ws_id_unique" on "service_package_migration_targets"(
+  "workspace_id",
+  "id"
+);
+CREATE INDEX "svpkt_status_idx" on "service_package_migration_targets"(
+  "status",
+  "id"
+);
+CREATE INDEX "svpkt_ws_migration_idx" on "service_package_migration_targets"(
+  "workspace_id",
+  "service_package_migration_id"
+);
+CREATE INDEX "svpkt_ws_enrollment_status_idx" on "service_package_migration_targets"(
+  "workspace_id",
+  "service_package_enrollment_id",
+  "status"
+);
+CREATE INDEX "svpkt_ws_company_idx" on "service_package_migration_targets"(
+  "workspace_id",
+  "client_company_id"
+);
+CREATE INDEX "svpkt_ws_agreement_idx" on "service_package_migration_targets"(
+  "workspace_id",
+  "client_agreement_id"
+);
+CREATE INDEX "svpkt_ws_successor_idx" on "service_package_migration_targets"(
+  "workspace_id",
+  "successor_agreement_id"
+);
+CREATE UNIQUE INDEX "svpkt_public_id_unique" on "service_package_migration_targets"(
+  "public_id"
+);
+CREATE TABLE "service_package_enrollments"(
+  "id" integer primary key autoincrement not null,
+  "public_id" varchar not null,
+  "workspace_id" integer not null,
+  "service_package_id" integer not null,
+  "service_package_version_id" integer not null,
+  "client_company_id" integer not null,
+  "client_project_id" integer not null,
+  "client_agreement_id" integer not null,
+  "service_package_request_id" integer,
+  "status" varchar not null,
+  "offered_by_user_id" integer,
+  "offered_at" datetime not null,
+  "lock_version" integer not null default('0'),
+  "created_at" datetime,
+  "updated_at" datetime,
+  "accepted_at" datetime,
+  "accepted_by_user_id" integer,
+  "signer_name" varchar,
+  "signer_title" varchar,
+  "accepted_version_id" integer,
+  "activated_at" datetime,
+  "activated_by_user_id" integer,
+  "signup_invoice_id" integer,
+  "lapsed_at" datetime,
+  "auto_invoice_outcome" varchar,
+  "auto_invoice_period_start" date,
+  "auto_invoice_refusal" varchar,
+  "auto_invoice_detail" varchar,
+  "auto_invoice_id" integer,
+  "auto_invoice_recorded_at" datetime,
+  "current_version_id" integer,
+  foreign key("workspace_id", "auto_invoice_id") references "client_invoices"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("activated_by_user_id") references "users"("id") on delete set null on update no action,
+  foreign key("workspace_id", "accepted_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("accepted_by_user_id") references "users"("id") on delete set null on update no action,
+  foreign key("workspace_id") references "workspaces"("id") on delete cascade on update no action,
+  foreign key("offered_by_user_id") references "users"("id") on delete set null on update no action,
+  foreign key("workspace_id", "service_package_id") references "service_packages"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "service_package_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "client_project_id") references "client_projects"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "client_agreement_id") references "client_agreements"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "service_package_request_id") references "service_package_requests"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "signup_invoice_id") references "client_invoices"("workspace_id", "id") on delete restrict on update no action,
+  foreign key("workspace_id", "current_version_id") references "service_package_versions"("workspace_id", "id") on delete restrict
+);
+CREATE UNIQUE INDEX "svpke_agreement_unique" on "service_package_enrollments"(
+  "workspace_id",
+  "client_agreement_id"
+);
+CREATE UNIQUE INDEX "svpke_public_id_unique" on "service_package_enrollments"(
+  "public_id"
+);
+CREATE UNIQUE INDEX "svpke_request_unique" on "service_package_enrollments"(
+  "workspace_id",
+  "service_package_request_id"
+);
+CREATE INDEX "svpke_ws_accepted_version_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "accepted_version_id"
+);
+CREATE INDEX "svpke_ws_auto_invoice_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "auto_invoice_id"
+);
+CREATE INDEX "svpke_ws_company_package_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "client_company_id",
+  "service_package_id",
+  "status"
+);
+CREATE INDEX "svpke_ws_company_status_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "client_company_id",
+  "status"
+);
+CREATE UNIQUE INDEX "svpke_ws_id_unique" on "service_package_enrollments"(
+  "workspace_id",
+  "id"
+);
+CREATE INDEX "svpke_ws_signup_invoice_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "signup_invoice_id"
+);
+CREATE INDEX "svpke_ws_status_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "status",
+  "id"
+);
+CREATE INDEX "svpke_ws_current_version_idx" on "service_package_enrollments"(
+  "workspace_id",
+  "current_version_id"
 );
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
@@ -3456,3 +3567,4 @@ INSERT INTO migrations VALUES(135,'2026_11_13_090000_add_acceptance_to_service_p
 INSERT INTO migrations VALUES(136,'2026_11_14_090000_add_signup_payment_to_service_package_enrollments',1);
 INSERT INTO migrations VALUES(137,'2026_11_15_090000_add_automatic_invoicing_to_service_package_enrollments',1);
 INSERT INTO migrations VALUES(138,'2026_11_16_090000_add_cancellation_to_client_agreements',1);
+INSERT INTO migrations VALUES(139,'2026_11_17_090000_create_service_package_migrations',1);
