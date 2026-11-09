@@ -142,6 +142,8 @@ function PackageRow({ pkg }: { pkg: PackageListItem }) {
 
 export default function PackagesIndex({
     packages,
+    next_page_url: nextPageUrl,
+    first_page_url: firstPageUrl,
     new_package_url: newPackageUrl,
     catalog_url: catalogUrl,
     stripe_connected: stripeConnected,
@@ -188,9 +190,11 @@ export default function PackagesIndex({
                 <Card>
                     <CardHeader>
                         <CardTitle>
-                            {packages.length === 1
-                                ? '1 package'
-                                : `${packages.length} packages`}
+                            {nextPageUrl !== null || firstPageUrl !== null
+                                ? `${packages.length} shown`
+                                : packages.length === 1
+                                  ? '1 package'
+                                  : `${packages.length} packages`}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -226,6 +230,19 @@ export default function PackagesIndex({
                                     ))}
                                 </TableBody>
                             </Table>
+                        )}
+                        {(nextPageUrl !== null || firstPageUrl !== null) && (
+                            <nav
+                                aria-label="Package pages"
+                                className="mt-4 flex flex-wrap gap-4 text-sm"
+                            >
+                                {firstPageUrl !== null && (
+                                    <Link href={firstPageUrl}>First page</Link>
+                                )}
+                                {nextPageUrl !== null && (
+                                    <Link href={nextPageUrl}>Next page</Link>
+                                )}
+                            </nav>
                         )}
                     </CardContent>
                 </Card>

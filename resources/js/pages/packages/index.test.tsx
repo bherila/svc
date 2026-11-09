@@ -72,6 +72,8 @@ function props(
             }),
         ],
         new_package_url: '/workspaces/workspace-1/packages/new',
+        next_page_url: null,
+        first_page_url: null,
         catalog_url: 'https://svc.example.test/s/tok123',
         stripe_connected: false,
         ...overrides,
@@ -81,6 +83,27 @@ function props(
 describe('packages list', () => {
     beforeEach(() => {
         nav.packagesHref = '/workspaces/workspace-1/packages';
+    });
+
+    it('pages through a long list at the urls the server sent', () => {
+        render(
+            <PackagesIndex
+                {...props({
+                    next_page_url:
+                        '/workspaces/workspace-1/packages?cursor=next-1',
+                    first_page_url: '/workspaces/workspace-1/packages',
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('link', { name: 'Next page' })).toHaveAttribute(
+            'href',
+            '/workspaces/workspace-1/packages?cursor=next-1',
+        );
+        expect(
+            screen.getByRole('link', { name: 'First page' }),
+        ).toHaveAttribute('href', '/workspaces/workspace-1/packages');
+        expect(screen.getByText('2 shown')).toBeInTheDocument();
     });
 
     it('links every action at the url the server sent', () => {
