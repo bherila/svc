@@ -126,10 +126,10 @@ final class MigrationRulesTest extends TestCase
         $this->assertSame(MigrationRefusal::EndsFirst, MigrationRules::eligibility(true, false, $none, self::day('2027-01-01')));
     }
 
-    /** @return array<string, array{array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool}, MigrationSkip|MigrationHold|null}> */
+    /** @return array<string, array{array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool, 10?: bool}, MigrationSkip|MigrationHold|null}> */
     public static function decisions(): array
     {
-        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced[, Square collects it, cadence changed, first new period ended, off-cycle charge]
+        // enrollment active, carries the from version, agreement status, ends on, pending end, period invoiced[, Square collects it, cadence changed, first new period ended, off-cycle charge, an earlier deferred period unbilled]
         return [
             'an active subscriber moves' => [[true, true, 'active', null, null, false], null],
             'one ending after the date moves' => [[true, true, 'active', '2027-03-31', null, false], null],
@@ -148,16 +148,19 @@ final class MigrationRulesTest extends TestCase
             'the first new period ended while it waited' => [[true, true, 'active', null, '2026-12-31', true, true, true, true, true], MigrationHold::EffectiveDatePassed],
             'one ending before the date is skipped though its first new period ended' => [[true, true, 'active', '2026-12-31', null, false, false, false, true], MigrationSkip::EndsBeforeEffective],
             'it came to carry an off-cycle charge' => [[true, true, 'active', null, '2026-12-31', true, false, false, false, true], MigrationHold::OffCycleComponent],
+            'an earlier deferred period is still unbilled' => [[true, true, 'active', null, '2026-12-31', true, true, true, false, true, true], MigrationHold::OwedPeriodUnbilled],
+            'its own first period ended too' => [[true, true, 'active', null, null, false, false, false, true, false, true], MigrationHold::EffectiveDatePassed],
+            'a stopped service owes nothing it can wait on' => [[false, true, 'active', null, null, false, false, false, false, false, true], MigrationSkip::EnrollmentInactive],
         ];
     }
 
-    /** @param array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool} $facts */
+    /** @param array{0: bool, 1: bool, 2: string, 3: string|null, 4: string|null, 5: bool, 6?: bool, 7?: bool, 8?: bool, 9?: bool, 10?: bool} $facts */
     #[DataProvider('decisions')]
     #[Requirement('MIG-3')]
     public function test_on_the_date_each_subscriber_is_moved_skipped_or_held(array $facts, MigrationSkip|MigrationHold|null $expected): void
     {
-        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced, $square, $cadence, $ended, $offCycle] = $facts + [6 => false, 7 => false, 8 => false, 9 => false];
-        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced, $square, $cadence, $ended, $offCycle);
+        [$active, $carries, $status, $endsOn, $pendingEnd, $invoiced, $square, $cadence, $ended, $offCycle, $owed] = $facts + [6 => false, 7 => false, 8 => false, 9 => false, 10 => false];
+        $decision = MigrationRules::decide($active, $carries, $status, $endsOn === null ? null : self::day($endsOn), self::day('2027-01-01'), $pendingEnd === null ? null : self::day($pendingEnd), $invoiced, $square, $cadence, $ended, $offCycle, $owed);
 
         $this->assertSame($expected === null, $decision->applies());
         $this->assertSame($expected instanceof MigrationSkip ? $expected : null, $decision->skip);
@@ -197,6 +200,34 @@ final class MigrationRulesTest extends TestCase
         $dates = new MigrationEffectiveDates(self::day('2027-01-01'), [self::day('2027-01-01')]);
         $this->assertSame(MigrationRefusal::BillsByUsage, MigrationRules::eligibility(true, false, $dates, null, true));
         $this->assertSame(MigrationRefusal::AlreadyScheduled, MigrationRules::eligibility(true, true, $dates, null, true));
+    }
+
+    #[Requirement('MIG-3', 'MIG-5')]
+    public function test_a_move_deferred_its_first_period_if_it_was_still_scheduled_when_the_period_began(): void
+    {
+        $date = self::day('2027-01-01');
+        $this->assertTrue(MigrationRules::deferredFirstPeriod(MigrationTargetStatus::Scheduled, null, $date));
+        $this->assertFalse(MigrationRules::deferredFirstPeriod(MigrationTargetStatus::Applied, self::day('2027-02-01'), $date), 'its successor bills it');
+        foreach ([MigrationTargetStatus::Cancelled, MigrationTargetStatus::Skipped] as $settled) {
+            $this->assertTrue(MigrationRules::deferredFirstPeriod($settled, self::day('2027-02-01'), $date));
+            $this->assertTrue(MigrationRules::deferredFirstPeriod($settled, $date, $date), 'settled on the date: the period had begun');
+            $this->assertFalse(MigrationRules::deferredFirstPeriod($settled, self::day('2026-12-31'), $date), 'settled before the date: nothing waited');
+            $this->assertFalse(MigrationRules::deferredFirstPeriod($settled, null, $date));
+        }
+    }
+
+    #[Requirement('MIG-3')]
+    public function test_a_deferred_period_is_owed_once_it_has_ended_inside_the_agreement(): void
+    {
+        $owes = static fn (string $start, string $end, string $today, string $startsOn = '2026-11-09', ?string $endsOn = null): bool => MigrationRules::owesDeferredPeriod(
+            self::day($start), self::day($end), self::day('2027-01-01'), self::day($today), self::day($startsOn), $endsOn === null ? null : self::day($endsOn));
+
+        $this->assertTrue($owes('2027-01-01', '2027-01-31', '2027-02-01'));
+        $this->assertFalse($owes('2027-01-01', '2027-01-31', '2027-01-31'), 'still current: the move may apply to it');
+        $this->assertFalse($owes('2026-12-01', '2026-12-31', '2027-02-01'), 'not the period the move deferred');
+        $this->assertFalse($owes('2027-01-01', '2027-01-31', '2027-02-01', '2027-01-15'), 'before the agreement');
+        $this->assertFalse($owes('2027-01-01', '2027-01-31', '2027-02-01', endsOn: '2026-12-31'), 'after the agreement');
+        $this->assertTrue($owes('2027-01-01', '2027-01-31', '2027-02-01', endsOn: '2027-01-01'));
     }
 
     #[Requirement('MIG-1')]

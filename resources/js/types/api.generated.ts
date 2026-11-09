@@ -5908,6 +5908,7 @@ export interface components {
                         | 'settlement_refused'
                         | 'cadence_changed'
                         | 'effective_date_passed'
+                        | 'owed_period_unbilled'
                         | 'off_cycle_component'
                         | 'square_collected'
                         | 'failed';
@@ -6999,6 +7000,7 @@ export interface components {
                     | 'settlement_refused'
                     | 'cadence_changed'
                     | 'effective_date_passed'
+                    | 'owed_period_unbilled'
                     | 'off_cycle_component'
                     | 'square_collected'
                     | 'failed';

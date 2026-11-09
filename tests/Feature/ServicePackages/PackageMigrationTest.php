@@ -667,6 +667,56 @@ final class PackageMigrationTest extends TestCase
         $this->assertSame([4500, 4500, 4500, 4500, 4500, 5000], ClientInvoice::query()->where('workspace_id', $workspace->id)->orderBy('cycle_start')->pluck('total_amount')->map(fn (mixed $amount): int => (int) $amount)->all());
     }
 
+    #[Requirement('MIG-3', 'MIG-5', 'INV-1')]
+    public function test_a_replacement_move_waits_while_a_deferred_period_is_still_unbilled(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world(['cancellation_mode' => 'request']);
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        $company = ClientCompany::query()->findOrFail($enrollment->client_company_id);
+        $old = ClientAgreement::query()->findOrFail($enrollment->client_agreement_id);
+        $this->issueRun();
+        $migration = $this->schedule($owner, $workspace, $package, $from, '2027-01-01');
+        $request = app(AgreementCancellations::class)->cancelByContact($this->contactOf($company), $company, $old, '2026-12-31', null);
+        $this->travelTo(CarbonImmutable::parse('2026-12-01 00:30:00', 'UTC'));
+        $this->issueRun();
+        $this->travelTo(CarbonImmutable::parse('2027-01-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->issueRun();
+
+        // Feb 1: cancelled, and January's late invoice is refused - an ended
+        // company-wide agreement covered December's work dates.
+        $this->travelTo(CarbonImmutable::parse('2027-02-01 00:05:00', 'UTC'));
+        app(PackageMigrationWorkflow::class)->cancel($owner, $workspace, $migration->refresh());
+        app(AgreementCancellations::class)->decline($owner, $workspace, $request->refresh(), null);
+        $companyWide = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => null, 'title' => 'Synthetic retired retainer',
+            'status' => 'terminated', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'starts_on' => '2026-12-01', 'ends_on' => '2026-12-15',
+        ]);
+        $this->assertSame([['2027-01-01', 'refused', 'company_wide_agreement'], ['2027-02-01', 'issued', null]],
+            array_map(fn (array $row): array => [$row['period_start'], $row['outcome'], $row['refusal']], $this->issueRun(refusing: true)['outcomes']));
+        $next = app(PackageMigrationWorkflow::class)->schedule($owner, $workspace, $package->refresh(), $from->public_id, '2027-04-01', [$enrollment->public_id], null);
+        $this->travelTo(CarbonImmutable::parse('2027-03-01 00:30:00', 'UTC'));
+        $this->assertSame([['2027-01-01', 'refused'], ['2027-03-01', 'issued']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun(refusing: true)['outcomes']));
+
+        // Apr 1: the replacement would end the agreement that owes January. It waits.
+        $this->travelTo(CarbonImmutable::parse('2027-04-01 00:30:00', 'UTC'));
+        $this->assertSame(['held'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $target = ServicePackageMigrationTarget::query()->where('service_package_migration_id', $next->id)->sole();
+        $this->assertSame(['scheduled', 'owed_period_unbilled'], [$target->status, $target->outcome_code]);
+        $this->assertStringContainsString('2027-01-01', (string) $target->outcome_detail);
+        $this->assertSame($old->id, $enrollment->refresh()->client_agreement_id);
+        $this->assertCount(1, collect(app(WorkspaceActionQueue::class)->forManager($workspace))->where('kind', 'package_move_held'));
+
+        // Resolved: January is invoiced on the terms in force for it, then the move applies.
+        $companyWide->delete();
+        $this->assertSame([['2027-01-01', 'issued'], ['2027-04-01', 'waits_for_move']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun()['outcomes']));
+        $this->assertSame(['applied'], array_column($this->moveRun()['outcomes'], 'outcome'));
+        $this->assertSame([['2027-04-01', 'issued']], array_map(fn (array $row): array => [$row['period_start'], $row['outcome']], $this->issueRun()['outcomes']));
+        $this->assertSame([['2026-11-01', 4500], ['2026-12-01', 4500], ['2027-01-01', 4500], ['2027-02-01', 4500], ['2027-03-01', 4500], ['2027-04-01', 5000]],
+            ClientInvoice::query()->where('workspace_id', $workspace->id)->where('status', '!=', 'void')->orderBy('cycle_start')->get()
+                ->map(fn (ClientInvoice $invoice): array => [$invoice->cycle_start?->toDateString(), (int) $invoice->total_amount])->all());
+    }
+
     #[Requirement('MIG-3', 'MIG-5')]
     public function test_a_move_cancelled_before_its_date_owes_nothing_late(): void
     {
@@ -870,12 +920,12 @@ final class PackageMigrationTest extends TestCase
         return json_decode($output, true, flags: JSON_THROW_ON_ERROR);
     }
 
-    /** @return array{outcomes: list<array{outcome: string}>} */
-    private function issueRun(): array
+    /** @return array{outcomes: list<array{outcome: string, period_start: string, refusal: string|null}>} */
+    private function issueRun(bool $refusing = false): array
     {
         $exit = Artisan::call('svc:packages:issue-invoices', ['--apply' => true, '--format' => 'json']);
         $output = trim(Artisan::output());
-        $this->assertSame(0, $exit, $output);
+        $this->assertSame($refusing ? 1 : 0, $exit, $output);
 
         return json_decode($output, true, flags: JSON_THROW_ON_ERROR);
     }

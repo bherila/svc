@@ -19,7 +19,9 @@ final class MigrationRules
      * ending before the new terms would start; a move whose first period on
      * the new terms has already ended waits for an owner to reschedule it
      * (applied, it would start the new agreement in the past with that period
-     * never invoiced); an agreement Square came to collect, whose cadence was
+     * never invoiced); one whose agreement still owes the first period of an
+     * earlier move that never applied waits until that period is invoiced
+     * (ending the agreement would leave it to no one); an agreement Square came to collect, whose cadence was
      * changed away from the new version's, or that came to carry a recurring
      * item on another cadence than its billing, since it was scheduled waits
      * for an owner (scheduling refuses all three);
@@ -42,6 +44,7 @@ final class MigrationRules
         bool $cadenceChanged,
         bool $firstPeriodEnded,
         bool $offCycleComponent,
+        bool $owedPeriodUnbilled,
     ): MigrationDecision {
         $effective = $effectiveOn->toDateString();
 
@@ -51,6 +54,7 @@ final class MigrationRules
             $agreementStatus !== 'active' => MigrationDecision::skip(MigrationSkip::AgreementEnded),
             $endsOn !== null && $endsOn->toDateString() < $effective => MigrationDecision::skip(MigrationSkip::EndsBeforeEffective),
             $firstPeriodEnded => MigrationDecision::hold(MigrationHold::EffectiveDatePassed),
+            $owedPeriodUnbilled => MigrationDecision::hold(MigrationHold::OwedPeriodUnbilled),
             $squareCollected => MigrationDecision::hold(MigrationHold::SquareCollected),
             $cadenceChanged => MigrationDecision::hold(MigrationHold::CadenceChanged),
             $offCycleComponent => MigrationDecision::hold(MigrationHold::OffCycleComponent),
@@ -108,6 +112,38 @@ final class MigrationRules
         }
 
         return false;
+    }
+
+    /**
+     * Whether a move held its first period back from automatic invoicing:
+     * it was still scheduled when the period began - still scheduled now, or
+     * settled (cancelled, skipped) on or after its effective date on the
+     * workspace's calendar. One cancelled before its date never deferred
+     * anything; an applied one started the agreement that bills the period.
+     */
+    public static function deferredFirstPeriod(MigrationTargetStatus $status, ?CarbonInterface $settledOn, CarbonInterface $effectiveOn): bool
+    {
+        return match ($status) {
+            MigrationTargetStatus::Scheduled => true,
+            MigrationTargetStatus::Applied => false,
+            MigrationTargetStatus::Cancelled, MigrationTargetStatus::Skipped => $settledOn !== null && $settledOn->toDateString() >= $effectiveOn->toDateString(),
+        };
+    }
+
+    /**
+     * Whether a deferred first period is owed late by the agreement still in
+     * force: the agreement's own period from the effective date, ended by
+     * today, and inside the agreement. Whether an invoice already covers it
+     * is the caller's to ask.
+     */
+    public static function owesDeferredPeriod(CarbonInterface $periodStart, CarbonInterface $periodEnd, CarbonInterface $effectiveOn, CarbonInterface $today, CarbonInterface $startsOn, ?CarbonInterface $endsOn): bool
+    {
+        $start = $periodStart->toDateString();
+
+        return $start === $effectiveOn->toDateString()
+            && $periodEnd->toDateString() < $today->toDateString()
+            && $start >= $startsOn->toDateString()
+            && ($endsOn === null || $start <= $endsOn->toDateString());
     }
 
     /** Whether a subscriber's move is due on the workspace's today: from its effective date on, while scheduled. */

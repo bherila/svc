@@ -37,6 +37,13 @@ enum MigrationHold: string
      * schedules another.
      */
     case EffectiveDatePassed = 'effective_date_passed';
+    /**
+     * The agreement still owes a period an earlier move held back from
+     * automatic invoicing and never applied to, and it is not invoiced yet
+     * (its late invoice was refused). Ending the agreement now would leave
+     * that period to no agreement at all.
+     */
+    case OwedPeriodUnbilled = 'owed_period_unbilled';
     /** The agreement now has a recurring item on another cadence than its billing (an annual licence on a monthly service), whose billing anchor a new agreement would restart. */
     case OffCycleComponent = 'off_cycle_component';
     /** The agreement was linked to a Square series after the move was scheduled; SVC never reshapes what Square collects. */
@@ -54,6 +61,7 @@ enum MigrationHold: string
             self::SettlementRefused => 'The last period on the current terms could not be invoiced, so the move waits rather than leave that work to the new terms. Resolve what the billing engine reports, then the move applies on the next run.',
             self::CadenceChanged => 'The agreement now bills on another cadence than the new version, so moving it would leave a period unbilled. Change its cadence back, or cancel the move for this subscriber.',
             self::EffectiveDatePassed => 'The first billing period on the new terms ended before the move could apply, so the client stays on the current terms, which keep invoicing every period, including that one. Cancel this move for the client and schedule a new one.',
+            self::OwedPeriodUnbilled => 'An earlier billing period that waited for a move is still not invoiced (its invoice was refused; Needs you shows why). Resolve that so it is invoiced on the current terms; the move then applies on the next run.',
             self::OffCycleComponent => 'The agreement now has a recurring charge on another cadence than its billing (an annual licence on a monthly service, or a one-time charge), which a new agreement would charge again from its own start. Remove it, or cancel the move for this subscriber.',
             self::SquareCollected => 'Square now collects this agreement\'s invoices, and SVC never reshapes what Square collects. Cancel the move for this subscriber.',
             self::Failed => 'The move could not be applied. It is tried again every hour.',

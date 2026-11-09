@@ -555,6 +555,7 @@ final class BillingHistoryInvariantTest extends TestCase
             yield "{$cadence}, the held subscriber cancelled after it ended" => [$cadence, $price, 'cancel beside a moved subscriber', $boundary, 'cancelled', null, $periods];
             yield "{$cadence}, the whole move cancelled after it ended" => [$cadence, $price, 'cancel', $boundary, 'cancelled', null, $periods];
             yield "{$cadence}, cancelled after it ended and scheduled again" => [$cadence, $price, 'cancel and reschedule', $boundary, 'cancelled', $rescheduled, $periods];
+            yield "{$cadence}, cancelled, its late invoice refused, and replaced" => [$cadence, $price, 'cancel, refused and replaced', $boundary, 'cancelled', $rescheduled, $periods];
         }
     }
 
@@ -569,9 +570,16 @@ final class BillingHistoryInvariantTest extends TestCase
      * late on the current terms - whatever the owner then does, on the very
      * day the next period starts and before any run: cancel the held
      * subscriber beside one already moved, cancel the whole move, or cancel
-     * it and schedule another. Monthly and quarterly follow one rule (Codex
-     * P1s on #674: the move used to apply backdated, and then a cancelled
-     * move dropped the period that had waited for it).
+     * it and schedule another. When that late invoice is refused (an ended
+     * company-wide agreement covered the work dates) and a replacement move
+     * comes due, the replacement waits (`owed_period_unbilled`) rather than
+     * end the agreement that owes the period; once the refusal is resolved,
+     * inside the replacement's first period, the period is invoiced and the
+     * replacement applies. Monthly and quarterly follow one rule (Codex P1s
+     * on #674: the move used to apply backdated, a cancelled move dropped the
+     * period that had waited for it, and a replacement move ended the
+     * agreement that still owed it). Every tick runs the hourly pair twice,
+     * as two consecutive hours would.
      */
     #[DataProvider('heldMoveWorlds')]
     #[Requirement('MIG-3', 'MIG-5', 'INV-1')]
@@ -606,6 +614,9 @@ final class BillingHistoryInvariantTest extends TestCase
 
         $request = null;
         $migration = null;
+        $blocker = null;
+        $months = $cadence === 'monthly' ? 1 : 3;
+        $resolved = $newFrom === null ? null : CarbonImmutable::parse($newFrom)->addDays(14)->toDateString();
         for ($month = CarbonImmutable::parse('2026-01-01'); $month->lte(CarbonImmutable::parse('2027-02-01')); $month = $month->addMonth()) {
             foreach ([$month, $month->addDays(14)] as $day) {
                 $this->travelTo($day->setTime(0, 30));
@@ -619,14 +630,34 @@ final class BillingHistoryInvariantTest extends TestCase
                         app(PackageMigrationWorkflow::class)->cancel($owner, $workspace, $migration?->refresh() ?? throw new \LogicException('No move.'));
                     }
                     app(AgreementCancellations::class)->decline($owner, $workspace, $request?->refresh() ?? throw new \LogicException('No request.'), null);
-                    if ($resolution === 'cancel and reschedule') {
+                    if ($resolution === 'cancel, refused and replaced') {
+                        // A company-wide agreement that ended in the work
+                        // period before the deferred one blocks its late invoice.
+                        $blockedFrom = CarbonImmutable::parse($effective)->subMonths($months);
+                        $blocker = ClientAgreement::query()->create([
+                            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => null, 'title' => 'Synthetic retired retainer',
+                            'status' => 'terminated', 'billing_cadence' => 'monthly', 'currency' => 'USD',
+                            'starts_on' => $blockedFrom->toDateString(), 'ends_on' => $blockedFrom->addDays(14)->toDateString(),
+                        ]);
+                    }
+                    if (in_array($resolution, ['cancel and reschedule', 'cancel, refused and replaced'], true)) {
                         $preview = app(PackageMigrationPlanner::class)->preview($owner, $workspace, $package->refresh(), $from->public_id, null);
                         $this->assertSame($newFrom, $preview['effective_on']);
                         app(PackageMigrationWorkflow::class)->schedule($owner, $workspace, $package, $from->public_id, (string) $newFrom, [$enrollment->public_id], null);
                     }
                 }
-                $this->assertSame(0, Artisan::call('svc:packages:apply-migrations', ['--apply' => true]), Artisan::output());
-                $this->assertSame(0, Artisan::call('svc:packages:issue-invoices', ['--apply' => true]), Artisan::output());
+                if ($blocker !== null && $day->toDateString() === $resolved) {
+                    $blocker->delete();
+                    $blocker = null;
+                }
+                foreach ([1, 2] as $hour) {
+                    $this->assertSame(0, Artisan::call('svc:packages:apply-migrations', ['--apply' => true]), Artisan::output());
+                    // Only the blocked late invoice is ever refused.
+                    $this->assertSame($blocker === null ? 0 : 1, Artisan::call('svc:packages:issue-invoices', ['--apply' => true]), Artisan::output());
+                    if ($blocker !== null && $newFrom !== null && $day->toDateString() >= $newFrom) {
+                        $this->assertSame('owed_period_unbilled', ServicePackageMigrationTarget::query()->where('workspace_id', $workspace->id)->where('status', 'scheduled')->sole()->outcome_code);
+                    }
+                }
                 $this->assertInvariants($company, $cadence.', '.$day->toDateString());
                 if ($beside !== null) {
                     $this->assertInvariants($beside[0], $cadence.', the moved client, '.$day->toDateString());

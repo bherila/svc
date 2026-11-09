@@ -7,8 +7,10 @@ use App\Contracts\WorkspaceOwned;
 use App\Models\Concerns\BelongsToWorkspace;
 use App\Models\Concerns\HasPublicId;
 use App\Models\Concerns\IncrementsAgentRevision;
+use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use Carbon\CarbonImmutable;
+use DateTimeZone;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -60,6 +62,12 @@ class ServicePackageMigrationTarget extends Model implements WorkspaceOwned
     public function targetStatus(): MigrationTargetStatus
     {
         return MigrationTargetStatus::from($this->status);
+    }
+
+    /** Whether this move held its first period back from automatic invoicing ({@see MigrationRules::deferredFirstPeriod()}), on the workspace's calendar in `$timezone`. */
+    public function deferredFirstPeriod(DateTimeZone|string $timezone): bool
+    {
+        return MigrationRules::deferredFirstPeriod($this->targetStatus(), $this->settled_at?->setTimezone($timezone), $this->effective_on);
     }
 
     /** @return BelongsTo<ServicePackageMigration, $this> */

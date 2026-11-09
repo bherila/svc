@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\ServicePackages;
 
+use App\Http\Controllers\Packages\PackageAdminController;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageMigration;
 use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
@@ -72,6 +74,31 @@ final class PackageMovePagesTest extends TestCase
         $this->get($editor)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
             ->where('moves.moves.0.status', 'cancelled')
             ->where('moves.moves.0.cancel_url', null));
+    }
+
+    #[Requirement('MIG-5')]
+    public function test_an_open_move_stays_on_the_editor_however_many_newer_moves_follow_it(): void
+    {
+        [$workspace, $owner, $package, $from, $enrollment] = $this->world();
+        $this->actingAs($owner);
+        $editor = "/workspaces/{$workspace->public_id}/packages/{$package->public_id}";
+        $open = app(PackageMigrationWorkflow::class)->schedule($owner, $workspace, $package, $from->public_id, '2027-01-01', [$enrollment->public_id], null);
+        // A full page of newer history: moves scheduled and cancelled since.
+        for ($i = 0; $i < PackageAdminController::PAGE_SIZE; $i++) {
+            (new ServicePackageMigration)->forceFill([
+                'workspace_id' => $workspace->id, 'service_package_id' => $package->id, 'from_version_id' => $from->id, 'to_version_id' => $package->refresh()->published_version_id,
+                'effective_on' => '2027-02-01', 'status' => 'cancelled', 'scheduled_by_user_id' => $owner->id, 'scheduled_at' => now(),
+                'cancelled_by_user_id' => $owner->id, 'cancelled_at' => now(),
+            ])->save();
+        }
+
+        $this->get($editor)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('moves.moves.0.id', $open->public_id)
+            ->where('moves.moves.0.status', 'scheduled')
+            ->where('moves.moves.0.cancel_url', "/api/v1/workspaces/{$workspace->public_id}/package-migrations/{$open->public_id}/cancel")
+            ->where('moves.moves.1.status', 'cancelled')
+            ->where('moves.moves.1.cancel_url', null)
+            ->has('moves.moves', PackageAdminController::PAGE_SIZE + 1));
     }
 
     #[Requirement('MIG-1', 'MIG-4')]

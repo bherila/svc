@@ -2303,7 +2303,9 @@ recurring charge or came to be collected by Square since scheduling
 waiting when its first period on the new terms has ended is never started in the
 past: it waits with `effective_date_passed` until it is cancelled (schedule a new
 one), and the current agreement invoices every period, that one included, even
-once the move is cancelled or replaced.
+once the move is cancelled or replaced. While such a period's invoice is refused,
+a later move of the same service waits with `owed_period_unbilled` (its
+`outcome.detail` names the period) and applies once the period is invoiced.
 A move (`package_migrations.get`) answers its versions, date, message, changes,
 new price, `counts` and each subscriber's `status`, `outcome`, agreement and,
 once moved, `successor_agreement`. `enrollments.*` carries `move` for a service

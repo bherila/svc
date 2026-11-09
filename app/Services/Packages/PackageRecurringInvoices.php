@@ -28,6 +28,7 @@ use App\Support\Packages\AutoInvoiceRefusal;
 use App\Support\Packages\AutoInvoiceResult;
 use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\Migration\MigrationHold;
+use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\WorkspaceClock;
@@ -189,13 +190,13 @@ final class PackageRecurringInvoices
             ->whereDate('effective_on', '<', $today)
             ->orderBy('id')
             ->get(['id', 'client_agreement_id', 'service_package_enrollment_id', 'effective_on', 'status', 'settled_at'])
-            ->filter(fn (ServicePackageMigrationTarget $target): bool => $target->targetStatus() === MigrationTargetStatus::Scheduled
-                || ($target->settled_at !== null && $target->settled_at->setTimezone($this->clock->now($workspace)->getTimezone())->toDateString() >= $target->effective_on->toDateString()));
+            ->filter(fn (ServicePackageMigrationTarget $target): bool => $target->deferredFirstPeriod($this->clock->now($workspace)->getTimezone()));
         if ($targets->isEmpty()) {
             return [];
         }
         $agreements = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereIn('id', $targets->pluck('client_agreement_id')->all())->where('status', 'active')->orderBy('id')->get()->keyBy('id');
         $waited = [];
+        $day = $this->clock->today($workspace);
         foreach ($targets as $target) {
             $agreement = $agreements->get($target->client_agreement_id);
             $enrollment = $enrollments[$target->client_agreement_id] ?? null;
@@ -203,9 +204,7 @@ final class PackageRecurringInvoices
                 continue;
             }
             $cycle = $this->cycles->cycleContaining($agreement, Carbon::parse($target->effective_on->toDateString()));
-            if ($cycle->start->toDateString() === $target->effective_on->toDateString() && $cycle->end->toDateString() < $today
-                && $cycle->start->toDateString() >= $agreement->starts_on->toDateString()
-                && ($agreement->ends_on === null || $cycle->start->toDateString() <= $agreement->ends_on->toDateString())) {
+            if (MigrationRules::owesDeferredPeriod($cycle->start, $cycle->end, $target->effective_on, $day, $agreement->starts_on, $agreement->ends_on)) {
                 $waited[$agreement->id.':'.$cycle->start->toDateString()] = [$enrollment, $agreement, $cycle];
             }
         }

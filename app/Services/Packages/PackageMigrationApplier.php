@@ -22,6 +22,7 @@ use App\Services\Engagement\AgreementWorkflow;
 use App\Services\Engagement\CancellationRecords;
 use App\Support\Billing\ChargeCadence;
 use App\Support\Billing\EmptyCadenceDraft;
+use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\Packages\EnrollmentStatus;
@@ -170,6 +171,23 @@ final class PackageMigrationApplier
         if ($migration->migrationStatus() !== MigrationStatus::Scheduled || ! MigrationRules::isDue($target->targetStatus(), $target->effective_on, $today)) {
             return MigrationRunOutcome::NotDue;
         }
+        // Earlier moves of this service on the same agreement that held their
+        // first period back from automatic invoicing and never applied: that
+        // period is owed by this agreement ({@see PackageRecurringInvoices::due()}),
+        // so ending it before the period is invoiced would leave it to no
+        // agreement. Read with the target's own lock, before the agreement's.
+        $timezone = $this->clock->now($workspace)->getTimezone();
+        $earlier = ServicePackageMigrationTarget::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('service_package_enrollment_id', $enrollment->id)
+            ->where('client_agreement_id', $target->client_agreement_id)
+            ->whereKeyNot($target->getKey())
+            ->where('status', '!=', MigrationTargetStatus::Applied->value)
+            ->whereDate('effective_on', '<', $target->effective_on->toDateString())
+            ->orderBy('id')
+            ->tap(Locks::forShare())
+            ->get(['id', 'status', 'effective_on', 'settled_at'])
+            ->filter(static fn (ServicePackageMigrationTarget $move): bool => $move->deferredFirstPeriod($timezone));
 
         $old = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($target->client_agreement_id)->tap(Locks::forUpdate())->firstOrFail();
         $pending = $this->cancellations->lockPending($old);
@@ -183,6 +201,8 @@ final class PackageMigrationApplier
             ->orderByDesc('cycle_start')->orderByDesc('id')
             ->tap(Locks::forUpdate())
             ->get();
+
+        $owed = $this->owedPeriodStarts($workspace, $old, $earlier, $today);
 
         $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($migration->to_version_id)
             ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])->firstOrFail();
@@ -215,7 +235,11 @@ final class PackageMigrationApplier
             cadenceChanged: $old->effectiveBillingCadence()->value !== $toTerms->billingCadence->value,
             firstPeriodEnded: $firstPeriod->end->toDateString() < $today->toDateString(),
             offCycleComponent: PackageMigrationPlanner::chargesOffCycle($toTerms) || MigrationRules::hasOffCycleCharge($old->effectiveBillingCadence()->value, array_values($offCycleItems)),
+            owedPeriodUnbilled: $owed !== [],
         );
+        if ($decision->hold === MigrationHold::OwedPeriodUnbilled) {
+            throw new MigrationHeld($decision->hold, 'Owed: the period from '.implode(', ', $owed).'.');
+        }
         if ($decision->hold !== null) {
             throw new MigrationHeld($decision->hold);
         }
@@ -250,6 +274,44 @@ final class PackageMigrationApplier
         ], occurrence: (string) Str::uuid());
 
         return MigrationRunOutcome::Applied;
+    }
+
+    /**
+     * The first periods of `$earlier` moves the agreement still owes and no
+     * invoice covers yet, with a locking read of the invoices that would.
+     *
+     * @param  Collection<int, ServicePackageMigrationTarget>  $earlier
+     * @return list<string> period starts
+     */
+    private function owedPeriodStarts(Workspace $workspace, ClientAgreement $old, Collection $earlier, CarbonImmutable $today): array
+    {
+        $starts = [];
+        foreach ($earlier as $move) {
+            $cycle = $this->cycles->cycleContaining($old, Carbon::parse($move->effective_on->toDateString()));
+            if (MigrationRules::owesDeferredPeriod($cycle->start, $cycle->end, $move->effective_on, $today, $old->starts_on, $old->ends_on)) {
+                $starts[] = $cycle->start->toDateString();
+            }
+        }
+        if ($starts === []) {
+            return [];
+        }
+        $covered = ClientInvoice::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_agreement_id', $old->id)
+            ->where(fn ($kind) => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+            ->where(function ($periods) use ($starts): void {
+                foreach ($starts as $start) {
+                    $periods->orWhereDate('cycle_start', $start);
+                }
+            })
+            ->orderBy('id')
+            ->tap(Locks::forShare())
+            ->get(['id', 'cycle_start', 'status'])
+            ->filter(static fn (ClientInvoice $claim): bool => InvoiceStatus::claimsPeriod($claim->status))
+            ->map(static fn (ClientInvoice $claim): string => (string) $claim->cycle_start?->toDateString())
+            ->all();
+
+        return array_values(array_unique(array_diff($starts, $covered)));
     }
 
     /**

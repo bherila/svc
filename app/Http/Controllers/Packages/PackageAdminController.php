@@ -175,8 +175,33 @@ final class PackageAdminController extends Controller
                 'cancel_url' => $move['status'] === MigrationStatus::Scheduled->value
                     ? route('agent-api.v1.package-migrations.cancel', ['workspace' => $workspace, 'migration' => $move['id']], absolute: false)
                     : null,
-            ], $this->migrationReads->list($user, $workspace, limit: self::PAGE_SIZE, package: $package)['data']),
+            ], $this->moves($user, $workspace, $package)),
         ];
+    }
+
+    /**
+     * Every move still open (scheduled, held ones included) - however many
+     * newer ones there are, so its cancel is never paged away (Codex P2 on
+     * #674) - then the newest page of the rest, newest first. Open moves are
+     * bounded: a subscriber is in one scheduled move at a time.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function moves(User $user, Workspace $workspace, ServicePackage $package): array
+    {
+        $open = [];
+        $cursor = null;
+        do {
+            $page = $this->migrationReads->list($user, $workspace, MigrationStatus::Scheduled, self::PAGE_SIZE, $cursor, $package);
+            $open = [...$open, ...$page['data']];
+            $cursor = $page['meta']['next_cursor'];
+        } while ($cursor !== null);
+        $history = array_filter(
+            $this->migrationReads->list($user, $workspace, limit: self::PAGE_SIZE, package: $package)['data'],
+            static fn (array $move): bool => $move['status'] !== MigrationStatus::Scheduled->value,
+        );
+
+        return [...$open, ...array_values($history)];
     }
 
     /** The sign-up request queue (ADM-1), with every decision as a finished URL. */

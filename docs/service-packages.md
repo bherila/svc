@@ -881,7 +881,26 @@ Slice 6 (moving subscribers to a new version) settled these:
   scheduled, or was settled on or after its date, deferred its first period; one
   cancelled before its date never deferred anything (that period was the
   ordinary current one), and an applied one started the agreement that bills
-  it. A draft-mode agreement's drafts never waited, and
+  it. The rule is `MigrationRules::deferredFirstPeriod()` and
+  `owesDeferredPeriod()`, pure, shared by the late billing and the applier.
+- **A move never ends an agreement that still owes a period**
+  (`owed_period_unbilled`). The late invoice can be refused (an ended
+  company-wide agreement covering the work dates, say), and once a later move
+  ended that agreement nothing would ever bill the period: automatic invoicing
+  reads only the enrollment's agreement in force, and the guard bills only an
+  active one (Codex P1 on #674). So the applier reads, under its locks, every
+  earlier move of the service on the same agreement that deferred its first
+  period, and the invoices covering those periods, and holds while one is
+  uncovered, naming the period; the enrollment's refusal says why it is
+  refused. Resolved while the move's own first period is current, the late
+  invoice is issued and the move applies on the next run; resolved after, the
+  move waits with `effective_date_passed` instead, and its own first period is
+  in turn owed late. Each owed period is billed once, and every hold names
+  something an owner can do.
+- **The editor keeps open moves.** The package editor lists every scheduled
+  move (held ones included), however many newer ones exist, then the newest
+  page of history (Codex P2 on #674: a scheduled move older than a page of
+  history lost its cancel). A draft-mode agreement's drafts never waited, and
   a held move discards none of them. `BillingHistoryInvariantTest` walks both
   releases, monthly and quarterly.
 - **Dates (MIG-1).** `MigrationDates`: the earliest effective date is the day
