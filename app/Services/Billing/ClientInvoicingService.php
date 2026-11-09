@@ -1249,7 +1249,12 @@ final class ClientInvoicingService
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
             $this->consultantTime->release($company, $agreement);
-            $this->lateWork->deferFromThePool($company, $agreement, $periodStart);
+            // Moving work out of a pool changes what a ledger the bulk walk
+            // measured before reaching this cycle would say.
+            if ($this->lateWork->deferFromThePool($company, $agreement, $periodStart) > 0) {
+                $ledger = null;
+                $immediateLedger = null;
+            }
             $this->handovers->forAgreement($agreement)?->assertClear($retainerStart->toDateString(), $retainerEnd->toDateString(), true);
 
             if ((bool) $agreement->bill_overage_interim) {

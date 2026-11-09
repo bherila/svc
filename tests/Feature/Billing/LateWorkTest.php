@@ -275,6 +275,30 @@ final class LateWorkTest extends TestCase
         $this->assertSame([], $this->invoicesCarrying($imported));
     }
 
+    /**
+     * Bulk generation measures its ledgers before the walk reaches a cycle, so
+     * the draft must not be priced from one that still counts the moved hours.
+     */
+    public function test_bulk_generation_prices_from_a_ledger_without_the_deferred_work(): void
+    {
+        Carbon::setTestNow('2026-07-15 12:00:00');
+        CarbonImmutable::setTestNow('2026-07-15 12:00:00');
+        $agreement = $this->agreement(self::RETAINER_QUARTERLY + ['rollover_months' => 6]);
+        $this->hours('2026-01-10', 1200);
+        $this->issue($this->generate($agreement, '2026-04-01'));
+        $this->hours('2026-03-20', 180);
+        $this->hours('2026-04-10', 2250);
+
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company);
+
+        $draft = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('status', 'draft')
+            ->whereDate('service_period_start', '2026-04-01')->firstOrFail();
+        $this->assertSame(180000, (int) $draft->total_amount, 'The late hours leave the first quarter\'s rollover whole.');
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($draft);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame(180000, (int) $rebuilt->total_amount, 'The bulk walk and a regeneration must agree.');
+    }
+
     public function test_another_agreements_charged_period_makes_nothing_late(): void
     {
         $other = ClientProject::query()->create(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic other project']);
