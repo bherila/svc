@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Support\Packages;
 
 /** A question a package's request form asks, identified by a key stable across versions. */

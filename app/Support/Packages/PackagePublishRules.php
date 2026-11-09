@@ -30,7 +30,7 @@ final class PackagePublishRules
             $refusals[] = PackageRefusal::AutoIssueNeedsFixedPrice;
         }
 
-        if ($terms->requireAutopay && ($terms->autopayLimitAmount ?? 0) <= 0) {
+        if ($terms->requireAutopay && ($terms->autopayLimitAmount === null || $terms->autopayLimitAmount <= 0)) {
             $refusals[] = PackageRefusal::AutopayNeedsLimit;
         }
 
