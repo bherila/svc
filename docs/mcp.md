@@ -78,6 +78,10 @@ server logging, completions, sampling, roots, or elicitation; direct resource
 subscription and other unsupported optional-feature requests are rejected as
 unsupported.
 
+A tool name that is unknown, withheld or outside the enabled toolsets is
+answered with JSON-RPC `-32602` (`Tool not found`), identically in every case,
+and is never dispatched. `-32601` is kept for unsupported methods.
+
 Production deploys the same routes from `main` to web1. The deployment keeps
 OAuth signing keys server-side in `storage/app/private/oauth`; it does not
 seed tenant data.

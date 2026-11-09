@@ -38,14 +38,14 @@ class ExpenseReceiptTest extends TestCase
         $this->actingAs($manager, 'web')->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('clients/expense-receipts')->has('files', 0));
         $this->uploadNativeFile($workspace, 'expense', $expense->public_id, [
-            'file' => UploadedFile::fake()->createWithContent('synthetic-receipt.txt', 'Synthetic receipt content'),
+            'file' => UploadedFile::fake()->createWithContent('synthetic-receipt.pdf', 'Synthetic receipt content'),
         ])->assertCreated()->assertSessionHasNoErrors();
         $attachment = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole();
         $this->assertSame('expense', $attachment->record_type);
         $this->assertSame($expense->public_id, $attachment->record_public_id);
         $this->assertStringContainsString('/expense/'.$expense->public_id.'/', $attachment->object_key);
-        $this->assertStringNotContainsString('synthetic-receipt.txt', $attachment->object_key);
-        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-receipt.txt'));
+        $this->assertStringNotContainsString('synthetic-receipt.pdf', $attachment->object_key);
+        $this->get($url)->assertOk()->assertInertia(fn (Assert $page) => $page->has('files', 1)->where('files.0.filename', 'synthetic-receipt.pdf'));
         $download = route('svc.files.download', [$workspace, $attachment->public_id]);
         $this->get($download)->assertOk()->assertStreamedContent('Synthetic receipt content');
         $this->deleteNativeFile($workspace, $attachment->public_id)->assertOk();
@@ -62,7 +62,7 @@ class ExpenseReceiptTest extends TestCase
         $expense = $this->recordSyntheticExpense($workspace, $this->syntheticCompany($workspace, 'stale'));
         (new WorkspaceExpenses($workspace))->discard($expense);
         try {
-            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('stale.txt', 'Synthetic stale receipt'), $manager);
+            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('stale.pdf', 'Synthetic stale receipt'), $manager);
             $this->fail('A stale expense instance must not publish a receipt.');
         } catch (ModelNotFoundException) {
             $this->assertSame(ClientAttachment::STATE_STAGED, ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->lifecycle_state);
@@ -83,7 +83,7 @@ class ExpenseReceiptTest extends TestCase
             }
         });
         try {
-            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('failed.txt', 'Synthetic failed receipt'), $manager);
+            app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('failed.pdf', 'Synthetic failed receipt'), $manager);
             $this->fail('The publication failure must propagate.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('Synthetic publication failure', $exception->getMessage());
@@ -105,7 +105,7 @@ class ExpenseReceiptTest extends TestCase
                 $queries[] = [$match[1], $sql];
             }
         });
-        $this->actingAs($manager, 'web')->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('trace.txt', 'synthetic')])->assertCreated();
+        $this->actingAs($manager, 'web')->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('trace.pdf', 'synthetic')])->assertCreated();
         $id = ClientAttachment::query()->where('workspace_id', $workspace->id)->sole()->public_id;
         $this->get(route('svc.files.download', [$workspace, $id]))->assertOk();
         $this->deleteNativeFile($workspace, $id)->assertOk();
@@ -136,12 +136,12 @@ class ExpenseReceiptTest extends TestCase
         $company = $this->syntheticCompany($workspace, 'private');
         $company->portalUsers()->attach($portal->id, ['role' => 'client']);
         $expense = $this->recordSyntheticExpense($workspace, $company);
-        $attachment = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('private.txt', 'private synthetic receipt'), $manager);
+        $attachment = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('private.pdf', 'private synthetic receipt'), $manager);
         foreach ([$member, $portal] as $user) {
             $this->actingAs($user, 'web')->get(route('svc.expenses.receipts', [$workspace, $company, $expense->public_id]))->assertForbidden();
             $this->get(route('svc.files.download', [$workspace, $attachment->public_id]))->assertForbidden();
             $this->deleteNativeFile($workspace, $attachment->public_id)->assertForbidden();
-            $this->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('denied.txt', 'denied')])->assertForbidden();
+            $this->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('denied.pdf', 'denied')])->assertForbidden();
         }
         $this->assertSame(ClientAttachment::STATE_AVAILABLE, $attachment->fresh()->lifecycle_state);
     }
@@ -154,7 +154,7 @@ class ExpenseReceiptTest extends TestCase
         $expense = $this->recordSyntheticExpense($workspace, $company);
         $foreign = $this->syntheticWorkspace('foreign parent');
         $foreignExpense = $this->recordSyntheticExpense($foreign, $this->syntheticCompany($foreign, 'foreign'));
-        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('corrupt.txt', 'synthetic'), $manager);
+        $receipt = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('corrupt.pdf', 'synthetic'), $manager);
         DB::table('client_attachments')->where('workspace_id', $workspace->id)->where('id', $receipt->id)->update(['record_public_id' => $foreignExpense->public_id]);
         $this->actingAs($manager, 'web')->get(route('svc.files.download', [$workspace, $receipt->public_id]))->assertNotFound();
         $this->deleteNativeFile($workspace, $receipt->public_id)->assertNotFound();
@@ -171,14 +171,14 @@ class ExpenseReceiptTest extends TestCase
         $foreignCompany = $this->syntheticCompany($foreign, 'foreign');
         $foreignExpense = $this->recordSyntheticExpense($foreign, $foreignCompany);
         $expense = $this->recordSyntheticExpense($workspace, $company);
-        $attachment = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('parent.txt', 'synthetic'), $manager);
+        $attachment = app(AttachmentStorageService::class)->store($workspace, $expense, UploadedFile::fake()->createWithContent('parent.pdf', 'synthetic'), $manager);
         $this->actingAs($manager, 'web')->get(route('svc.expenses.receipts', [$workspace, $otherCompany, $expense->public_id]))->assertNotFound();
         $this->get(route('svc.expenses.receipts', [$workspace, $company, $foreignExpense->public_id]))->assertNotFound();
-        $this->uploadNativeFile($workspace, 'expense', $foreignExpense->public_id, ['file' => UploadedFile::fake()->createWithContent('foreign.txt', 'synthetic')])->assertNotFound();
+        $this->uploadNativeFile($workspace, 'expense', $foreignExpense->public_id, ['file' => UploadedFile::fake()->createWithContent('foreign.pdf', 'synthetic')])->assertNotFound();
         $expense->delete();
         $this->get(route('svc.expenses.receipts', [$workspace, $company, $expense->public_id]))->assertNotFound();
         $this->get(route('svc.files.download', [$workspace, $attachment->public_id]))->assertNotFound();
         $this->deleteNativeFile($workspace, $attachment->public_id)->assertNotFound();
-        $this->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('discarded.txt', 'synthetic')])->assertNotFound();
+        $this->uploadNativeFile($workspace, 'expense', $expense->public_id, ['file' => UploadedFile::fake()->createWithContent('discarded.pdf', 'synthetic')])->assertNotFound();
     }
 }

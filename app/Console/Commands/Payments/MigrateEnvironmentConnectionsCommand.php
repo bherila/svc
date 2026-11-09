@@ -88,7 +88,9 @@ final class MigrateEnvironmentConnectionsCommand extends MutationCommand
             }
             try {
                 $account = $service->adapter($processor)->verify($credentials);
-                $connection = $connections->connect($workspace, $processor, ConnectionOrigin::Environment, null, [
+                // Never replaces: a connection entered since the inventory was read
+                // (or since the credentials were verified) is left exactly as it is.
+                $connection = $connections->connectIfNone($workspace, $processor, ConnectionOrigin::Environment, null, [
                     'external_account_id' => $account->externalAccountId,
                     'display_name' => $account->displayName,
                     'environment' => $account->environment,
@@ -96,6 +98,12 @@ final class MigrateEnvironmentConnectionsCommand extends MutationCommand
                     'webhook_secret' => $credentials->webhookSecret(),
                     'location_id' => $account->locationId,
                 ]);
+                if ($connection === null) {
+                    $report[$processor->value] = ['status' => MigrationOutcome::WorkspaceAlreadyConnected->value, 'reason' => 'a connection was entered meanwhile and was left untouched'];
+                    $failed = true;
+
+                    continue;
+                }
                 $report[$processor->value] = [
                     'status' => 'migrated',
                     'webhook_url' => $service->webhookUrl($processor, $connection->endpoint_token),

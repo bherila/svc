@@ -1,0 +1,167 @@
+# Staging deployment: an isolated svc-staging site for validating a branch or pull request
+# (webhooks, autopay, the scheduler, CSP) before it reaches production.
+#
+# INERT BY DEFAULT. The host, database and subdomain are not decided yet, so nothing here
+# deploys until the owner creates the GitHub Environment "staging" and fills in every
+# STAGING_* variable and secret (docs/runbooks/staging.md lists them). Until then a run stops at
+# the preflight step and prints exactly what is missing. The push trigger watches a `staging`
+# branch that does not exist until someone creates it.
+#
+# ISOLATION. This workflow reads only vars.STAGING_* and secrets.STAGING_* of the "staging"
+# environment. It never references a production or pilot secret or variable, uses its own
+# deploy directory, env file, database, APP_KEY, Stripe TEST keys and OAuth client, and it runs no
+# production data command. Add required reviewers or a deployment-branch rule to the environment
+# in GitHub settings to control who can start it.
+name: Staging Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, pull request head (refs/pull/N/head) or full SHA to deploy
+        type: string
+        required: true
+  push:
+    branches:
+      - staging
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy SVC to staging
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    environment: staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      # First, before anything is built or any host is contacted.
+      - name: Preflight - list missing staging configuration
+        # Secrets are exposed to this one step only, never to the build.
+        env:
+          STAGING_DEPLOY_ENABLED: ${{ vars.STAGING_DEPLOY_ENABLED }}
+          STAGING_DEPLOY_DIR: ${{ vars.STAGING_DEPLOY_DIR }}
+          STAGING_ENV_SOURCE: ${{ vars.STAGING_ENV_SOURCE }}
+          STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+          STAGING_DB_HOST: ${{ vars.STAGING_DB_HOST }}
+          STAGING_DB_NAME: ${{ vars.STAGING_DB_NAME }}
+          STAGING_DB_USER: ${{ vars.STAGING_DB_USER }}
+          STAGING_MAIL_MAILER: ${{ vars.STAGING_MAIL_MAILER }}
+          STAGING_MAIL_HOST: ${{ vars.STAGING_MAIL_HOST }}
+          STAGING_MAIL_PORT: ${{ vars.STAGING_MAIL_PORT }}
+          STAGING_STRIPE_PUBLISHABLE_KEY: ${{ vars.STAGING_STRIPE_PUBLISHABLE_KEY }}
+          STAGING_OAUTH_PROVIDER_URL: ${{ vars.STAGING_OAUTH_PROVIDER_URL }}
+          STAGING_OAUTH_CLIENT_ID: ${{ vars.STAGING_OAUTH_CLIENT_ID }}
+          STAGING_OAUTH_REDIRECT_URI: ${{ vars.STAGING_OAUTH_REDIRECT_URI }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USERNAME: ${{ secrets.STAGING_SSH_USERNAME }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          STAGING_APP_KEY: ${{ secrets.STAGING_APP_KEY }}
+          STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
+          STAGING_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+          STAGING_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+          STAGING_OAUTH_CLIENT_SECRET: ${{ secrets.STAGING_OAUTH_CLIENT_SECRET }}
+        run: node scripts/deploy/staging/preflight.mjs
+
+      - name: Require this exact commit's successful CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STAGING_SHA=$(git rev-parse HEAD)
+          export STAGING_SHA
+          echo "Deploying $STAGING_SHA"
+          node scripts/deploy/staging/gate.mjs
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Build this exact source revision
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@12.15.0 --activate
+          composer install --no-dev --no-interaction --optimize-autoloader
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm run build
+
+      # Staging is where the scheduler is validated, so `install-cron: 'true'` (the action owns the one
+      # `schedule:run` line, as on production). The staging database holds synthetic data and the
+      # Stripe keys are TEST keys, so reminders, autopay and the webhook health check can run for real
+      # against Stripe's test mode. Mail goes to the sink named by STAGING_MAIL_MAILER, never a live provider.
+      - name: Publish the isolated staging release
+        uses: bherila/shared-cpanel-deployment@5798879af588e2c786357b69b314d89932b75803 # v2.6.0
+        with:
+          ssh-host: ${{ secrets.STAGING_SSH_HOST }}
+          ssh-username: ${{ secrets.STAGING_SSH_USERNAME }}
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          ssh-known-hosts: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          ssh-alias: staging-release
+          deploy-dir: ${{ vars.STAGING_DEPLOY_DIR }}
+          env-source: ${{ vars.STAGING_ENV_SOURCE }}
+          site-url: ${{ vars.STAGING_APP_URL }}
+          php-binary: /usr/bin/php
+          php-version: '8.5'
+          set-php-handler: false
+          deployment-mode: atomic
+          atomic-layout: stable-directory
+          persistent-paths: storage
+          passport-key-directory: storage/app/private/oauth
+          retain-releases: '3'
+          failure-policy: rollback
+          env-values: |
+            APP_ENV=staging
+            APP_DEBUG=false
+            APP_URL=${{ vars.STAGING_APP_URL }}
+            APP_KEY=${{ secrets.STAGING_APP_KEY }}
+            STAGING_DEPLOYMENT=1
+            DB_CONNECTION=mariadb
+            DB_URL=
+            DB_SOCKET=
+            DB_HOST=${{ vars.STAGING_DB_HOST }}
+            DB_DATABASE=${{ vars.STAGING_DB_NAME }}
+            DB_USERNAME=${{ vars.STAGING_DB_USER }}
+            DB_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
+            MAIL_MAILER=${{ vars.STAGING_MAIL_MAILER }}
+            MAIL_HOST=${{ vars.STAGING_MAIL_HOST }}
+            MAIL_PORT=${{ vars.STAGING_MAIL_PORT }}
+            STRIPE_PUBLISHABLE_KEY=${{ vars.STAGING_STRIPE_PUBLISHABLE_KEY }}
+            STRIPE_SECRET_KEY=${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+            OAUTH_PROVIDER_URL=${{ vars.STAGING_OAUTH_PROVIDER_URL }}
+            OAUTH_CLIENT_ID=${{ vars.STAGING_OAUTH_CLIENT_ID }}
+            OAUTH_CLIENT_SECRET=${{ secrets.STAGING_OAUTH_CLIENT_SECRET }}
+            OAUTH_REDIRECT_URI=${{ vars.STAGING_OAUTH_REDIRECT_URI }}
+            SVC_CSP_REPORT_ONLY=true
+          env-assert: |
+            DB_URL=
+            DB_SOCKET=
+            DB_CONNECTION=mariadb
+            STAGING_DEPLOYMENT=1
+            APP_ENV=staging
+            APP_DEBUG=false
+          artisan-memory-limit: 1G
+          operational-audit: 'true'
+          runtime-audit: 'true'
+          install-cron: 'true'
+          cron-memory-limit: 1G

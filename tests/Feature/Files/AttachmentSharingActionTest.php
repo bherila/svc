@@ -270,7 +270,7 @@ final class AttachmentSharingActionTest extends TestCase
 
     private function upload(): UploadedFile
     {
-        return UploadedFile::fake()->createWithContent('synthetic-sharing.txt', 'Synthetic private bytes');
+        return UploadedFile::fake()->createWithContent('synthetic-sharing.pdf', 'Synthetic private bytes');
     }
 
     private function change(ClientAttachment $file, Model $parent, bool $visible): AttachmentVisibilityChange

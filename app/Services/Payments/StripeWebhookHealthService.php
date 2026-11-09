@@ -15,6 +15,8 @@ use App\Support\Payments\WebhookUrl;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -86,8 +88,12 @@ final class StripeWebhookHealthService
             return new WebhookHealth(WebhookHealthStatus::Unreachable);
         }
 
+        // The endpoint this answer is about: a reconnect that lands while Stripe
+        // is being asked must not have its record overwritten by an answer about
+        // the endpoint it replaced.
+        $asked = $row->webhook_endpoint_id;
         $health = $this->read($row);
-        $this->record($row, $health);
+        $this->record($row, $health, $asked);
 
         return $health;
     }
@@ -180,19 +186,28 @@ final class StripeWebhookHealthService
         // the model's cast like every other secret. If it cannot be stored the
         // endpoint just made points nowhere, so it is deleted again.
         try {
-            $stored = WorkspacePaymentConnection::query()
-                ->where('workspace_id', $row->workspace_id)
-                ->whereKey($row->id)
-                ->whereNull('revoked_at')
-                ->whereNull('reuses_connection_id')
-                ->first();
-            if ($stored === null) {
-                throw new DomainException('The connection was removed or replaced meanwhile; nothing was changed.');
-            }
-            $stored->forceFill([
-                'webhook_secret' => $registered->secret(),
-                'webhook_endpoint_id' => $registered->endpointId,
-            ])->save();
+            // Only the reconnect that still finds the endpoint it started from
+            // stores its pair: the claim is one conditional write, and the
+            // secret follows in the same transaction, so a second reconnect that
+            // finished first is never overwritten and the id and secret on the
+            // row always belong together.
+            DB::transaction(function () use ($row, $registered): void {
+                $claimed = $this->whereEndpoint(WorkspacePaymentConnection::query()
+                    ->where('workspace_id', $row->workspace_id)
+                    ->whereKey($row->id)
+                    ->whereNull('revoked_at')
+                    ->whereNull('reuses_connection_id'), $row->webhook_endpoint_id)
+                    ->update(['webhook_endpoint_id' => $registered->endpointId]);
+                if ($claimed !== 1) {
+                    throw new DomainException('The connection was removed or replaced meanwhile (or reconnected by someone else); nothing was changed and the endpoint just made was removed.');
+                }
+                WorkspacePaymentConnection::query()
+                    ->where('workspace_id', $row->workspace_id)
+                    ->whereKey($row->id)
+                    ->firstOrFail()
+                    ->forceFill(['webhook_secret' => $registered->secret(), 'webhook_endpoint_id' => $registered->endpointId])
+                    ->save();
+            });
         } catch (Throwable $failure) {
             $this->stripe->removeWebhook($credentials, $registered->endpointId);
 
@@ -205,6 +220,15 @@ final class StripeWebhookHealthService
         $after = $this->check($row);
 
         return ['message' => $this->afterFix($after, $done), 'health' => $after];
+    }
+
+    /**
+     * @param  Builder<WorkspacePaymentConnection>  $query
+     * @return Builder<WorkspacePaymentConnection>
+     */
+    private function whereEndpoint(Builder $query, ?string $endpointId): Builder
+    {
+        return $endpointId === null ? $query->whereNull('webhook_endpoint_id') : $query->where('webhook_endpoint_id', $endpointId);
     }
 
     private function afterFix(WebhookHealth $after, string $done): string
@@ -241,14 +265,17 @@ final class StripeWebhookHealthService
         );
     }
 
-    private function record(WorkspacePaymentConnection $row, WebhookHealth $health): void
+    /** @param  string|null  $asked  the stored endpoint id the check was made about */
+    private function record(WorkspacePaymentConnection $row, WebhookHealth $health, ?string $asked): void
     {
         $now = $this->clock->now()->utc();
-        // Scoped to the row's own workspace, and to the same row only while it is active.
-        WorkspacePaymentConnection::query()
+        // Scoped to the row's own workspace, and to the same row only while it is
+        // active and still holds the endpoint the answer is about. One atomic
+        // conditional write: a stale answer simply matches no row.
+        $this->whereEndpoint(WorkspacePaymentConnection::query()
             ->where('workspace_id', $row->workspace_id)
             ->whereKey($row->id)
-            ->whereNull('revoked_at')
+            ->whereNull('revoked_at'), $asked)
             ->update([
                 'webhook_check_status' => $health->status->value,
                 'webhook_check_missing' => json_encode($health->missing, JSON_THROW_ON_ERROR),
