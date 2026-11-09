@@ -345,6 +345,20 @@ class RecurringItemBillerTest extends TestCase
         $this->assertSame([], $this->biller->linesForCycle($agreement, Carbon::parse('2024-07-10'), Carbon::parse('2024-12-31')));
     }
 
+    public function test_a_cycle_opening_after_the_agreement_ends_reads_no_item_at_all(): void
+    {
+        // Nothing is left to sell past the end, so not even an item the
+        // engine would refuse to bill (an unrecognised cadence) is consulted.
+        $item = $this->makeItem(ChargeCadence::Monthly, '2024-01-01', null);
+        $item->setRawAttributes(['cadence' => 'fortnightly'] + $item->getAttributes());
+        $agreement = $this->makeAgreement([$item], endsOn: '2024-06-30');
+
+        $this->assertSame([], $this->biller->linesForCycle($agreement, Carbon::parse('2024-07-01'), Carbon::parse('2024-07-31')));
+        // The same item inside the agreement's life is refused, not skipped.
+        $this->expectException(\DomainException::class);
+        $this->biller->linesForCycle($agreement, Carbon::parse('2024-06-01'), Carbon::parse('2024-06-30'));
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

@@ -264,6 +264,7 @@ final class ServicePackageOperationContractTest extends TestCase
         yield 'a pattern with flags' => [['string', 'regex:/^a$/i'], 'Pattern for [field] is not a /-delimited regex without flags.'];
         yield 'a pattern with other delimiters' => [['string', 'regex:#^a$#'], 'Pattern for [field] is not a /-delimited regex without flags.'];
         yield 'a pattern not opened by its delimiter' => [['string', 'regex:a/b/'], 'Pattern for [field] is not a /-delimited regex without flags.'];
+        yield 'a date format other than Y-m-d' => [['date_format:d/m/Y'], 'Date format [d/m/Y] for [field] has no schema translation.'];
     }
 
     /** @param list<mixed> $rules */
@@ -331,6 +332,44 @@ final class ServicePackageOperationContractTest extends TestCase
         foreach (['ServicePackageRequest', 'ServicePackageEnrollmentSummary', 'ServicePackageRequestApprovalResponse'] as $component) {
             $this->assertStringNotContainsString('invitation', strtolower(json_encode(ServicePackageOperations::schema($component), JSON_THROW_ON_ERROR)), $component);
         }
+    }
+
+    /**
+     * Cancellation sits beside agreements.terminate: the clients scopes and
+     * MCP switches, behind the clients cutover. Every decision, scheduled end
+     * and undo emails the client (CAN-6), so each is an external write.
+     */
+    #[Requirement('API-1', 'API-2', 'CAN-4', 'CAN-6')]
+    public function test_each_cancellation_operation_is_declared_once_with_its_scopes_switches_and_effect(): void
+    {
+        $catalog = new AgentOperationCatalog;
+        $contract = $catalog->contract();
+        foreach ([
+            'cancellation_requests.list' => Effect::Read,
+            'cancellation_requests.get' => Effect::Read,
+            'cancellation_requests.approve' => Effect::ExternalWrite,
+            'cancellation_requests.decline' => Effect::ExternalWrite,
+            'agreements.schedule_end' => Effect::ExternalWrite,
+            'agreements.undo_scheduled_end' => Effect::ExternalWrite,
+        ] as $id => $effect) {
+            $this->assertNull($catalog->registry()->find($id), "{$id} exists only while service packages are on");
+            $operation = $contract->find($id);
+            $this->assertNotNull($operation, $id);
+            $write = $effect !== Effect::Read;
+            $this->assertSame($effect, $operation->effect, $id);
+            $this->assertTrue($catalog->isManagerOnly($id), $id);
+            $this->assertSame([AgentMcpPackageTools::class, ServicePackageOperations::DEFINITIONS[$id][0]], $operation->mcp?->handler, $id);
+            $this->assertSame('agent-api.v1.'.ServicePackageOperations::ROUTES[$id][0], $operation->rest?->routeName, $id);
+            $this->assertSame($write ? ['clients:write', 'billing:read'] : ['billing:read'], $operation->requirement->scopes, $id);
+            $this->assertSame([
+                ...($write ? [AgentDeploymentFlags::CLIENTS] : []), AgentDeploymentFlags::SERVICE_PACKAGES,
+                'mcp', 'mcp.switch:'.($write ? 'mcp.write.clients' : 'mcp.read.agreements'), 'mcp.switch:'.$id,
+            ], $operation->requirement->flags, $id);
+        }
+        $this->assertSame([
+            'cancellation_requests.list', 'cancellation_requests.get', 'cancellation_requests.approve', 'cancellation_requests.decline',
+            'agreements.schedule_end', 'agreements.undo_scheduled_end',
+        ], ServicePackageOperations::CANCELLATION_OPERATIONS);
     }
 
     /**

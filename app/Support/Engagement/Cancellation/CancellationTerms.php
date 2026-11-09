@@ -35,7 +35,7 @@ final readonly class CancellationTerms
     {
         return new self(
             noticeDays: (int) ($agreement->notice_days ?? 0),
-            minimumTermMonths: $agreement->minimum_term_months === null ? null : (int) $agreement->minimum_term_months,
+            minimumTermMonths: $agreement->minimum_term_months === null ? null : /** @infection-ignore-all Equivalent: the model's integer cast already returns an int for every non-null value, and the int parameter would coerce one in this non-strict file. */ (int) $agreement->minimum_term_months,
             mode: CancellationMode::tryFrom((string) ($agreement->cancellation_mode ?? '')) ?? CancellationMode::None,
             cadence: $agreement->billsOnARecurringCadence() ? $agreement->effectiveBillingCadence() : null,
             startsOn: $agreement->starts_on,
