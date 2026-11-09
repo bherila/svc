@@ -425,14 +425,107 @@ spec above leaves open:
   `awaiting_review` for an owner or admin; activating it then refuses with
   `package_activation_conflict` until the overlap is resolved.
 - **Until slice 3b**, a version that charges at sign-up, requires autopay or
-  starts only once paid is refused when added and when accepted, with
-  `package_payment_not_available_yet`, so nothing half-works.
+  starts only once paid was refused when added and when accepted. Slice 3b
+  replaced that refusal with the payment step below.
 - **Who sees what.** Staff previewing the portal see a company's services but
   are offered no add or sign action. Withdrawn offers are not shown to clients.
   `client_services.*` answers only a client's portal contacts; staff who are not
   contacts see no services there and use `enrollments.*`.
 - **Activation email** goes to the client's billing address and portal
   contacts, the recipients every client notice uses.
+
+Slice 3b (payment at sign-up) settled these:
+
+- **The first period is the cadence engine's own invoice.** Acceptance calls
+  `ClientInvoicingService::generateCadencePeriod()` for the cycle containing
+  the agreement's start, on the still-`draft` agreement. The engine reads the
+  agreement's terms, dates and recurring items and never its status on that
+  path (only the bulk walk, the selector and the handover reader filter by
+  status), so no change to the engine was needed. The invoice it writes is the
+  one a later cadence run would have written - same cycle columns, same
+  proration, same number series - so the engine's own "already sold" and
+  overlap guards make the next regular run bill the next cycle and refuse this
+  one (tested: the next run bills December only, and asking for November again
+  is refused).
+- **What EDGE-6's proration covers.** The engine prorates the retainer (fee
+  and hours) by the agreement's `first_cycle_proration`; it bills each
+  recurring item per incidence, so a monthly hosting item's opening month is
+  charged in full on the start date, as for every other agreement. The engine
+  was not changed: prorating recurring items would change every existing
+  agreement's first invoice. A quarterly item anchored on the 1st also bills
+  its next incidence inside a first quarter anchored mid-month. Both are
+  recorded in the tests and are an owner decision if they should change.
+- **The setup fee charged at sign-up** is added to that invoice as manual
+  `adjustment` lines with no date (the one line type regeneration keeps, and
+  undated so it never widens the work period the engine reconciles). With no
+  first period it is the whole of an ad hoc invoice. Either way it is never
+  also a recurring item.
+- **One invoice, issued at acceptance**, through `InvoiceLifecycleService::issue()`,
+  so automatic client delivery follows the company's own setting. A cadence
+  invoice is dated the first of the month it sells; the sign-up invoice is
+  made due the day it is issued so it is not overdue on arrival. The
+  enrollment records it as `signup_invoice_id` (composite tenant key),
+  written once.
+- **Lock order.** Acceptance and lapsing take the billing maintenance share
+  lock first, then the package, the enrollment, the agreement, the invoice and
+  line rows (an existence check on the draft agreement that also ranks them
+  before invoice numbering), then what issuing takes. The conformance test
+  drives both with no new inversion.
+- **What waits.** An accepted sign-up goes to `awaiting_payment` while it
+  waits for the invoice (only when the version starts only once paid) or for
+  autopay (when it requires it); otherwise it follows its activation mode with
+  the invoice simply outstanding. `SignupGate` is that rule, pure.
+- **Autopay that meets the version** is on at exactly the version's limit,
+  with a default saved method, standing on the client's own portal consent
+  (`AutopayConsentService`, the existing wording with the version's limit). A
+  provider's attested turn-on, or another limit, does not meet it. The review
+  page carries the existing save-card endpoints and the existing autopay
+  enable endpoint with the exact fields to post; enabling from there returns
+  the client to the service page.
+- **Payment moves it on in the same request.** The one place a payment marks
+  an invoice paid (`InvoiceLifecycleService::recordMarkedPaid()`, reached by
+  the Stripe webhook and by recorded payments alike) defers a call to
+  `PackageEnrollmentWorkflow::signupInvoicePaid()` to commit explicitly; a
+  rolled-back payment never reaches it (X-5), and a replayed webhook finds the
+  invoice already paid and the enrollment already moved. A payment recorded
+  by hand counts as one confirmed by Stripe: an owner recording it attests
+  the money arrived. Turning autopay on in the portal moves waiting
+  enrollments on the same way.
+- **Starting date with a paid first period.** When the sign-up invoice billed
+  the first cycle, activation (by an owner, or after payment) keeps the start
+  date of acceptance: that is the period the client paid for. Otherwise the
+  service starts the day it is activated, as in 3a.
+- **Lapsing (ACC-6)** is `svc:packages:lapse-enrollments`, hourly, behind the
+  feature flag. An offer not accepted lapses `payment_lapse_days` after it was
+  made, an unpaid acceptance that many days after it was signed, on that day
+  in the workspace's timezone. A lapsed offer cannot be accepted. Each is
+  decided under its own lock against the invoice as it stands: a paid one is
+  moved on instead, and one with a payment in flight is held (the void refuses
+  it) for a later run.
+- **Money after the lapse (EDGE-1)** follows the existing path: a payment
+  succeeding on a void invoice is refused and its Stripe event recorded as
+  failed for review. Nothing is refunded or activated; Needs you shows
+  "Payment received after <client>'s sign-up lapsed". The overpayment credit
+  EDGE-1 describes is not created automatically, because the existing path
+  does not credit a void invoice.
+- **Autopay required but off (EDGE-2)** is a Needs you row for an active
+  service, and the portal's billing page sends a `remove_warning` on the card
+  autopay charges (or the only card) while a service requires autopay.
+- **EDGE-5** asks Stripe for the account's country and that country's
+  supported currencies, outside the transaction and only for a draft that
+  takes money; nothing is cached. Refused with
+  `package_currency_not_chargeable`, or `package_stripe_currencies_unknown`
+  when Stripe cannot be asked. Charging the first period also needs a
+  recurring cadence (`package_first_period_needs_recurring_cadence`).
+- **New refusals at acceptance:** `package_payment_unavailable` when the Stripe
+  connection has gone since publishing (also when adding from the portal),
+  `package_collected_in_square` for an agreement carrying the Square marker
+  (X-2), and `package_first_period_unbillable` when the engine refuses the
+  first cycle. That last one happens when another invoice of the same company
+  already covers the work period the first cycle reconciles: the engine's
+  overlap guard is per company, not per project, so a company already billed
+  on a cadence through another agreement cannot get a package's first period
+  invoiced. This needs a decision before slice 4 (INV-1 meets the same guard).
 
 ## Validation plan
 
