@@ -28,6 +28,19 @@
     timeoutsAsEscaped: true,
     mutators: {
         "@default": true,
+        // The agent API's documentation text: descriptions, error maps and the
+        // match arms that pick them. Route registration builds the whole
+        // operation catalog at every application boot, so every Laravel-backed
+        // Unit test is recorded as covering these methods and each mutant here
+        // re-ran almost the whole Unit suite (#673: ~57 s per mutant, most of
+        // the run). The text is pinned byte for byte elsewhere:
+        // OpenApiDocumentGenerationTest fails when the generated document drifts
+        // from public/openapi/svc-agent-v1.json, so a mutant of it cannot
+        // survive the full suite. Scopes, methods and routes are not here: they
+        // come from the catalog's own declarations, which stay mutated.
+        "global-ignore": [
+            "App\\Services\\AgentApi\\Operations\\*Operations::documentation",
+        ],
         // A local Eloquent scope is reached through `Builder::__call`, which
         // calls it whatever its visibility, so `public` and `protected` answer
         // the same and no test can tell them apart. Named per scope: the

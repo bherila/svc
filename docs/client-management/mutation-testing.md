@@ -77,6 +77,19 @@ and `diagnostics/` as the `mutation-diagnostics` artifact for seven days.
 Infection's per-mutant duration is approximate (infection/infection#2900): use it
 to rank mutants, not to budget them.
 
+### What the lane does not mutate
+
+`*Operations::documentation()` (the agent API's descriptions, error maps and
+the match arms that choose them) is excluded in `infection.diff.json5`. Route
+registration builds the whole operation catalog at every application boot, so
+every Laravel-backed Unit test was recorded as covering that text, and each
+mutant of it re-ran almost the whole Unit suite: the dominant cost of #673's
+run, about 57 seconds per mutant. The text itself is pinned byte for byte by
+`OpenApiDocumentGenerationTest`, which fails when the generated document
+drifts from `public/openapi/svc-agent-v1.json`. Scopes, methods and routes come
+from the catalog's own declarations and stay mutated. Remove the exclusion once
+the catalog no longer builds its documentation at boot.
+
 ### Measuring a merged change
 
 A follow-up that changes only tests or tooling has no changed application lines
