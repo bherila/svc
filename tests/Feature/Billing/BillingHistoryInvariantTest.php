@@ -14,6 +14,8 @@ use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBacklogReader;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Engagement\AgreementCancellations;
+use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\InvoiceStatus;
@@ -315,6 +317,80 @@ final class BillingHistoryInvariantTest extends TestCase
         $this->assertGreaterThanOrEqual(2, count($totals['together']['first']));
         $this->assertSame($totals['first alone']['first'], $totals['together']['first']);
         $this->assertSame($totals['second alone']['second'], $totals['together']['second']);
+    }
+
+    /** @return iterable<string, array{array<string, mixed>, string}> */
+    public static function cancelledWorlds(): iterable
+    {
+        // From Oct 10 with no notice, the earliest end is the close of the period holding it.
+        yield 'monthly' => [['retainer_minutes' => 600, 'rollover_months' => 1], '2026-10-31'];
+        yield 'quarterly' => [['billing_cadence' => 'quarterly', 'bill_overage_interim' => false, 'retainer_minutes' => 600, 'rollover_months' => 3], '2026-12-31'];
+    }
+
+    /**
+     * A cancellation is a scheduled end and nothing else (docs/service-packages.md,
+     * CAN-5, EDGE-9). Cancelled at a period close and terminated on that date by
+     * the scheduled run, an agreement bills exactly as one ended there by hand,
+     * under the existing termination rules: its last period whole, its deferred
+     * work collected. Undone, it bills exactly as one never cancelled.
+     *
+     * @param  array<string, mixed>  $terms
+     */
+    #[DataProvider('cancelledWorlds')]
+    public function test_a_cancellation_bills_as_the_end_it_schedules_and_an_undone_one_as_none(array $terms, string $end): void
+    {
+        config(['svc.service_packages.enabled' => true]);
+        // Work up to the end; what an ended agreement does with later work is the engine's existing rule, not this.
+        $history = array_filter([['2026-02-09', 1500, false], ['2026-03-02', 240, true], ['2026-07-14', 900, false], ['2026-10-20', 1300, false], ['2026-11-20', 300, false]],
+            static fn (array $entry): bool => $entry[0] <= $end);
+        $totals = [];
+        foreach (['cancelled', 'ended by hand', 'undone', 'never cancelled'] as $world) {
+            Carbon::setTestNow('2026-10-10 12:00:00');
+            CarbonImmutable::setTestNow('2026-10-10 12:00:00');
+            [$workspace, $company, $project, $owner] = $this->world('cancellation-'.str_replace(' ', '-', $world));
+            $agreement = $this->agreement($workspace, $company, $terms + ['cancellation_mode' => 'self_serve', 'notice_days' => 0]);
+            foreach ($history as [$day, $minutes, $deferred]) {
+                $entry = $this->hours($workspace, $company, $project, $owner, $day, $minutes);
+                if ($deferred) {
+                    ClientTimeEntry::query()->whereKey($entry->id)->update(['is_deferred' => true]);
+                }
+            }
+            $cancellations = app(AgreementCancellations::class);
+            if ($world === 'cancelled' || $world === 'undone') {
+                $cancellations->schedule($owner, $workspace, $agreement, $end, false);
+            }
+            if ($world === 'undone') {
+                $cancellations->undo($owner, $workspace, $agreement);
+            }
+
+            Carbon::setTestNow($end.' 06:00:00');
+            CarbonImmutable::setTestNow($end.' 06:00:00');
+            if ($world === 'cancelled') {
+                $this->artisan('svc:agreements:terminate-scheduled', ['--apply' => true])->assertSuccessful();
+            }
+            if ($world === 'ended by hand') {
+                app(AgreementWorkflow::class)->terminate($agreement, $end);
+            }
+
+            Carbon::setTestNow('2027-01-20 12:00:00');
+            CarbonImmutable::setTestNow('2027-01-20 12:00:00');
+            app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+            $this->assertInvariants($company, $world.', generated');
+            $this->issueEveryDraft($company, $workspace);
+            $this->assertInvariants($company, $world.', everything issued');
+            $totals[$world] = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)
+                ->orderBy('cycle_start')->orderBy('id')->get()
+                ->map(fn (ClientInvoice $invoice): array => [$invoice->invoice_kind, $invoice->cycle_start?->toDateString(), $invoice->cycle_end?->toDateString(), $invoice->status, (int) $invoice->total_amount])->all();
+        }
+
+        $this->assertSame('terminated', ClientAgreement::query()->where('title', 'Synthetic agreement')->orderBy('id')->firstOrFail()->status);
+        $this->assertSame($totals['ended by hand'], $totals['cancelled']);
+        $this->assertSame($totals['never cancelled'], $totals['undone']);
+        // The last period sold is whole: one closes on the end. What follows it
+        // is the engine's existing settlement of an ended agreement, the same
+        // whether the end was cancelled or set by hand.
+        $this->assertContains($end, array_column($totals['cancelled'], 2));
+        $this->assertNotSame($totals['never cancelled'], $totals['cancelled']);
     }
 
     // ---- the invariants ----
