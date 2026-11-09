@@ -23,8 +23,14 @@ export GIT_CONFIG_VALUE_0=false
 export PAO_DISABLE=1
 
 summary=storage/framework/cache/infection-diff/summary.json
-# A leftover summary from an earlier run must not be mistaken for this one.
+# Evidence that must survive Infection: it appends `infection/` to its tmpDir
+# and deletes that directory when a run finishes (unless --debug), so the
+# baseline coverage, JUnit timings and per-mutant log live beside it instead.
+diagnostics=storage/framework/cache/infection-diff/diagnostics
+# A leftover summary or diagnostics from an earlier run must not be mistaken
+# for this one.
 rm -f "$summary"
+rm -rf "$diagnostics"
 
 # Both entry points use surviving added/changed lines, not file status. A pure
 # deletion has nothing for Infection's changed-line filter to mutate.
@@ -36,9 +42,40 @@ if [ "$mutation_scope_required" = false ]; then
     exit 0
 fi
 
+mkdir -p "$diagnostics"
+{
+    echo "base=$(git rev-parse "$mutation_base")"
+    echo "head=$(git rev-parse HEAD)"
+    echo "changed_files=$mutation_scope_files"
+    echo "cpus=$(nproc 2>/dev/null || echo unknown)"
+} >"$diagnostics/run.txt"
+
+# The baseline: the Unit suite once, with PCOV, writing the coverage map and
+# per-test timings Infection selects covering tests from. It must pass before
+# any mutant runs: with --skip-initial-tests, an ordinary failing test would
+# otherwise read as a killed mutant. Same suite and order as Infection's own
+# initial run (infection.diff.json5's testFrameworkExtraArgs).
+baseline_started=$SECONDS
+baseline_status=0
+php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/phpunit \
+    --testsuite=Unit \
+    --order-by=default \
+    --coverage-xml="$diagnostics/baseline/coverage-xml" \
+    --log-junit="$diagnostics/baseline/junit.xml" || baseline_status=$?
+echo "baseline_seconds=$((SECONDS - baseline_started))" >>"$diagnostics/run.txt"
+if [ "$baseline_status" -ne 0 ]; then
+    echo "The Unit baseline failed (exit $baseline_status); no mutant was run." >&2
+    exit "$baseline_status"
+fi
+
 # Infection's exit code judges the score; the gate judges whether anything was
 # measured (#443). Run both and fail on either, so a run in which every mutant
 # timed out cannot pass. CI runs the same gate script.
+# --teamcity streams one record per finished mutant (mutator, id, location,
+# outcome, diff, runtime) into the diagnostics, so a run cut off by the job
+# deadline still says which mutants it reached and what each cost. The console
+# keeps everything else.
+mutants_started=$SECONDS
 infection_status=0
 php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
     --configuration=infection.diff.json5 \
@@ -47,7 +84,10 @@ php -d pcov.enabled=1 -d memory_limit=1G vendor/bin/infection \
     --only-covering-test-cases \
     --min-covered-msi=82 \
     --threads=max \
-    --initial-tests-php-options='-d pcov.enabled=1 -d memory_limit=1G' || infection_status=$?
+    --coverage="$diagnostics/baseline" \
+    --skip-initial-tests \
+    --teamcity | tee "$diagnostics/mutants.teamcity.log" | grep --line-buffered -v '^##teamcity' || infection_status=${PIPESTATUS[0]}
+echo "mutants_seconds=$((SECONDS - mutants_started))" >>"$diagnostics/run.txt"
 
 gate_status=0
 php scripts/mutation-gate.php "$summary" || gate_status=$?

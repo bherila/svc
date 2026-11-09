@@ -159,7 +159,7 @@ final class NullSemanticsRegistryTest extends TestCase
      * with every guard green.
      *
      * The **fully-qualified name** is required because short names collide: this
-     * repository already contains `Tests\Feature\ExampleTest` and
+     * repository has contained both `Tests\Feature\ExampleTest` and
      * `Tests\Unit\ExampleTest`. On basenames alone, swapping one class for
      * another in a different namespace with a same-named method preserves the
      * identity and passes. An earlier revision of this file used basenames and
