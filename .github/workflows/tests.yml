@@ -26,6 +26,13 @@ on:
         description: Run the payment reminder browser layout pass
         type: boolean
         default: false
+      mutation_base:
+        description: >-
+          Run the diff-scoped mutation lane for the dispatched commit against this
+          base commit (full SHA). Use it to measure a change whose application lines
+          are already merged, e.g. the original base of a merged pull request.
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -599,7 +606,7 @@ jobs:
 
   mutation:
     name: Diff-scoped mutation tests
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.mutation_base != '') }}
     # Typical diffs should remain near the ten-minute target. This is only the
     # hard failsafe for unusually broad money-path changes: #125 generated
     # 1,407 mutants and was cancelled by the former 12-minute cap before
@@ -611,15 +618,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Detect mutation-tested changes
         id: mutation_scope
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || inputs.mutation_base }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           source scripts/mutation-scope.sh
           mutation_scope "$BASE_SHA" "$HEAD_SHA"
@@ -696,6 +703,15 @@ jobs:
           fi
 
 
+      # Reads the per-mutant stream, so it also explains a run the deadline cut
+      # off: what finished, what was still running, and the slowest mutants.
+      - name: Report mutant timings
+        if: ${{ always() && steps.mutation_scope.outputs.required == 'true' && hashFiles('storage/framework/cache/infection-diff/diagnostics/mutants.teamcity.log') != '' }}
+        run: php scripts/mutation-timings.php storage/framework/cache/infection-diff/diagnostics/mutants.teamcity.log
+
+      # The baseline coverage and timings live in diagnostics/ because Infection
+      # writes its own under infection-diff/infection/ and deletes them when a run
+      # finishes.
       - name: Preserve mutation diagnostics
         if: ${{ always() && steps.mutation_scope.outputs.required == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -706,8 +722,7 @@ jobs:
           path: |
             storage/framework/cache/infection-diff/summary.json
             storage/framework/cache/infection-diff/mutations.log
-            storage/framework/cache/infection-diff/junit.xml
-            storage/framework/cache/infection-diff/coverage-xml/**/*.xml
+            storage/framework/cache/infection-diff/diagnostics/**
 
   clean-install:
     name: Clean install without secrets
