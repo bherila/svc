@@ -103,7 +103,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         };
 
         $this->assertForbidden(fn () => $this->workflow()->addFromPortal($other, $company, $package));
-        $this->assertForbidden(fn () => $this->workflow()->accept($other, $company, $offer, $this->signature()));
+        $this->assertForbidden(fn () => $this->workflow()->accept($other, $company, $offer, $this->signatureFor($offer)));
 
         $this->assertSame('offered', $offer->refresh()->status);
         $this->assertNull($offer->accepted_at);
@@ -138,7 +138,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-09 20:00:00', 'UTC'));
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
 
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature(' Morgan Synthetic ', ' Owner '));
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer, ' Morgan Synthetic ', ' Owner '));
 
         $this->assertSame('active', $accepted->status);
         $this->assertSame($contact->id, $accepted->accepted_by_user_id);
@@ -173,7 +173,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
             'first_cycle_proration' => 'full_period',
         ]);
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
         $agreement = ClientAgreement::query()->whereKey($accepted->client_agreement_id)->sole();
         $snapshot = $this->agreementTerms($agreement);
 
@@ -203,7 +203,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $offer = app(PackageRequestWorkflow::class)->approve($owner, $workspace, $this->packageRequest($workspace, $package));
         $company = ClientCompany::query()->whereKey($offer->client_company_id)->sole();
 
-        $accepted = $this->workflow()->accept($visitor, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($visitor, $company, $offer, $this->signatureFor($offer));
 
         $this->assertSame('awaiting_review', $accepted->status);
         $this->assertSame($visitor->id, $accepted->accepted_by_user_id);
@@ -214,18 +214,18 @@ final class PackageEnrollmentWorkflowTest extends TestCase
     {
         [$workspace, $owner, $package, $company, $contact] = $this->world(['activation_mode' => 'review']);
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
-        $first = $this->workflow()->accept($contact, $company, $offer, $this->signature('Morgan Synthetic', 'Owner'));
+        $first = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer, 'Morgan Synthetic', 'Owner'));
         $facts = $this->facts($first);
 
         // The same signer again, from a page loaded before the first acceptance.
-        $repeat = $this->workflow()->accept($contact, $company, $offer, $this->signature('Morgan Synthetic', 'Owner'));
+        $repeat = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer, 'Morgan Synthetic', 'Owner'));
         $this->assertSame($facts, $this->facts($repeat));
         $this->assertSame($first->lock_version, $repeat->lock_version, 'a repeat writes nothing');
 
         $second = $this->contact($company);
         foreach ([[$second, 'Avery Synthetic', null], [$contact, 'Someone Else', 'Owner'], [$contact, 'Morgan Synthetic', 'Director']] as [$who, $name, $title]) {
             try {
-                $this->workflow()->accept($who, $company, $offer, $this->signature($name, $title));
+                $this->workflow()->accept($who, $company, $offer, $this->signatureFor($offer, $name, $title));
                 $this->fail('A second, different signature was recorded.');
             } catch (ServicePackageRefused $refused) {
                 $this->assertSame(PackageRefusal::AlreadyAccepted->value, $refused->refusalCode());
@@ -264,7 +264,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
         $this->travelTo(CarbonImmutable::parse('2026-11-09 15:00:00', 'UTC'));
 
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
 
         $this->assertSame('awaiting_review', $accepted->status);
         $agreement = ClientAgreement::query()->whereKey($accepted->client_agreement_id)->sole();
@@ -314,7 +314,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
             $this->assertSame(PackageRefusal::NotAwaitingReview->value, $refused->refusalCode());
         }
 
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
         foreach ([$this->workspaceMember($workspace, 'member'), $contact] as $who) {
             try {
                 $this->workflow()->activate($who, $workspace, $accepted);
@@ -331,7 +331,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
     {
         [$workspace, $owner, $package, $company, $contact] = $this->world(['activation_mode' => 'review']);
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
         $this->activeAgreementOn($workspace, $company, $accepted->client_project_id);
 
         try {
@@ -347,7 +347,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $automatic = $this->publishedPackage($workspace, $owner, ['link_name' => 'automatic-hosting']);
         $second = $this->workflow()->addFromPortal($contact, $company, $automatic);
         $this->activeAgreementOn($workspace, $company, $second->client_project_id);
-        $held = $this->workflow()->accept($contact, $company, $second, $this->signature());
+        $held = $this->workflow()->accept($contact, $company, $second, $this->signatureFor($second));
         $this->assertSame('awaiting_review', $held->status);
         $this->assertSame('Morgan Synthetic', $held->refresh()->signer_name);
         $this->assertNull($held->activated_at);
@@ -366,7 +366,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         ]]);
         $current = app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package->refresh())->published_version_id;
 
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
 
         $this->assertSame($offered, $accepted->service_package_version_id, 'the offer is recorded as made');
         $this->assertSame($current, $accepted->accepted_version_id);
@@ -382,7 +382,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $offer = $this->workflow()->addFromPortal($contact, $company, $package);
         app(ServicePackageWorkflow::class)->retire($owner, $workspace, $package->refresh());
 
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
 
         $this->assertSame('active', $accepted->status);
         $this->assertSame($offer->service_package_version_id, $accepted->accepted_version_id);
@@ -397,12 +397,12 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         // The page was loaded; access is withdrawn before the form is sent.
         ClientCompanyMembership::query()->where('client_company_id', $company->id)->where('user_id', $leaving->id)->delete();
 
-        $this->assertForbidden(fn () => $this->workflow()->accept($leaving, $company, $offer, $this->signature('Avery Synthetic')));
+        $this->assertForbidden(fn () => $this->workflow()->accept($leaving, $company, $offer, $this->signatureFor($offer, 'Avery Synthetic')));
         $this->assertSame('offered', $offer->refresh()->status);
         $this->assertNull($offer->accepted_at);
 
         // A recorded signature outlives the signer's access.
-        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signature());
+        $accepted = $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
         ClientCompanyMembership::query()->where('client_company_id', $company->id)->where('user_id', $contact->id)->update(['access_scope' => 'projects']);
         $active = $this->workflow()->activate($owner, $workspace, $accepted);
         $this->assertSame('active', $active->status);
@@ -422,7 +422,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $this->disconnectStripe();
 
         foreach ([
-            fn () => $this->workflow()->accept($contact, $company, $offer, $this->signature()),
+            fn () => $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer)),
             fn () => $this->workflow()->addFromPortal($contact, $company, $paying),
         ] as $attempt) {
             try {
@@ -449,7 +449,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         $otherPackage = $this->publishedPackage($other, $otherOwner);
 
         foreach ([
-            fn () => $this->workflow()->accept($neighbourContact, $neighbour, $offer, $this->signature()),
+            fn () => $this->workflow()->accept($neighbourContact, $neighbour, $offer, $this->signatureFor($offer)),
             fn () => $this->workflow()->addFromPortal($contact, $company, $otherPackage),
             fn () => $this->workflow()->activate($otherOwner, $other, $offer),
         ] as $attempt) {
@@ -473,7 +473,7 @@ final class PackageEnrollmentWorkflowTest extends TestCase
 
         try {
             DB::transaction(function () use ($contact, $company, $offer): void {
-                $this->workflow()->accept($contact, $company, $offer, $this->signature());
+                $this->workflow()->accept($contact, $company, $offer, $this->signatureFor($offer));
                 throw new \RuntimeException('synthetic failure after acceptance');
             });
         } catch (\RuntimeException) {
@@ -503,12 +503,6 @@ final class PackageEnrollmentWorkflowTest extends TestCase
         ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $user->id, 'role' => 'member', 'access_scope' => $scope]);
 
         return $user;
-    }
-
-    /** @return array<string, mixed> */
-    private function signature(string $name = 'Morgan Synthetic', ?string $title = null): array
-    {
-        return ['signer_name' => $name, 'signer_title' => $title, 'accepted_terms' => true];
     }
 
     private function activeAgreementOn(Workspace $workspace, ClientCompany $company, int $projectId): void

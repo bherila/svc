@@ -193,6 +193,8 @@ final class EnrollmentRulesTest extends TestCase
         yield 'in the workspace timezone' => ['offered', '2026-11-01 23:30:00', null, 1, 'Pacific/Auckland', '2026-11-03'];
         yield 'across a month end' => ['awaiting_payment', '2026-10-20 12:00:00', '2026-10-25 12:00:00', 14, 'America/New_York', '2026-11-08'];
         yield 'a leap day' => ['offered', '2028-02-15 12:00:00', null, 14, 'UTC', '2028-02-29'];
+        // A window shorter than a day is held to one: an offer never lapses on the day it is made.
+        yield 'a zero-day window, the next day' => ['offered', '2026-11-01 15:00:00', null, 0, 'UTC', '2026-11-02'];
         yield 'waiting for review, never' => ['awaiting_review', '2026-11-01 15:00:00', '2026-11-01 16:00:00', 14, 'UTC', null];
         yield 'active, never' => ['active', '2026-11-01 15:00:00', '2026-11-01 16:00:00', 14, 'UTC', null];
         yield 'lapsed, never again' => ['lapsed', '2026-11-01 15:00:00', null, 14, 'UTC', null];
@@ -231,6 +233,13 @@ final class EnrollmentRulesTest extends TestCase
         yield 'first month and setup' => [['charge_first_period' => true, 'charge_setup_fee_at_signup' => true, 'components' => [...$hosting['components'], $setup]], '2026-11-15', [['setup_fee', 25000, null, null], ['first_period', 4500, '2026-11-15', '2026-11-30']]];
         // 16 of November's 30 days of a $600 retainer: 0.5333 x 600 = 319.98.
         yield 'a retainer, prorated by hours' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 60000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'prorate_hours'], '2026-11-15', [['first_period', 31998, '2026-11-15', '2026-11-30']]];
+        // The retainer is rounded once, to the cent: 8 of 30 days is 0.2667 x 600 = 160.02 and 7 is 0.2333 x 600 = 139.98,
+        // whose cents are not whole in binary (16002.000000000002, 13997.999999999998) and must not round up or down past them.
+        yield 'a retainer, prorated to a cent just above a whole' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 60000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'prorate_hours'], '2026-11-23', [['first_period', 16002, '2026-11-23', '2026-11-30']]];
+        yield 'a retainer, prorated to a cent just below a whole' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 60000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'prorate_hours'], '2026-11-24', [['first_period', 13998, '2026-11-24', '2026-11-30']]];
+        // 0.5333 x 450 = 239.985 lands just below the half cent in binary: rounded once to the cent it is 239.98, where
+        // rounding to a tenth of a cent first would carry it up to 239.99.
+        yield 'a retainer, prorated to a half cent' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 45000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'prorate_hours'], '2026-11-15', [['first_period', 23998, '2026-11-15', '2026-11-30']]];
         yield 'a retainer, full first period' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 60000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'full_period'], '2026-11-15', [['first_period', 60000, '2026-11-15', '2026-11-30']]];
         yield 'from the first of the month' => [['charge_first_period' => true, 'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500]], 'retainer_amount' => 60000, 'retainer_minutes' => 300], '2026-12-01', [['first_period', 64500, '2026-12-01', '2026-12-31']]];
         // The engine's quarterly item is anchored on the 1st of its start
@@ -312,6 +321,10 @@ final class EnrollmentRulesTest extends TestCase
         $this->assertFalse(ClientAutopay::meets(new ClientAutopay(150000, 'EUR'), $terms), 'another limit');
         $this->assertFalse(ClientAutopay::meets(null, $terms), 'no client consent');
         $this->assertFalse(ClientAutopay::meets(new ClientAutopay(120000, 'EUR'), $this->terms(['currency' => 'EUR'])), 'a version that requires none');
+
+        // Terms built without fromArray()'s normalization still compare by ISO code.
+        $lowerCase = new PackageTerms(...[...get_object_vars($terms), 'currency' => 'eur']);
+        $this->assertTrue(ClientAutopay::meets(new ClientAutopay(120000, 'EUR'), $lowerCase), 'a lower-case version currency');
     }
 
     /** @param array<string, mixed> $overrides */

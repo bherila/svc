@@ -26,6 +26,8 @@ use App\Models\InvoiceAutopayAttempt;
 use App\Models\InvoiceReminderLog;
 use App\Models\PaletteRecent;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
@@ -68,6 +70,7 @@ use App\Support\Engagement\Cancellation\CancellationTerms;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
+use App\Support\Packages\EnrollmentVersions;
 use App\Support\Packages\PackageTerms;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
@@ -1369,6 +1372,12 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     // for review, one signed and started on its own; every name is oversized.
     $enrollments = app(PackageEnrollmentWorkflow::class);
     $signer = ['signer_name' => str_repeat('Signer', 20), 'signer_title' => str_repeat('Title', 20), 'accepted_terms' => true];
+    // A signature on what the review page shows now (the version the client reviewed).
+    $signs = static function (ServicePackageEnrollment $enrollment) use ($signer): array {
+        $package = ServicePackage::query()->whereKey($enrollment->service_package_id)->sole();
+
+        return [...$signer, 'reviewed_version' => ServicePackageVersion::query()->whereKey(EnrollmentVersions::shown($package, $enrollment->refresh()))->sole()->public_id];
+    };
     $portalPackage = $packages->create($owner, $workspace, [
         ...$oversized, 'name' => 'Offered '.$word, 'link_name' => 'offered-care', 'is_listed' => false,
         'billing_cadence' => 'monthly', 'activation_mode' => 'review',
@@ -1390,14 +1399,14 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     ]);
     $packages->publish($owner, $workspace, $reviewPackage);
     $waiting = $enrollments->addFromPortal($squarePortalContact, $company, $reviewPackage->refresh());
-    $waiting = $enrollments->accept($squarePortalContact, $company, $waiting, $signer);
+    $waiting = $enrollments->accept($squarePortalContact, $company, $waiting, $signs($waiting));
     $autoPackage = $packages->create($owner, $workspace, [
         'name' => 'Automatic '.$word, 'link_name' => 'automatic-care', 'is_listed' => false, 'activation_mode' => 'automatic',
         'components' => [['kind' => 'recurring', 'description' => 'Hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1]],
     ]);
     $packages->publish($owner, $workspace, $autoPackage);
     $started = $enrollments->addFromPortal($squarePortalContact, $company, $autoPackage->refresh());
-    $enrollments->accept($squarePortalContact, $company, $started, $signer);
+    $enrollments->accept($squarePortalContact, $company, $started, $signs($started));
 
     // Slice 3b: the sign-up checkout card on the review page. One package charges a setup fee and
     // the first period and requires autopay; one offer is still an estimate, one accepted service
@@ -1446,7 +1455,7 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $checkoutPackage = $publishCheckoutPackage($packages->create($owner, $workspace, $checkoutPackageInput('Checkout '.$word, 'checkout-'.str_repeat('checkoutname', 4))));
     $checkoutOffered = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $estimatePackage);
     $checkoutAccepted = $enrollments->addFromPortal($checkoutContact, $checkoutCompany, $checkoutPackage);
-    $checkoutAccepted = $enrollments->accept($checkoutContact, $checkoutCompany, $checkoutAccepted, $signer);
+    $checkoutAccepted = $enrollments->accept($checkoutContact, $checkoutCompany, $checkoutAccepted, $signs($checkoutAccepted));
     $workspace->refresh();
     $waitingAgreement = $waiting->refresh()->agreement;
 

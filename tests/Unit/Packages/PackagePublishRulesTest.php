@@ -123,6 +123,10 @@ final class PackagePublishRulesTest extends TestCase
         $this->assertSame([], PackagePublishRules::refusals($paid, true), 'not asked: a page showing readiness');
         $this->assertSame([PackageRefusal::PaymentNeedsStripe], PackagePublishRules::refusals($paid, false, ['USD']), 'without Stripe, only that');
         $this->assertSame([], PackagePublishRules::refusals($this->terms(['currency' => 'EUR']), true, ['USD']), 'a free package charges nothing');
+
+        // Terms built without fromArray()'s normalization still match the account's upper-case codes.
+        $lowerCase = new PackageTerms(...[...get_object_vars($paid), 'currency' => 'eur']);
+        $this->assertSame([], PackagePublishRules::refusals($lowerCase, true, ['EUR', 'USD']), 'a lower-case version currency');
     }
 
     public function test_charging_the_first_period_needs_a_recurring_cadence(): void

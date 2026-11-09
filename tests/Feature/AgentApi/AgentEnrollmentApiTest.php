@@ -275,7 +275,8 @@ final class AgentEnrollmentApiTest extends TestCase
         $consents = app(AutopayConsentService::class);
         $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Client, $contact, 120000, wording: (string) $consents->authorizationWording($workspace, $company, 120000)));
         $workflow = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        $offer = $workflow->addFromPortal($contact, $company, $package);
+        $enrollment = $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
         $invoice = ClientInvoice::query()->whereKey($enrollment->signup_invoice_id)->sole();
         $answers = [];
 
@@ -326,7 +327,7 @@ final class AgentEnrollmentApiTest extends TestCase
         $contact = $this->contact($company);
         $enrollment = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
         if ($accept) {
-            $enrollment = app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $enrollment, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            $enrollment = app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $enrollment, $this->signatureFor($enrollment));
         }
 
         return [$workspace, $owner, $package, $company, $contact, $enrollment->refresh()];
