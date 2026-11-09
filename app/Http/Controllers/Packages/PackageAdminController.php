@@ -130,15 +130,13 @@ final class PackageAdminController extends Controller
      */
     private function vocabularies(): array
     {
-        $values = static fn (array $cases): array => array_map(static fn (\BackedEnum $case): string|int => $case->value, $cases);
-
         return ['options' => [
-            'billing_cadences' => $values(ChargeCadence::cases()),
-            'component_kinds' => $values(PackageComponentKind::cases()),
-            'activation_modes' => $values(PackageActivationMode::cases()),
-            'invoice_issuing' => $values(PackageInvoiceIssuing::cases()),
-            'cancellation_modes' => $values(CancellationMode::cases()),
-            'question_kinds' => $values(IntakeQuestionKind::cases()),
+            'billing_cadences' => array_map(static fn (ChargeCadence $case): string => $case->value, ChargeCadence::cases()),
+            'component_kinds' => array_map(static fn (PackageComponentKind $case): string => $case->value, PackageComponentKind::cases()),
+            'activation_modes' => array_map(static fn (PackageActivationMode $case): string => $case->value, PackageActivationMode::cases()),
+            'invoice_issuing' => array_map(static fn (PackageInvoiceIssuing $case): string => $case->value, PackageInvoiceIssuing::cases()),
+            'cancellation_modes' => array_map(static fn (CancellationMode $case): string => $case->value, CancellationMode::cases()),
+            'question_kinds' => array_map(static fn (IntakeQuestionKind $case): string => $case->value, IntakeQuestionKind::cases()),
         ]];
     }
 }
