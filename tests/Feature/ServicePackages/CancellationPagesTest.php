@@ -232,7 +232,7 @@ final class CancellationPagesTest extends TestCase
         $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Lakeside Synthetic Bakery', 'slug' => 'lakeside-'.Str::uuid(), 'billing_email' => 'billing-lakeside@example.com']);
         $contact = $this->contact($company);
         $workflow = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        $enrollment = $workflow->accept($contact, $company, $offer = $workflow->addFromPortal($contact, $company, $package), $this->signatureFor($offer))->refresh();
 
         return [$workspace->refresh(), $owner, $company, $contact, $enrollment, ClientAgreement::query()->findOrFail($enrollment->client_agreement_id)];
     }
