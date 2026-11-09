@@ -265,6 +265,7 @@ final class AgentRestDocumentation
             ...SquareCoveredPaymentOperations::documentation(),
             ...RevenueOperations::documentation(),
             ...AttachmentSharingOperations::documentation(),
+            ...ServicePackageOperations::documentation(),
             ...self::collaborationOperations(),
             'agreements.activate' => [
                 'method' => 'POST',

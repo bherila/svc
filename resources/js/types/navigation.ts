@@ -126,6 +126,8 @@ export type WorkspaceNavigation = {
     submissions_href?: string | null;
     /** What a reviewer approved of the member's hours, for a month. */
     timesheet_href?: string | null;
+    /** Service packages, beside the client roster; owners and admins while the feature is on. */
+    packages_href?: string | null;
     /** A partner's light workspace: agreements, invoicing and revenue are off. */
     light?: boolean;
     /** Where an owner turns the rest of SVC on; null unless the workspace is light and they manage it. */

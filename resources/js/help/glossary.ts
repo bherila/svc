@@ -60,6 +60,11 @@ export const GLOSSARY: readonly GlossaryEntry[] = [
             'Hours worked beyond what the retainer covers, billed at the hourly rate.',
     },
     {
+        term: 'Service package',
+        definition:
+            'A fixed bundle of services at a fixed price that clients can request from its public page or add from their portal.',
+    },
+    {
         term: 'Reviewer access',
         definition:
             'Permission a business gives someone outside it to approve or dispute the hours and expenses it bills one client for.',

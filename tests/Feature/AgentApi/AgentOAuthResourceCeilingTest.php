@@ -10,6 +10,7 @@ use BWH\Auth\Http\Middleware\ExpectOAuthResource;
 use BWH\Auth\OAuth\Server\OAuthResourceIndicator;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
+use Tests\Concerns\BootsServicePackages;
 use Tests\TestCase;
 
 /**
@@ -24,6 +25,8 @@ use Tests\TestCase;
  */
 final class AgentOAuthResourceCeilingTest extends TestCase
 {
+    use BootsServicePackages;
+
     public function test_the_configured_ceilings_are_the_catalog_lists(): void
     {
         $resources = OAuthResourceIndicator::resources();

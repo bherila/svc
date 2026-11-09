@@ -5,6 +5,7 @@ namespace Tests\Feature\AgentApi;
 use App\Support\AgentApi\AgentOpenApi;
 use Bherila\McpLaravelBridge\OpenApi\OpenApiDocumentBuilder;
 use Bherila\McpLaravelBridge\Testing\OperationRegistryAssertions;
+use Tests\Concerns\BootsServicePackages;
 use Tests\TestCase;
 
 /**
@@ -17,6 +18,7 @@ use Tests\TestCase;
  */
 final class OpenApiDocumentGenerationTest extends TestCase
 {
+    use BootsServicePackages;
     use OperationRegistryAssertions;
 
     public function test_the_checked_document_is_exactly_the_generated_one(): void

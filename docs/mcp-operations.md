@@ -355,3 +355,10 @@ MCP discovery and REST, and from advertised write/accept capabilities. Reads rem
 available with `proposals:read`. As with other shared actions, the authenticated
 website continues to operate through its established routes. Enable only after
 proposal revision migrations and the required validation gates pass.
+
+Service package writes are nested behind `AGENT_API_PACKAGE_WRITES_ENABLED=false`
+and `AGENT_API_WRITES_ENABLED`, and the package operations exist at all only while
+`SVC_SERVICE_PACKAGES_ENABLED` is on: switched off, their routes and tools are not
+registered and the served OpenAPI document leaves them out. Switching a write
+switch off removes create/update/publish/retire from MCP discovery and REST while
+`packages.list` and `packages.get` remain for `packages:read`.

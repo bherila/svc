@@ -42,6 +42,7 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Mcp\McpCredentialSettings;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Review\ReviewerGrants;
 use App\Services\SharedProjects\SharedProjectParticipations;
@@ -1278,7 +1279,78 @@ if (getenv('SVC_LAYOUT_PALETTE') === '1') {
     ];
 }
 
+// Service packages (--packages): a list, the editor, and the two public pages,
+// all with deliberately oversized names, summaries, link names, descriptions
+// and questions. One package is live and listed, one live and unlisted, one a
+// draft that could be published, one a draft the server refuses to publish
+// (nothing priced, auto-issue with hours), and one retired. The flag is on
+// through the environment the runner sets, so the routes exist.
+$packagePages = [];
+if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
+    config(['svc.service_packages.enabled' => true]);
+    $packages = app(ServicePackageWorkflow::class);
+    $word = str_repeat('Unbroken', 14);
+    $oversized = [
+        'name' => $word,
+        'summary' => str_repeat('Unbroken', 30),
+        'body_markdown' => '- '.str_repeat('LongBulletWithoutSpaces', 8)."\n- Managed hosting, SSL and daily backups\n\nhttps://example.test/".str_repeat('very-long-path-segment-', 6)."\n\n".str_repeat('A paragraph that wraps normally. ', 6),
+        'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500, 'quantity' => 1, 'is_taxable' => false],
+            ['kind' => 'recurring', 'description' => str_repeat('Unbroken', 50), 'cadence' => 'monthly', 'amount' => 12900, 'quantity' => 2, 'is_taxable' => true],
+            ['kind' => 'setup_fee', 'description' => 'Setup and migration', 'cadence' => 'one_time', 'amount' => 25000, 'quantity' => 1, 'is_taxable' => false],
+        ],
+        'retainer_amount' => 60000,
+        'retainer_minutes' => 300,
+        'rollover_months' => 2,
+        'hourly_rate_amount' => 14000,
+        'minimum_term_months' => 6,
+        'notice_days' => 30,
+        'agreement_text' => str_repeat('This agreement covers the services described above. ', 8),
+        'intake_questions' => [
+            ['label' => str_repeat('Unbroken', 20), 'kind' => 'short_text', 'required' => true],
+            ['label' => 'Where is the site hosted now?', 'kind' => 'short_text', 'required' => false],
+            ['label' => 'What should the first hours go toward?', 'kind' => 'paragraph', 'required' => false],
+        ],
+    ];
+    $live = $packages->create($owner, $workspace, [...$oversized, 'link_name' => str_repeat('longlinkname', 5), 'is_listed' => true]);
+    $packages->publish($owner, $workspace, $live);
+    $second = $packages->create($owner, $workspace, [
+        'name' => 'Second synthetic service', 'summary' => 'A plain second listed service.', 'link_name' => 'second-service', 'is_listed' => true,
+        'components' => [['kind' => 'recurring', 'description' => 'Care plan', 'cadence' => 'monthly', 'amount' => 9500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $second);
+    $unlisted = $packages->create($owner, $workspace, [
+        'name' => 'Site health audit', 'summary' => 'One-time review with a written report.', 'link_name' => 'site-audit', 'is_listed' => false,
+        'billing_cadence' => 'one_time', 'minimum_term_months' => null,
+        'components' => [['kind' => 'recurring', 'description' => 'Audit and report', 'cadence' => 'one_time', 'amount' => 90000, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $unlisted);
+    $ready = $packages->create($owner, $workspace, [...$oversized, 'name' => 'Ready '.$word, 'link_name' => 'ready-'.str_repeat('draftname', 5), 'billing_cadence' => 'quarterly']);
+    $blocked = $packages->create($owner, $workspace, [
+        'name' => 'Not ready to publish', 'link_name' => 'not-ready', 'invoice_issuing' => 'automatic', 'hourly_rate_amount' => 12000,
+    ]);
+    $retired = $packages->create($owner, $workspace, [
+        'name' => 'Legacy hosting', 'link_name' => 'legacy-hosting', 'is_listed' => true,
+        'components' => [['kind' => 'recurring', 'description' => 'Legacy plan', 'cadence' => 'monthly', 'amount' => 3500, 'quantity' => 1]],
+    ]);
+    $packages->publish($owner, $workspace, $retired);
+    $packages->retire($owner, $workspace, $retired->refresh());
+    $workspace->refresh();
+    $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
+    $packagePages = [
+        'packages_list' => route('packages.index', $workspace, absolute: false),
+        'packages_new' => route('packages.create', $workspace, absolute: false),
+        'packages_editor' => $edit($ready),
+        'packages_editor_blocked' => $edit($blocked),
+        'packages_editor_live' => $edit($live),
+        'packages_catalog' => route('packages.public.catalog', $workspace->package_catalog_token, absolute: false),
+        'packages_public' => route('packages.public.show', [$workspace->package_catalog_token, $live->link_name], absolute: false),
+        'packages_public_short' => route('packages.public.show', [$workspace->package_catalog_token, $unlisted->link_name], absolute: false),
+    ];
+}
+
 file_put_contents($runtime.'/fixture.json', json_encode([
+    ...$packagePages,
     ...$autopayPages,
     ...$lightPages,
     ...$paymentPages,

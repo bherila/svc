@@ -12039,6 +12039,735 @@
                 "x-mcp-tool": "operations.summary"
             }
         },
+        "/workspaces/{workspace}/packages": {
+            "post": {
+                "operationId": "packages.create",
+                "description": "Create a service package with a draft version. Terms not sent take the defaults (the workspace currency, monthly, draft invoices, owner review, request-mode cancellation with 30 days' notice); intake questions without a key get one from their label. Creating publishes nothing. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:write",
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Service package",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument"
+                },
+                "x-agent-mcp-tool": "packages.create",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PACKAGE_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.create"
+            },
+            "get": {
+                "operationId": "packages.list",
+                "description": "List the workspace's service packages, oldest first, optionally by status (draft, published or retired). Each has its published version and its draft, both with every term, its public URL once published, and publish_refusals: the coded reasons publishing the draft would be refused now (for example a payment at sign-up without a Stripe connection). Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "draft",
+                                "published",
+                                "retired"
+                            ]
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/Limit"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Cursor"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service packages",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "packages.list",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.list"
+            }
+        },
+        "/workspaces/{workspace}/packages/{package}": {
+            "get": {
+                "operationId": "packages.get",
+                "description": "Read one service package with its published version, its draft, its public URL and publish_refusals, and the version to send with a change. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service package",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, or the caller is not a workspace owner or admin.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "status or limit is out of range, or the cursor is malformed or belongs to another query.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "read",
+                "x-agent-idempotent": true,
+                "x-agent-mcp-tool": "packages.get",
+                "x-svc-flags": [
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.get"
+            },
+            "patch": {
+                "operationId": "packages.update",
+                "description": "Change package fields (link name, listed, portal-addable) and/or the draft's terms, using the package's current version. Only what is sent changes; sending components or intake_questions replaces that whole list. Terms are always written to the draft: a published version is never changed, and editing a published package starts a new draft from it. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:write",
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service package",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true
+                },
+                "x-agent-mcp-tool": "packages.update",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PACKAGE_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.update"
+            }
+        },
+        "/workspaces/{workspace}/packages/{package}/publish": {
+            "post": {
+                "operationId": "packages.publish",
+                "description": "Only after explicit user confirmation, publish the draft as the package's new version and open its public page. Refused with a coded reason (package_payment_needs_stripe, package_auto_issue_needs_fixed_price and the other publish_refusals codes) when the draft could not be honoured. Current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:write",
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageConfirmRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service package",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "local_write",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "packages.publish",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PACKAGE_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.publish"
+            }
+        },
+        "/workspaces/{workspace}/packages/{package}/retire": {
+            "post": {
+                "operationId": "packages.retire",
+                "description": "Only after explicit user confirmation, close a published package to new requests and portal additions. Agreements already made from it are untouched. Current version and confirm: true required. Workspace owners and admins only: anyone else, and any other workspace's package, is answered as not found. Requires SVC_SERVICE_PACKAGES_ENABLED; while it is off the operation does not exist. Agent writes also need AGENT_API_WRITES_ENABLED and AGENT_API_PACKAGE_WRITES_ENABLED.",
+                "security": [
+                    {
+                        "oauth2": [
+                            "packages:write",
+                            "packages:read"
+                        ]
+                    },
+                    {
+                        "apiToken": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServicePackageConfirmRequest"
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/WorkspaceId"
+                    },
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "$ref": "#/components/parameters/IdempotencyKey"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service package",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ServicePackageResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not signed in, or the token is missing, expired or revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "The token lacks the operation's scopes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The workspace or package is not visible to the caller, the caller is not a workspace owner or admin (checked again on a replay), or an agent write cutover is switched off.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The Idempotency-Key header is missing, the body has an unknown field, confirm is not true, or a field is invalid (`errors` names it). A coded refusal names its reason in `code`: package_link_name_taken, package_nothing_to_publish, package_not_published, or a publish refusal.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (retry after Retry-After).",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "expected_version is no longer current (read the package again), or the Idempotency-Key was already used with a different request, or the first request with it is still being processed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "x-agent-effect": "destructive",
+                "x-agent-idempotent": true,
+                "x-agent-write-safety": {
+                    "idempotency_key": "header_and_argument",
+                    "expected_version": true,
+                    "confirm": true
+                },
+                "x-agent-mcp-tool": "packages.retire",
+                "x-svc-flags": [
+                    "AGENT_API_WRITES_ENABLED",
+                    "AGENT_API_PACKAGE_WRITES_ENABLED",
+                    "SVC_SERVICE_PACKAGES_ENABLED"
+                ],
+                "x-mcp-tool": "packages.retire"
+            }
+        },
         "/workspaces/{workspace}/payments/{payment}": {
             "patch": {
                 "operationId": "payments.correct",
@@ -20210,6 +20939,8 @@
                             "proposals:read": "Read authorized proposals and their commercial terms",
                             "proposals:write": "Create and send proposals as a workspace manager",
                             "proposals:accept": "Accept authorized proposals and sign their resulting agreement",
+                            "packages:read": "Read the workspace's service packages, their versions, terms and public links as a workspace owner or admin",
+                            "packages:write": "Create, edit, publish and retire service packages as a workspace owner or admin; publishing opens a public sign-up page",
                             "workspaces:create": "Create new workspaces you own",
                             "files:read": "Read authorized attachments; legacy generic routes require a workspace manager and collaboration routes require exact parent access",
                             "files:write": "Upload, share and delete authorized files; sharing requires current publisher authority and new uploads start private",
@@ -31294,6 +32025,989 @@
                     },
                     "workspace": {
                         "type": "string"
+                    }
+                }
+            },
+            "ServicePackage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "link_name",
+                    "status",
+                    "is_listed",
+                    "portal_addable",
+                    "public_url",
+                    "published",
+                    "draft",
+                    "publish_refusals",
+                    "version",
+                    "created_at",
+                    "updated_at"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "link_name": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "published",
+                            "retired"
+                        ]
+                    },
+                    "is_listed": {
+                        "type": "boolean"
+                    },
+                    "portal_addable": {
+                        "type": "boolean"
+                    },
+                    "public_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "uri"
+                    },
+                    "published": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ServicePackageVersion"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "draft": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/ServicePackageVersion"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "publish_refusals": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "code",
+                                "message"
+                            ],
+                            "properties": {
+                                "code": {
+                                    "type": "string",
+                                    "enum": [
+                                        "package_link_name_taken",
+                                        "package_not_published",
+                                        "package_nothing_to_publish",
+                                        "package_nothing_priced",
+                                        "package_payment_needs_stripe",
+                                        "package_auto_issue_needs_fixed_price",
+                                        "package_autopay_needs_limit",
+                                        "package_pay_before_activation_needs_charge",
+                                        "package_setup_fee_at_signup_needs_setup_fee",
+                                        "package_minimum_term_needs_recurring_cadence"
+                                    ]
+                                },
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/Version"
+                    },
+                    "created_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "updated_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ServicePackageConfirmRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version",
+                    "confirm"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "const": true
+                    }
+                }
+            },
+            "ServicePackageCreateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "link_name",
+                    "name"
+                ],
+                "properties": {
+                    "link_name": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "minLength": 2,
+                        "maxLength": 64
+                    },
+                    "is_listed": {
+                        "type": "boolean"
+                    },
+                    "portal_addable": {
+                        "type": "boolean"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "minLength": 1
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 300
+                    },
+                    "body_markdown": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
+                    },
+                    "agreement_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 30000
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "minLength": 3,
+                        "maxLength": 3
+                    },
+                    "billing_cadence": {
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual",
+                            "one_time"
+                        ],
+                        "type": "string"
+                    },
+                    "hourly_rate_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "retainer_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "retainer_minutes": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "rollover_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 120
+                    },
+                    "first_cycle_proration": {
+                        "enum": [
+                            "prorate_hours",
+                            "full_period",
+                            "align_next_cycle",
+                            null
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "charge_setup_fee_at_signup": {
+                        "type": "boolean"
+                    },
+                    "charge_first_period": {
+                        "type": "boolean"
+                    },
+                    "require_autopay": {
+                        "type": "boolean"
+                    },
+                    "autopay_limit_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 1000000000
+                    },
+                    "pay_before_activation": {
+                        "type": "boolean"
+                    },
+                    "payment_lapse_days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                    },
+                    "activation_mode": {
+                        "enum": [
+                            "automatic",
+                            "review"
+                        ],
+                        "type": "string"
+                    },
+                    "invoice_issuing": {
+                        "enum": [
+                            "automatic",
+                            "draft"
+                        ],
+                        "type": "string"
+                    },
+                    "notice_days": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 120
+                    },
+                    "cancellation_mode": {
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ],
+                        "type": "string"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "description",
+                                "amount"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "enum": [
+                                        "recurring",
+                                        "setup_fee"
+                                    ],
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "maxLength": 500,
+                                    "minLength": 1
+                                },
+                                "cadence": {
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semi_annual",
+                                        "annual",
+                                        "one_time",
+                                        null
+                                    ],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "amount": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 1000000000
+                                },
+                                "quantity": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 999999
+                                },
+                                "is_taxable": {
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        },
+                        "maxItems": 30
+                    },
+                    "intake_questions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "label",
+                                "kind"
+                            ],
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_]+$",
+                                    "maxLength": 40,
+                                    "minLength": 1
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "maxLength": 200,
+                                    "minLength": 1
+                                },
+                                "kind": {
+                                    "enum": [
+                                        "short_text",
+                                        "paragraph"
+                                    ],
+                                    "type": "string"
+                                },
+                                "required": {
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        },
+                        "maxItems": 12
+                    }
+                }
+            },
+            "ServicePackageListResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                            "$ref": "#/components/schemas/ServicePackage"
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "next_cursor"
+                        ],
+                        "properties": {
+                            "next_cursor": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "ServicePackageResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/ServicePackage"
+                    }
+                }
+            },
+            "ServicePackageTerms": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "name",
+                    "summary",
+                    "body_markdown",
+                    "agreement_text",
+                    "currency",
+                    "billing_cadence",
+                    "hourly_rate_amount",
+                    "retainer_amount",
+                    "retainer_minutes",
+                    "rollover_months",
+                    "first_cycle_proration",
+                    "charge_setup_fee_at_signup",
+                    "charge_first_period",
+                    "require_autopay",
+                    "autopay_limit_amount",
+                    "pay_before_activation",
+                    "payment_lapse_days",
+                    "activation_mode",
+                    "invoice_issuing",
+                    "notice_days",
+                    "minimum_term_months",
+                    "cancellation_mode",
+                    "intake_questions",
+                    "components"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "body_markdown": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "agreement_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$"
+                    },
+                    "billing_cadence": {
+                        "type": "string",
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual",
+                            "one_time"
+                        ]
+                    },
+                    "hourly_rate_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "retainer_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "retainer_minutes": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "rollover_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "first_cycle_proration": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "enum": [
+                            "prorate_hours",
+                            "full_period",
+                            "align_next_cycle",
+                            null
+                        ]
+                    },
+                    "charge_setup_fee_at_signup": {
+                        "type": "boolean"
+                    },
+                    "charge_first_period": {
+                        "type": "boolean"
+                    },
+                    "require_autopay": {
+                        "type": "boolean"
+                    },
+                    "autopay_limit_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "pay_before_activation": {
+                        "type": "boolean"
+                    },
+                    "payment_lapse_days": {
+                        "type": "integer"
+                    },
+                    "activation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "automatic",
+                            "review"
+                        ]
+                    },
+                    "invoice_issuing": {
+                        "type": "string",
+                        "enum": [
+                            "automatic",
+                            "draft"
+                        ]
+                    },
+                    "notice_days": {
+                        "type": "integer"
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "cancellation_mode": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ]
+                    },
+                    "intake_questions": {
+                        "type": "array",
+                        "maxItems": 12,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "key",
+                                "label",
+                                "kind",
+                                "required"
+                            ],
+                            "properties": {
+                                "key": {
+                                    "type": "string"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                        "short_text",
+                                        "paragraph"
+                                    ]
+                                },
+                                "required": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "components": {
+                        "type": "array",
+                        "maxItems": 30,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "description",
+                                "cadence",
+                                "amount",
+                                "quantity",
+                                "is_taxable"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                        "recurring",
+                                        "setup_fee"
+                                    ]
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "cadence": {
+                                    "type": "string",
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semi_annual",
+                                        "annual",
+                                        "one_time"
+                                    ]
+                                },
+                                "amount": {
+                                    "type": "integer"
+                                },
+                                "quantity": {
+                                    "type": "string",
+                                    "pattern": "^\\d+\\.\\d{3}$"
+                                },
+                                "is_taxable": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "ServicePackageUpdateRequest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "expected_version"
+                ],
+                "properties": {
+                    "expected_version": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64
+                    },
+                    "link_name": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "minLength": 2,
+                        "maxLength": 64
+                    },
+                    "is_listed": {
+                        "type": "boolean"
+                    },
+                    "portal_addable": {
+                        "type": "boolean"
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "minLength": 1
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 300
+                    },
+                    "body_markdown": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 20000
+                    },
+                    "agreement_text": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 30000
+                    },
+                    "currency": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{3}$",
+                        "minLength": 3,
+                        "maxLength": 3
+                    },
+                    "billing_cadence": {
+                        "enum": [
+                            "monthly",
+                            "quarterly",
+                            "semi_annual",
+                            "annual",
+                            "one_time"
+                        ],
+                        "type": "string"
+                    },
+                    "hourly_rate_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "retainer_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "retainer_minutes": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0
+                    },
+                    "rollover_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 120
+                    },
+                    "first_cycle_proration": {
+                        "enum": [
+                            "prorate_hours",
+                            "full_period",
+                            "align_next_cycle",
+                            null
+                        ],
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "charge_setup_fee_at_signup": {
+                        "type": "boolean"
+                    },
+                    "charge_first_period": {
+                        "type": "boolean"
+                    },
+                    "require_autopay": {
+                        "type": "boolean"
+                    },
+                    "autopay_limit_amount": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 1000000000
+                    },
+                    "pay_before_activation": {
+                        "type": "boolean"
+                    },
+                    "payment_lapse_days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                    },
+                    "activation_mode": {
+                        "enum": [
+                            "automatic",
+                            "review"
+                        ],
+                        "type": "string"
+                    },
+                    "invoice_issuing": {
+                        "enum": [
+                            "automatic",
+                            "draft"
+                        ],
+                        "type": "string"
+                    },
+                    "notice_days": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 365
+                    },
+                    "minimum_term_months": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "minimum": 1,
+                        "maximum": 120
+                    },
+                    "cancellation_mode": {
+                        "enum": [
+                            "none",
+                            "request",
+                            "self_serve"
+                        ],
+                        "type": "string"
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "description",
+                                "amount"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "enum": [
+                                        "recurring",
+                                        "setup_fee"
+                                    ],
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "maxLength": 500,
+                                    "minLength": 1
+                                },
+                                "cadence": {
+                                    "enum": [
+                                        "monthly",
+                                        "quarterly",
+                                        "semi_annual",
+                                        "annual",
+                                        "one_time",
+                                        null
+                                    ],
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                },
+                                "amount": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 1000000000
+                                },
+                                "quantity": {
+                                    "type": [
+                                        "number",
+                                        "null"
+                                    ],
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 999999
+                                },
+                                "is_taxable": {
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        },
+                        "maxItems": 30
+                    },
+                    "intake_questions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "label",
+                                "kind"
+                            ],
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9_]+$",
+                                    "maxLength": 40,
+                                    "minLength": 1
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "maxLength": 200,
+                                    "minLength": 1
+                                },
+                                "kind": {
+                                    "enum": [
+                                        "short_text",
+                                        "paragraph"
+                                    ],
+                                    "type": "string"
+                                },
+                                "required": {
+                                    "type": [
+                                        "boolean",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        },
+                        "maxItems": 12
+                    }
+                }
+            },
+            "ServicePackageVersion": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "number",
+                    "published_at",
+                    "terms",
+                    "setup_fee_total",
+                    "cycle_amount"
+                ],
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/Uuid"
+                    },
+                    "number": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "published_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "terms": {
+                        "$ref": "#/components/schemas/ServicePackageTerms"
+                    },
+                    "setup_fee_total": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "cycle_amount": {
+                        "type": "integer",
+                        "minimum": 0
                     }
                 }
             },

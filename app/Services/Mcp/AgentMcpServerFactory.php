@@ -126,6 +126,7 @@ final class AgentMcpServerFactory
             AgentMcpSharedProjectTools::class => new AgentMcpSharedProjectTools($rest),
             AgentMcpSubmissionTools::class => new AgentMcpSubmissionTools($rest),
             AgentMcpPortalInvitationTools::class => new AgentMcpPortalInvitationTools($rest, $this->requestArguments),
+            AgentMcpPackageTools::class => new AgentMcpPackageTools($rest, $this->requestArguments),
             AgentMcpTaskPlanningTools::class => new AgentMcpTaskPlanningTools($rest),
             AgentMcpAttachmentSharingTools::class => new AgentMcpAttachmentSharingTools($rest),
             AgentMcpTaskOrganizationTools::class => new AgentMcpTaskOrganizationTools($rest, $this->requestArguments),
@@ -527,6 +528,9 @@ final class AgentMcpServerFactory
         }
         if (array_intersect(['proposals.send', 'proposals.accept'], array_keys($available)) !== []) {
             $mode .= ' Obtain explicit user confirmation before sending or accepting a proposal. Sending publishes it in the client portal without emailing. Acceptance signs and activates an agreement; require an explicit signer name and never infer acceptance from a request to read or create a proposal.';
+        }
+        if (array_intersect(['packages.publish', 'packages.retire'], array_keys($available)) !== []) {
+            $mode .= ' Obtain explicit user confirmation before publishing or retiring a service package (packages.publish, packages.retire). Publishing opens a public sign-up page anyone with the link can use; retiring closes the package to new clients.';
         }
         if (isset($available['attachments.delete'])) {
             $mode .= ' Obtain explicit user confirmation before deleting an attachment.';

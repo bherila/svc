@@ -2,6 +2,7 @@
 
 namespace App\Support\AgentApi;
 
+use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentRestDocumentation;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\OpenApi\OpenApiDocumentBuilder;
@@ -22,27 +23,28 @@ final class AgentOpenApi
     /** The URLs the checked copy names; the served document names this installation's. */
     public const string CHECKED_BASE_URL = 'https://svc.example.test';
 
-    /** The document addressed to this installation, from configuration. */
+    /** The document addressed to this installation, from configuration: only the operations it has. */
     public static function forInstallation(): OpenApiDocumentBuilder
     {
         $base = rtrim((string) config('app.url'), '/');
 
         return self::builder(
+            app(OperationRegistry::class),
             $base,
             (string) config('bherila-auth.oauth_server.authorization_endpoint', $base.'/oauth/authorize'),
             (string) config('bherila-auth.oauth_server.token_endpoint', $base.'/oauth/token'),
         );
     }
 
-    /** The document as checked in. */
+    /** The document as checked in: every operation, whatever this installation switched on. */
     public static function checked(): OpenApiDocumentBuilder
     {
-        return self::builder(self::CHECKED_BASE_URL, self::CHECKED_BASE_URL.'/oauth/authorize', self::CHECKED_BASE_URL.'/oauth/token');
+        return self::builder(app(AgentOperationCatalog::class)->contract(), self::CHECKED_BASE_URL, self::CHECKED_BASE_URL.'/oauth/authorize', self::CHECKED_BASE_URL.'/oauth/token');
     }
 
-    private static function builder(string $base, string $authorizationUrl, string $tokenUrl): OpenApiDocumentBuilder
+    private static function builder(OperationRegistry $operations, string $base, string $authorizationUrl, string $tokenUrl): OpenApiDocumentBuilder
     {
-        return new OpenApiDocumentBuilder(app(OperationRegistry::class), new OpenApiSettings(
+        return new OpenApiDocumentBuilder($operations, new OpenApiSettings(
             title: 'SVC API',
             version: '1.0.0',
             serverUrl: $base.'/api/v1',

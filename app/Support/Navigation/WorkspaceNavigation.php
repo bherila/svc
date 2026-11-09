@@ -43,6 +43,7 @@ final class WorkspaceNavigation
         public readonly ?string $approvalsHref = null,
         public readonly ?string $submissionsHref = null,
         public readonly ?string $timesheetHref = null,
+        public readonly ?string $packagesHref = null,
         public readonly bool $light = false,
         public readonly ?string $fullWorkspaceUrl = null,
     ) {}
@@ -79,6 +80,7 @@ final class WorkspaceNavigation
      *     approvals_href: string|null,
      *     submissions_href: string|null,
      *     timesheet_href: string|null,
+     *     packages_href: string|null,
      *     light: bool,
      *     full_workspace_url: string|null,
      * }
@@ -107,6 +109,7 @@ final class WorkspaceNavigation
             'approvals_href' => $this->approvalsHref,
             'submissions_href' => $this->submissionsHref,
             'timesheet_href' => $this->timesheetHref,
+            'packages_href' => $this->packagesHref,
             'light' => $this->light,
             'full_workspace_url' => $this->fullWorkspaceUrl,
         ];

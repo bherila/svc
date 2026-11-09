@@ -47,6 +47,11 @@ enum LockResource: string
     // Shared by billing writers, exclusive only for whole-run rollback maintenance.
     case BillingMaintenance = 'billing_maintenance_locks';
 
+    // Service packages are upstream of the agreements and invoices a sign-up
+    // produces; package writes lock only the package row (its versions and
+    // components are written under it).
+    case ServicePackage = 'service_packages';
+
     // Engagement, which is upstream of everything it produces.
     case ClientProposal = 'client_proposals';
     case ClientBillingSchedule = 'client_billing_schedules';

@@ -12,6 +12,7 @@ use Laravel\Passport\ClientRepository;
 use Laravel\Passport\Passport;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\ResourceServer;
+use Tests\Concerns\BootsServicePackages;
 use Tests\TestCase;
 
 /**
@@ -25,6 +26,7 @@ use Tests\TestCase;
  */
 final class ApiCredentialTest extends TestCase
 {
+    use BootsServicePackages;
     use RefreshDatabase;
 
     private const string REDIRECT = 'http://127.0.0.1:3210/callback';

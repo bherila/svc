@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\BootsServicePackages;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -20,6 +21,7 @@ use Tests\TestCase;
  */
 final class WorkspaceConcealmentTest extends TestCase
 {
+    use BootsServicePackages;
     use CallsMcp;
     use RefreshDatabase;
 

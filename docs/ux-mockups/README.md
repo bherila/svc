@@ -25,3 +25,25 @@ canvas.
 
 These files are reference material for building the screens. They are not
 code to ship.
+
+## Service packages
+
+Screens for [service packages](../service-packages.md). They are fully static,
+with no placeholders and no script, so each opens directly in a browser. Each
+ends with a dashed "Design note" box. The box isn't part of the screen; it
+explains a decision the spec relies on.
+
+| File | Screen |
+| --- | --- |
+| `PackagesAdmin.dc.html` | Admin: package list under Clients › Packages, public catalog link and logo, Stripe readiness |
+| `PackageEditor.dc.html` | Admin: package editor (public page, components, intake questions, agreement text, sign-up payment, activation, invoicing, cancellation terms, versions) |
+| `PackageRequests.dc.html` | Admin: sign-up requests and review panel; dashboard Needs you excerpt |
+| `AdminAgreementCancellation.dc.html` | Admin: an agreement's cancellation request, cancellation terms and upcoming version change |
+| `PackageMigration.dc.html` | Admin: moving subscribers to a new package version |
+| `PublicCatalog.dc.html` | Public: workspace catalog of listed packages |
+| `PublicPackage.dc.html` | Public: package page with the request form, and its sent state |
+| `PortalServices.dc.html` | Portal: Services tab (your services, earliest end date, add a service) |
+| `PortalCheckout.dc.html` | Portal: review, sign and pay, with autopay consent, and the state after paying |
+| `PortalCancel.dc.html` | Portal: request cancellation, the self-serve variant, and the pending state |
+
+They were checked at 1440 px and 390 px with no horizontal page overflow.

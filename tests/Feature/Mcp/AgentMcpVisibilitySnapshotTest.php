@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Tests\Concerns\BootsServicePackages;
 use Tests\Concerns\CallsMcp;
 use Tests\TestCase;
 
@@ -36,6 +37,7 @@ use Tests\TestCase;
  */
 final class AgentMcpVisibilitySnapshotTest extends TestCase
 {
+    use BootsServicePackages;
     use CallsMcp;
     use RefreshDatabase;
 
@@ -44,7 +46,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     private const array WRITE_FLAGS = [
         'writes_enabled', 'time_entry_writes_enabled', 'invoice_writes_enabled', 'expense_writes_enabled',
         'payment_writes_enabled', 'client_writes_enabled', 'project_writes_enabled', 'proposal_writes_enabled',
-        'workspace_writes_enabled', 'file_writes_enabled', 'collaboration_writes_enabled',
+        'workspace_writes_enabled', 'file_writes_enabled', 'collaboration_writes_enabled', 'package_writes_enabled',
     ];
 
     /** @var array<string, User> */
@@ -111,9 +113,10 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
     {
         // Square connected (#438) everywhere but the install defaults, where
         // it is unconfigured and its read-only tools are withheld. Portal
-        // invitations (#430) are a product switch, likewise off on install.
+        // invitations (#430) and service packages are product switches,
+        // likewise off on install.
         $on = ['agent_api.mcp_enabled' => true, 'agent_api.mcp_feature_flags' => [],
-            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true];
+            'services.square.access_token' => 'synthetic-square-token', 'services.square.workspace' => 'synthetic-square-workspace', 'svc.portal_invitations.enabled' => true, 'task_organization.enabled' => true, 'task_planning_details.enabled' => true, 'svc.attachments.sharing_writes_enabled' => true, 'svc.service_packages.enabled' => true];
         foreach (self::WRITE_FLAGS as $flag) {
             $on['agent_api.'.$flag] = true;
         }
@@ -130,6 +133,7 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
         $installDefaults['svc.attachments.sharing_writes_enabled'] = false;
         $installDefaults['services.square.access_token'] = null;
         $installDefaults['svc.portal_invitations.enabled'] = false;
+        $installDefaults['svc.service_packages.enabled'] = false;
 
         return [
             'all_enabled' => $on,
@@ -144,6 +148,8 @@ final class AgentMcpVisibilitySnapshotTest extends TestCase
             'single_tools_off' => ['agent_api.mcp_feature_flags' => ['invoices.get' => false, 'time_entries.list' => false, 'context.get' => false]] + $on,
             'mcp_disabled' => ['agent_api.mcp_enabled' => false] + $on,
             'portal_invitations_off' => ['svc.portal_invitations.enabled' => false] + $on,
+            'package_writes_off' => ['agent_api.package_writes_enabled' => false] + $on,
+            'service_packages_off' => ['svc.service_packages.enabled' => false] + $on,
         ];
     }
 

@@ -1,0 +1,88 @@
+<?php
+
+namespace Tests\Concerns;
+
+use App\Models\ServicePackage;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Services\Packages\ServicePackageWorkflow;
+
+/**
+ * Synthetic service-package worlds: a workspace, its people, and packages.
+ *
+ * Every name and address is made up; emails use reserved example domains.
+ */
+trait BuildsServicePackages
+{
+    /** @return array{0: Workspace, 1: User} a workspace and its owner */
+    protected function packageWorkspace(string $name = 'Synthetic Package Studio'): array
+    {
+        $workspace = Workspace::query()->create(['name' => $name, 'slug' => 'synthetic-packages-'.uniqid(), 'default_currency' => 'USD']);
+        $owner = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+
+        return [$workspace, $owner];
+    }
+
+    protected function workspaceMember(Workspace $workspace, string $role): User
+    {
+        $user = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => $role]);
+
+        return $user;
+    }
+
+    /** Makes the deployment's Stripe key serve workspaces that never connected their own. */
+    protected function connectStripe(): void
+    {
+        config(['services.stripe.secret_key' => 'sk_test_synthetic_packages']);
+    }
+
+    protected function disconnectStripe(): void
+    {
+        config(['services.stripe.secret_key' => null]);
+    }
+
+    /**
+     * A complete, publishable hosting package with no payment at sign-up.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    protected function hostingPackageInput(array $overrides = []): array
+    {
+        return [
+            'link_name' => 'web-hosting',
+            'name' => 'Web hosting · Essentials',
+            'summary' => 'Managed hosting for small business sites.',
+            'body_markdown' => "- SSL\n- Daily backups",
+            'agreement_text' => 'Synthetic hosting agreement text.',
+            'currency' => 'USD',
+            'billing_cadence' => 'monthly',
+            'activation_mode' => 'automatic',
+            'invoice_issuing' => 'automatic',
+            'notice_days' => 30,
+            'cancellation_mode' => 'self_serve',
+            'components' => [
+                ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500],
+                ['kind' => 'setup_fee', 'description' => 'Setup', 'amount' => 15000],
+            ],
+            'intake_questions' => [
+                ['label' => 'Website address', 'kind' => 'short_text', 'required' => true],
+            ],
+            ...$overrides,
+        ];
+    }
+
+    /** @param array<string, mixed> $overrides */
+    protected function createPackage(Workspace $workspace, User $owner, array $overrides = []): ServicePackage
+    {
+        return app(ServicePackageWorkflow::class)->create($owner, $workspace, $this->hostingPackageInput($overrides));
+    }
+
+    /** @param array<string, mixed> $overrides */
+    protected function publishedPackage(Workspace $workspace, User $owner, array $overrides = []): ServicePackage
+    {
+        return app(ServicePackageWorkflow::class)->publish($owner, $workspace, $this->createPackage($workspace, $owner, $overrides));
+    }
+}

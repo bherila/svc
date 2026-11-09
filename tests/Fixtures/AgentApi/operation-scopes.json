@@ -1525,6 +1525,84 @@
             "mcp.switch:operations.summary"
         ]
     },
+    "packages.create": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:packages.create"
+        ]
+    },
+    "packages.get": {
+        "scopes": [
+            "packages:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:packages.get"
+        ]
+    },
+    "packages.list": {
+        "scopes": [
+            "packages:read"
+        ],
+        "flags": [
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.read",
+            "mcp.switch:packages.list"
+        ]
+    },
+    "packages.publish": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:packages.publish"
+        ]
+    },
+    "packages.retire": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:packages.retire"
+        ]
+    },
+    "packages.update": {
+        "scopes": [
+            "packages:write",
+            "packages:read"
+        ],
+        "scope_rule": "all",
+        "flags": [
+            "agent.writes.packages",
+            "svc.service_packages",
+            "mcp",
+            "mcp.switch:mcp.write",
+            "mcp.switch:packages.update"
+        ]
+    },
     "payments.correct": {
         "scopes": [
             "payments:record",

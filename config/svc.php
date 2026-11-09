@@ -27,6 +27,13 @@ return [
         'enabled' => (bool) env('SVC_PORTAL_INVITATIONS_ENABLED', false),
     ],
 
+    // Service packages (docs/service-packages.md). Off by default: while off,
+    // no package route, page, navigation entry, agent operation or scheduled
+    // command of the feature is reachable (X-1).
+    'service_packages' => [
+        'enabled' => (bool) env('SVC_SERVICE_PACKAGES_ENABLED', false),
+    ],
+
     // The daily scheduled `svc:finance:sync-processor-movements --apply` runs
     // (#511). Off by default: dispute recovery can change dispute state and
     // invoice receivables, so a deployment previews first and enables the
