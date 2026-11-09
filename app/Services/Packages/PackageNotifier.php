@@ -3,8 +3,10 @@
 namespace App\Services\Packages;
 
 use App\Mail\ServicePackageNoticeMail;
+use App\Models\ClientCompany;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceEmailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -20,6 +22,8 @@ use Throwable;
  */
 final class PackageNotifier
 {
+    public function __construct(private readonly InvoiceEmailService $clientRecipients) {}
+
     /** @return list<string> the workspace's owners' and admins' addresses */
     public function managerAddresses(Workspace $workspace): array
     {
@@ -63,6 +67,22 @@ final class PackageNotifier
             ["{$workspace->name} accepted your request and set up {$companyName} in their client portal. Sign in to review the agreement and finish signing up."],
             $portalUrl,
             'Open the client portal',
+        ));
+    }
+
+    /**
+     * The client's service has started (ACC-7). Sent to the people every
+     * client notice goes to: the company's billing address and its portal
+     * contacts.
+     */
+    public function serviceActivated(Workspace $workspace, ClientCompany $company, string $packageName, string $agreementUrl): void
+    {
+        $this->send(array_column($this->clientRecipients->suggestedRecipientsForCompany($company), 'email'), new ServicePackageNoticeMail(
+            "{$packageName} is now active",
+            "{$packageName} has started",
+            ["{$workspace->name} has started {$packageName} for {$company->name}. Your signed agreement is in the client portal."],
+            $agreementUrl,
+            'View the agreement',
         ));
     }
 

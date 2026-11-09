@@ -6,7 +6,6 @@ use App\Actions\CreateClientCompany;
 use App\Exceptions\ServicePackageRefused;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
-use App\Models\ClientProject;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
@@ -20,7 +19,6 @@ use App\Support\Access\AccessMutationContext;
 use App\Support\Access\PortalAccessScope;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Concurrency\Locks;
-use App\Support\Packages\EnrollmentStatus;
 use App\Support\Packages\IntakeQuestion;
 use App\Support\Packages\PackageRefusal;
 use App\Support\Packages\PackageRequestStatus;
@@ -62,7 +60,7 @@ final class PackageRequestWorkflow
     public function __construct(
         private readonly AgentAccess $access,
         private readonly CreateClientCompany $companies,
-        private readonly PackageAgreementTerms $agreementTerms,
+        private readonly PackageOffers $offers,
         private readonly WorkspaceAccess $workspaceAccess,
         private readonly PortalInvitations $invitations,
         private readonly PackageNotifier $notifier,
@@ -151,9 +149,7 @@ final class PackageRequestWorkflow
             }
             // The package as offered now, which may be newer than the one the
             // visitor read (EDGE-7).
-            $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($package->published_version_id)
-                ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])
-                ->firstOrFail();
+            $version = $this->offers->publishedVersion($workspace, $package) ?? throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
 
             $email = (string) $locked->email;
             $existingAccount = $this->accountFor($email);
@@ -166,27 +162,8 @@ final class PackageRequestWorkflow
                 // once created, it is the workspace's record, not the visitor's.
                 ? $this->companies->handle($workspace, $companyName ?? (string) $locked->company_name, $email)
                 : ClientCompany::query()->where('workspace_id', $workspace->id)->where('public_id', $clientPublicId)->firstOrFail();
-            $project = $company->projects()->create([
-                'workspace_id' => $workspace->id,
-                'name' => $this->projectName($company, $version->name),
-                'is_visible_to_client' => true,
-            ]);
-            $now = $this->clock->now($workspace);
-            $agreement = $this->agreementTerms->createDraft($workspace, $company, $project, $version, $now->startOfDay());
-
-            $enrollment = new ServicePackageEnrollment;
-            $enrollment->forceFill([
-                'workspace_id' => $workspace->id,
-                'service_package_id' => $package->id,
-                'service_package_version_id' => $version->id,
-                'client_company_id' => $company->id,
-                'client_project_id' => $project->id,
-                'client_agreement_id' => $agreement->id,
-                'service_package_request_id' => $locked->id,
-                'status' => EnrollmentStatus::Offered->value,
-                'offered_by_user_id' => $actor->id,
-                'offered_at' => $now,
-            ])->save();
+            $enrollment = $this->offers->offer($workspace, $package, $version, $company, $actor, $locked);
+            $now = $enrollment->offered_at;
 
             $locked->forceFill([
                 'status' => PackageRequestStatus::Approved->value,
@@ -360,24 +337,6 @@ final class PackageRequestWorkflow
         if (! $member) {
             $this->workspaceAccess->grantPortal($context, $company, $user, PortalAccessScope::Company);
         }
-    }
-
-    /** The package's name, made unique among the company's projects. */
-    private function projectName(ClientCompany $company, string $name): string
-    {
-        $base = mb_substr($name, 0, 240);
-        $taken = ClientProject::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->where('name', 'like', str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $base).'%')
-            ->pluck('name')
-            ->all();
-        $candidate = $base;
-        for ($suffix = 2; in_array($candidate, $taken, true); $suffix++) {
-            $candidate = "{$base} ({$suffix})";
-        }
-
-        return $candidate;
     }
 
     private function locked(Workspace $workspace, ServicePackageRequest $request): ServicePackageRequest
