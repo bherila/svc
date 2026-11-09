@@ -13,8 +13,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * A client company's subscription to a package: its project, its agreement and
- * the version the agreement carries. Written only by the package services.
+ * A client company's subscription to a package: its project, its agreement,
+ * the version it was offered and, once a company contact accepts, who signed
+ * and the exact version they signed (ACC-2). Written only by the package
+ * services; the acceptance facts are written once and never changed.
  *
  * @property int $id
  * @property string $public_id
@@ -28,9 +30,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $status
  * @property int|null $offered_by_user_id
  * @property CarbonImmutable $offered_at
+ * @property CarbonImmutable|null $accepted_at
+ * @property int|null $accepted_by_user_id
+ * @property string|null $signer_name
+ * @property string|null $signer_title
+ * @property int|null $accepted_version_id
+ * @property CarbonImmutable|null $activated_at
+ * @property int|null $activated_by_user_id
  * @property int $lock_version
  */
-#[Hidden(['id', 'workspace_id', 'service_package_id', 'service_package_version_id', 'client_company_id', 'client_project_id', 'client_agreement_id', 'service_package_request_id', 'offered_by_user_id', 'lock_version'])]
+#[Hidden(['id', 'workspace_id', 'service_package_id', 'service_package_version_id', 'client_company_id', 'client_project_id', 'client_agreement_id', 'service_package_request_id', 'offered_by_user_id', 'accepted_by_user_id', 'accepted_version_id', 'activated_by_user_id', 'lock_version'])]
 class ServicePackageEnrollment extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -39,6 +48,8 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
     {
         return [
             'offered_at' => 'immutable_datetime',
+            'accepted_at' => 'immutable_datetime',
+            'activated_at' => 'immutable_datetime',
             'lock_version' => 'integer',
         ];
     }
@@ -54,10 +65,22 @@ class ServicePackageEnrollment extends Model implements WorkspaceOwned
         return $this->belongsTo(ServicePackage::class, 'service_package_id');
     }
 
-    /** @return BelongsTo<ServicePackageVersion, $this> */
+    /** @return BelongsTo<ServicePackageVersion, $this> the version offered */
     public function version(): BelongsTo
     {
         return $this->belongsTo(ServicePackageVersion::class, 'service_package_version_id');
+    }
+
+    /** @return BelongsTo<ServicePackageVersion, $this> the version signed, once accepted */
+    public function acceptedVersion(): BelongsTo
+    {
+        return $this->belongsTo(ServicePackageVersion::class, 'accepted_version_id');
+    }
+
+    /** The version the enrollment's agreement carries: the one signed, or until then the one offered. */
+    public function carriedVersionId(): int
+    {
+        return $this->accepted_version_id ?? $this->service_package_version_id;
     }
 
     /** @return BelongsTo<ClientCompany, $this> */
