@@ -210,53 +210,90 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Balanced on measured group times (run 42693030742) to about seven
+        # minutes of checks a shard: the slowest shard is the lane's wall
+        # clock. `--packages` is one group and sets the floor on its own.
         include:
           - name: default screens
             groups: ''
-          - name: invoice actions
-            groups: '--invoice-actions --invoice-send'
+          - name: invoice actions and credentials
+            groups: '--invoice-actions --invoice-send --credentials'
           - name: invoice recovery
             groups: '--invoice-history --invoice-recovery --invoice-correction'
-          - name: billing and connections
-            groups: '--autopay --payments --credentials'
+          - name: autopay and payments
+            groups: '--autopay --payments'
           - name: clients and portal access
-            groups: '--clients --portal-access --reminders --disputes'
+            groups: '--clients --portal-access --reminders'
           - name: engagement and history
-            groups: '--engagement --deferred-backlog --time --history --resource-chrome'
+            groups: '--engagement --deferred-backlog --time --history --resource-chrome --disputes'
           - name: tasks and expenses
-            groups: '--tasks --task-lookups --expenses --expense-schedules --receipts --projects'
-          - name: dashboards and shared work
-            groups: '--revenue --work-portal --shared-projects --reviewers --light-workspace --workspaces --square --invoice-document --palette'
+            groups: '--tasks --task-lookups --expenses'
+          - name: palette and Square
+            groups: '--palette --workspaces --square'
+          - name: revenue and documents
+            groups: '--revenue --shared-projects --invoice-document'
+          - name: portals, reviewers and projects
+            groups: '--work-portal --reviewers --light-workspace --expense-schedules --receipts --projects'
           - name: service packages
             groups: '--packages'
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Detect layout-affecting changes
+        id: layout_scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A push to main and a dispatch always run the screens; a pull
+          # request skips them only when no changed file can affect one.
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          source scripts/layout-scope.sh
+          layout_scope "$BASE_SHA" "$HEAD_SHA"
+          echo "required=$layout_scope_required" >> "$GITHUB_OUTPUT"
+          if [ "$layout_scope_required" = false ]; then
+            echo "::notice title=Layout not applicable::No changed file can affect a rendered screen (scripts/layout-scope.sh)."
+            echo "Layout not applicable: no changed file can affect a rendered screen." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Layout required: $layout_scope_reason can affect a rendered screen." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Setup PHP
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.5'
           tools: composer:v2
           coverage: none
       - name: Setup Node
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: Enable pnpm
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
       - name: Install dependencies
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: |
           composer install --no-interaction
           pnpm install --frozen-lockfile
       - name: Prepare browser on the disposable runner
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: pnpm exec playwright install --with-deps chromium
       - name: Build the frontend once for the shard
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: pnpm run build
       - name: Check browser layout and accessibility
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         env:
           GROUPS_TO_RUN: ${{ matrix.groups }}
         run: |
@@ -270,7 +307,7 @@ jobs:
           fi
           exit $status
       - name: Upload synthetic screenshots and measurements
-        if: ${{ always() }}
+        if: ${{ always() && steps.layout_scope.outputs.required == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layout-${{ strategy.job-index }}
@@ -296,30 +333,60 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Detect layout-affecting changes
+        id: layout_scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A push to main and a dispatch always run the screens; a pull
+          # request skips them only when no changed file can affect one.
+          if [ "$EVENT_NAME" != pull_request ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          source scripts/layout-scope.sh
+          layout_scope "$BASE_SHA" "$HEAD_SHA"
+          echo "required=$layout_scope_required" >> "$GITHUB_OUTPUT"
+          if [ "$layout_scope_required" = false ]; then
+            echo "::notice title=Layout not applicable::No changed file can affect a rendered screen (scripts/layout-scope.sh)."
+            echo "Layout not applicable: no changed file can affect a rendered screen." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Layout required: $layout_scope_reason can affect a rendered screen." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Setup PHP
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
           php-version: '8.5'
           tools: composer:v2
           coverage: none
       - name: Setup Node
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: Enable pnpm
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: |
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
       - name: Install dependencies
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: |
           composer install --no-interaction
           pnpm install --frozen-lockfile
       - name: Prepare browser on the disposable runner
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: pnpm exec playwright install --with-deps chromium
       - name: Build the frontend
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         run: pnpm run build
       - name: Check browser layout and accessibility
+        if: ${{ steps.layout_scope.outputs.required == 'true' }}
         env:
           LAYOUT_SCRIPT: ${{ matrix.script }}
           # check-attachment-sharing-layout.mjs runs its own Vite dev server, which
@@ -327,7 +394,7 @@ jobs:
           LARAVEL_BYPASS_ENV_CHECK: '1'
         run: node "$LAYOUT_SCRIPT"
       - name: Upload synthetic screenshots and measurements
-        if: ${{ always() }}
+        if: ${{ always() && steps.layout_scope.outputs.required == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layout-script-${{ strategy.job-index }}
@@ -415,6 +482,7 @@ jobs:
           bash tests/Deployment/test-oauth-lifecycle.sh
           bash tests/Deployment/test-failure-report.sh
           bash tests/Deployment/test-mutation-scope.sh
+          bash tests/Deployment/test-layout-scope.sh
           bash tests/Deployment/test-cron-audit.sh
           node --test tests/Deployment/verify-oauth-redirect.test.mjs tests/Deployment/verify-hashed-assets.test.mjs
 

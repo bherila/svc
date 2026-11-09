@@ -167,9 +167,16 @@ Every screen the layout harness opens is checked, at 390, 820, 1440 and 1920
 pixels, in the light and the dark theme: any axe violation at any impact fails
 it, and so does any UI-consistency error. There is no reporting-only screen and
 no measurement-only exemption for these two checks; a new page is held to them
-from its first capture. CI runs every harness group on every pull request
+from its first capture. CI runs every harness group on every push to `main`,
+and on every pull request whose changes can affect a rendered screen
 (`layout` shards in `.github/workflows/tests.yml`, and `LayoutWorkflowTest`
-fails when a group has no shard). The rules below are what the gate keeps
+fails when a group has no shard). `scripts/layout-scope.sh` decides: a pull
+request changing only documentation (other than `docs/help/`, which the help
+panel bundles), PHP tests and their fixtures, review and
+agent configuration, other workflows or the CI helper scripts skips the
+screens, and anything else - application code, which seeds and renders them,
+included - runs them. The shards are balanced on measured group times, so add
+a new group to the shortest one. The rules below are what the gate keeps
 true, and each lives in a shared component so a page gets it by using it.
 
 - **Skip link.** `SkipLink` is the first focusable element of `WorkspaceShell`
