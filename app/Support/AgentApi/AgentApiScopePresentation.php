@@ -15,7 +15,7 @@ use BWH\Auth\OAuth\Credentials\ScopePreset;
  */
 final class AgentApiScopePresentation implements DeclaresScopeImplications, ScopePresentation
 {
-    public const string ADMIN_DESCRIPTION = 'Send invoices and proposals to clients, record or reconcile money, accept agreements, approve time and rates, change clients, share files and create workspaces.';
+    public const string ADMIN_DESCRIPTION = 'Send invoices and proposals to clients, record or reconcile money, accept agreements, publish service packages, approve time and rates, change clients, share files and create workspaces.';
 
     /**
      * The order the read-only preset lists its read scopes in. A `:read` scope
@@ -32,6 +32,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
         AgentApiScopes::TIME_READ,
         AgentApiScopes::CLIENTS_READ,
         AgentApiScopes::PROPOSALS_READ,
+        AgentApiScopes::PACKAGES_READ,
         AgentApiScopes::BILLING_READ,
         AgentApiScopes::PAYMENTS_READ,
         AgentApiScopes::EXPENSES_READ,
@@ -55,7 +56,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
                 AgentApiScopes::FILES_READ,
             ]),
             new ScopeGroup('time', 'Time', [AgentApiScopes::TIME_READ, AgentApiScopes::TIME_WRITE]),
-            new ScopeGroup('clients', 'Clients & proposals', [AgentApiScopes::CLIENTS_READ, AgentApiScopes::PROPOSALS_READ]),
+            new ScopeGroup('clients', 'Clients, proposals & packages', [AgentApiScopes::CLIENTS_READ, AgentApiScopes::PROPOSALS_READ, AgentApiScopes::PACKAGES_READ]),
             new ScopeGroup('billing', 'Billing & payments', [
                 AgentApiScopes::BILLING_READ,
                 AgentApiScopes::BILLING_WRITE,
@@ -73,6 +74,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
                 AgentApiScopes::FINANCE_RECONCILE,
                 AgentApiScopes::PROPOSALS_WRITE,
                 AgentApiScopes::PROPOSALS_ACCEPT,
+                AgentApiScopes::PACKAGES_WRITE,
                 AgentApiScopes::TIME_APPROVE,
                 AgentApiScopes::CLIENTS_WRITE,
                 AgentApiScopes::FILES_WRITE,
@@ -152,6 +154,7 @@ final class AgentApiScopePresentation implements DeclaresScopeImplications, Scop
             AgentApiScopes::FINANCE_RECONCILE => [AgentApiScopes::FINANCE_READ],
             AgentApiScopes::PROPOSALS_WRITE => [AgentApiScopes::PROPOSALS_READ],
             AgentApiScopes::PROPOSALS_ACCEPT => [AgentApiScopes::PROPOSALS_READ],
+            AgentApiScopes::PACKAGES_WRITE => [AgentApiScopes::PACKAGES_READ],
             AgentApiScopes::TIME_APPROVE => [AgentApiScopes::TIME_READ],
             AgentApiScopes::CLIENTS_WRITE => [AgentApiScopes::CLIENTS_READ],
             AgentApiScopes::FILES_WRITE => [AgentApiScopes::FILES_READ],

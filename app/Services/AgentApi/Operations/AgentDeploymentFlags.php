@@ -70,6 +70,17 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public const string PORTAL_INVITATION_WRITES = 'agent.writes.portal_invitations';
 
+    /**
+     * Service packages (docs/service-packages.md): product availability, like
+     * task organization. While `svc.service_packages.enabled` is off the
+     * package operations are not registered at all (API-6); this precondition
+     * withholds them as well wherever they are, and no session bypasses it.
+     */
+    public const string SERVICE_PACKAGES = 'svc.service_packages';
+
+    /** Agent writes to service packages, inside the outer workflow cutover. */
+    public const string PACKAGES = 'agent.writes.packages';
+
     /** The MCP transport as a whole. */
     public const string MCP = 'mcp';
 
@@ -90,6 +101,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::FILES => ['key' => 'agent_api.file_writes_enabled', 'parents' => [self::WRITES]],
         self::PORTAL_INVITATIONS => ['key' => 'svc.portal_invitations.enabled'],
         self::PORTAL_INVITATION_WRITES => ['key' => 'svc.portal_invitations.enabled', 'parents' => [self::CLIENTS]],
+        self::PACKAGES => ['key' => 'agent_api.package_writes_enabled', 'parents' => [self::WRITES]],
     ];
 
     /**
@@ -110,6 +122,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
         self::FILES => 'AGENT_API_FILE_WRITES_ENABLED',
         self::PORTAL_INVITATIONS => 'SVC_PORTAL_INVITATIONS_ENABLED',
         self::PORTAL_INVITATION_WRITES => 'SVC_PORTAL_INVITATIONS_ENABLED',
+        self::PACKAGES => 'AGENT_API_PACKAGE_WRITES_ENABLED',
     ];
 
     /**
@@ -171,6 +184,11 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
                 continue;
             }
+            if ($flag === self::SERVICE_PACKAGES) {
+                $switches[] = 'SVC_SERVICE_PACKAGES_ENABLED';
+
+                continue;
+            }
             foreach (self::lineage($flag) as $cutover) {
                 $switches[] = self::ENVIRONMENT[$cutover];
             }
@@ -203,7 +221,7 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
     public static function isAvailabilityPrecondition(string $flag): bool
     {
-        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION, self::TASK_PLANNING, self::ATTACHMENT_SHARING], true);
+        return in_array($flag, [self::SQUARE, self::TASK_ORGANIZATION, self::TASK_PLANNING, self::ATTACHMENT_SHARING, self::SERVICE_PACKAGES], true);
     }
 
     public function enabled(string $flag): bool
@@ -223,6 +241,10 @@ final class AgentDeploymentFlags implements DeploymentFlags
 
         if ($flag === self::TASK_ORGANIZATION) {
             return config('task_organization.enabled') === true;
+        }
+
+        if ($flag === self::SERVICE_PACKAGES) {
+            return ServicePackageOperations::enabled();
         }
 
         if ($flag === self::SQUARE) {

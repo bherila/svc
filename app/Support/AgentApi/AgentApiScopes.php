@@ -61,6 +61,12 @@ final class AgentApiScopes
 
     public const string PROPOSALS_ACCEPT = 'proposals:accept';
 
+    /** Service packages (docs/service-packages.md): reading a workspace's packages as an owner or admin. */
+    public const string PACKAGES_READ = 'packages:read';
+
+    /** Authoring, publishing and retiring service packages; an Admin scope, because what it publishes reaches outside people. */
+    public const string PACKAGES_WRITE = 'packages:write';
+
     public const string WORKSPACES_CREATE = 'workspaces:create';
 
     public const string FILES_READ = 'files:read';
@@ -129,6 +135,8 @@ final class AgentApiScopes
             self::PROPOSALS_READ => 'Read authorized proposals and their commercial terms',
             self::PROPOSALS_WRITE => 'Create and send proposals as a workspace manager',
             self::PROPOSALS_ACCEPT => 'Accept authorized proposals and sign their resulting agreement',
+            self::PACKAGES_READ => 'Read the workspace\'s service packages, their versions, terms and public links as a workspace owner or admin',
+            self::PACKAGES_WRITE => 'Create, edit, publish and retire service packages as a workspace owner or admin; publishing opens a public sign-up page',
             self::WORKSPACES_CREATE => 'Create new workspaces you own',
             self::FILES_READ => 'Read authorized attachments; legacy generic routes require a workspace manager and collaboration routes require exact parent access',
             self::FILES_WRITE => 'Upload, share and delete authorized files; sharing requires current publisher authority and new uploads start private',
