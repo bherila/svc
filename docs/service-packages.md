@@ -516,6 +516,17 @@ Slice 3b (payment at sign-up) settled these:
   screen's control behind it) cannot start an unpaid or unreviewed sign-up.
   The Agreements screen offers such an agreement the enrollment's own
   activation while it waits for review.
+- **The client signs the version they reviewed, and it is what is billed.**
+  The review page sends the shown version's id with the acceptance; when
+  another version was published since, acceptance (deciding under the
+  package's share lock) refuses with `package_version_changed` and the page
+  reloads on the current version and what changed. Acceptance always writes
+  the accepted version's terms onto the draft agreement before the sign-up
+  invoice, and until the service starts `AgreementWorkflow::update()` refuses
+  to change a sign-up's draft (`package_agreement_terms_fixed`) except from
+  the enrollment workflow, so the Agreements screen and `agreements.update`
+  cannot bill terms the client never saw. Once active, it is corrected like
+  any other agreement.
 - **Autopay's currency.** Autopay's limit is in the company's billing
   currency. Required autopay is met only by a client consent in the
   version's currency; a version in another currency is refused at

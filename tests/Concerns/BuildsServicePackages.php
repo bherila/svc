@@ -5,11 +5,14 @@ namespace Tests\Concerns;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
+use App\Support\Packages\EnrollmentVersions;
 use Closure;
 use Illuminate\Support\Str;
 use Stripe\ApiRequestor;
@@ -171,6 +174,28 @@ trait BuildsServicePackages
     protected function createPackage(Workspace $workspace, User $owner, array $overrides = []): ServicePackage
     {
         return app(ServicePackageWorkflow::class)->create($owner, $workspace, $this->hostingPackageInput($overrides));
+    }
+
+    /**
+     * What the review page sends with a signature: the version it shows now
+     * (ACC-2, EDGE-7). Read as the page reads it, so a test that publishes
+     * before signing signs what a reloaded page would show.
+     */
+    protected function reviewedVersion(ServicePackageEnrollment $enrollment): string
+    {
+        $package = ServicePackage::query()->whereKey($enrollment->service_package_id)->sole();
+
+        return ServicePackageVersion::query()->whereKey(EnrollmentVersions::shown($package, $enrollment->refresh()))->sole()->public_id;
+    }
+
+    /**
+     * A signature on what the review page shows now.
+     *
+     * @return array<string, mixed>
+     */
+    protected function signatureFor(ServicePackageEnrollment $enrollment, string $name = 'Morgan Synthetic', ?string $title = null): array
+    {
+        return ['signer_name' => $name, 'signer_title' => $title, 'accepted_terms' => true, 'reviewed_version' => $this->reviewedVersion($enrollment)];
     }
 
     /** @param array<string, mixed> $overrides */

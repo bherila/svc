@@ -389,6 +389,37 @@ final class PackageSignupPaymentTest extends TestCase
         $this->assertSame('active', $enrollment->refresh()->status);
     }
 
+    /**
+     * ACC-4, ACC-5: turning autopay on reaches every sign-up it was waiting
+     * for, however many wait. 25 waiting for a limit the client did not
+     * authorize stay waiting - a whole page of them - and the 26th, which
+     * the new limit meets, moves on.
+     */
+    #[Requirement('ACC-4', 'ACC-5')]
+    public function test_autopay_turned_on_moves_on_a_waiting_sign_up_behind_a_full_page_of_others(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['require_autopay' => true, 'autopay_limit_amount' => 120000]);
+        $workflow = app(PackageEnrollmentWorkflow::class);
+        $stillWaiting = [];
+        for ($i = 0; $i < 25; $i++) {
+            $offer = $workflow->addFromPortal($contact, $company, $package);
+            $stillWaiting[] = $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
+        }
+        $smaller = $this->publishedPackage($workspace, $owner, ['link_name' => 'smaller-hosting', 'invoice_issuing' => 'draft', 'require_autopay' => true, 'autopay_limit_amount' => 50000]);
+        $offer = $workflow->addFromPortal($contact, $company, $smaller);
+        $last = $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
+        $this->assertSame(26, ServicePackageEnrollment::query()->where('status', 'awaiting_payment')->count());
+        $this->assertGreaterThan(max(array_map(static fn (ServicePackageEnrollment $enrollment): int => (int) $enrollment->id, $stillWaiting)), $last->id);
+
+        $this->saveCard($company);
+        $consents = app(AutopayConsentService::class);
+        $consents->turnOn($workspace, $company, new AutopayConsentRequest(AutopayActorRole::Client, $contact, 50000, wording: (string) $consents->authorizationWording($workspace, $company, 50000)));
+        $workflow->autopayChanged($workspace, $company->refresh());
+
+        $this->assertSame('active', $last->refresh()->status);
+        $this->assertSame(array_fill(0, 25, 'awaiting_payment'), array_map(static fn (ServicePackageEnrollment $enrollment): string => (string) $enrollment->refresh()->status, $stillWaiting));
+    }
+
     // ── ACC-6: lapsing ──────────────────────────────────────────────────────
 
     #[Requirement('ACC-6')]
@@ -423,7 +454,7 @@ final class PackageSignupPaymentTest extends TestCase
         $this->assertSame([], $this->lapseRun()['outcomes']);
         // A lapsed offer cannot be accepted.
         try {
-            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $neverAccepted, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $neverAccepted, $this->signatureFor($neverAccepted));
             $this->fail('A lapsed offer was accepted.');
         } catch (ServicePackageRefused $refused) {
             $this->assertSame(PackageRefusal::OfferNotOpen->value, $refused->refusalCode());
@@ -615,7 +646,7 @@ final class PackageSignupPaymentTest extends TestCase
         DB::table('client_agreements')->where('id', $offer->client_agreement_id)->update(['square_series_key' => '000777']);
 
         try {
-            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, $this->signatureFor($offer));
             $this->fail('A sign-up invoice was issued for an agreement Square collects.');
         } catch (ServicePackageRefused $refused) {
             $this->assertSame(PackageRefusal::CollectedInSquare->value, $refused->refusalCode());
@@ -641,7 +672,7 @@ final class PackageSignupPaymentTest extends TestCase
         $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
 
         try {
-            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            app(PackageEnrollmentWorkflow::class)->accept($contact, $company, $offer, $this->signatureFor($offer));
             $this->fail('An overlapping first period was invoiced.');
         } catch (ServicePackageRefused $refused) {
             $this->assertSame(PackageRefusal::FirstPeriodUnbillable->value, $refused->refusalCode());
@@ -717,6 +748,85 @@ final class PackageSignupPaymentTest extends TestCase
         app(PackageEnrollmentWorkflow::class)->activate($owner, $workspace, $enrollment);
         $this->assertSame(['active', 'active'], [$this->agreement($enrollment)->status, $enrollment->refresh()->status]);
         Mail::assertSent(ServicePackageNoticeMail::class, 1);
+    }
+
+    /**
+     * ACC-2: what the client signed is what is billed. A draft whose terms
+     * drifted from the version after the offer - edited before sign-up drafts
+     * were refused edits - has the accepted version's terms written back at
+     * acceptance, before the sign-up invoice: a 1000 retainer edited to
+     * 100000 bills 1000, and the edited text and hosting price are gone.
+     */
+    #[Requirement('ACC-2', 'ACC-3')]
+    public function test_acceptance_bills_the_signed_versions_terms_even_when_the_draft_drifted(): void
+    {
+        [, , $package, $company, $contact] = $this->world([
+            'charge_first_period' => true, 'components' => [$this->hosting()],
+            'retainer_amount' => 1000, 'retainer_minutes' => 60, 'first_cycle_proration' => 'full_period',
+        ]);
+        $workflow = app(PackageEnrollmentWorkflow::class);
+        $offer = $workflow->addFromPortal($contact, $company, $package);
+        ClientAgreement::query()->whereKey($offer->client_agreement_id)->update(['retainer_amount' => 100000, 'agreement_text' => 'Synthetic operator edit.']);
+        ClientAgreementRecurringItem::query()->where('client_agreement_id', $offer->client_agreement_id)->update(['amount' => 99999]);
+
+        $enrollment = $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
+
+        $this->assertSame([
+            ['retainer', 'Monthly Retainer (1:00 hours) - Nov 1, 2026 through Nov 30, 2026', 1000, '2026-11-01'],
+            ['recurring_item', self::HOSTING, 4500, '2026-11-15'],
+        ], $this->lines($this->signupInvoice($enrollment)));
+        $agreement = $this->agreement($enrollment);
+        $this->assertSame([1000, 'Synthetic hosting agreement text.', 'active'], [$agreement->retainer_amount, $agreement->agreement_text, $agreement->status]);
+        $this->assertSame([[self::HOSTING, 4500]], ClientAgreementRecurringItem::query()->where('client_agreement_id', $agreement->id)->get()
+            ->map(static fn (ClientAgreementRecurringItem $item): array => [$item->description, (int) $item->amount])->all());
+    }
+
+    /**
+     * ACC-2, ACC-5: until its service starts, a sign-up's draft carries the
+     * version's terms. The agreement page offers no correction and
+     * agreements.update refuses one, before and after acceptance; once the
+     * service has started it is corrected like any agreement.
+     */
+    #[Requirement('ACC-2', 'ACC-5')]
+    public function test_a_sign_ups_draft_agreement_takes_no_operator_edits_until_its_service_starts(): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['activation_mode' => 'review']);
+        $workflow = app(PackageEnrollmentWorkflow::class);
+        $offer = $workflow->addFromPortal($contact, $company, $package);
+        $agreement = $this->agreement($offer);
+        $page = route('clients.agreement', [$workspace, $company, $agreement], absolute: false);
+        config(['agent_api.writes_enabled' => true, 'agent_api.client_writes_enabled' => true]);
+
+        $refused = function (string $key) use ($workspace, $owner, $offer, $page): void {
+            $agreement = $this->agreement($offer);
+            $this->actingAs($owner)->get($page)
+                ->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->where('actions.update', null));
+            $this->actingAsMcp($owner, ['clients:read', 'clients:write', 'billing:read']);
+            $this->withHeader('Idempotency-Key', $key)
+                ->patchJson('/api/v1/workspaces/'.$workspace->public_id.'/agreements/'.$agreement->public_id, ['expected_version' => AgentApiVersion::for($agreement), 'retainer_amount' => 100000])
+                ->assertUnprocessable()
+                ->assertJsonPath('code', PackageRefusal::AgreementTermsFixed->value);
+            try {
+                app(AgreementWorkflow::class)->update($workspace, $agreement, ['agreement_text' => 'Synthetic operator edit.']);
+                $this->fail('A sign-up\'s draft agreement was edited.');
+            } catch (ServicePackageRefused $refusal) {
+                $this->assertSame(PackageRefusal::AgreementTermsFixed->value, $refusal->refusalCode());
+            }
+            $this->assertSame([null, 'Synthetic hosting agreement text.'], [$this->agreement($offer)->retainer_amount, $this->agreement($offer)->agreement_text]);
+        };
+        $refused('synthetic-edit-offered');
+
+        $enrollment = $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
+        $this->assertSame('awaiting_review', $enrollment->status);
+        $refused('synthetic-edit-awaiting-review');
+
+        $workflow->activate($owner, $workspace, $enrollment);
+        $agreement = $this->agreement($enrollment);
+        $this->assertSame('active', $agreement->status);
+        $this->actingAs($owner)->get($page)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('actions.update', route('agent-api.v1.agreements.update', [$workspace, $agreement->public_id], absolute: false)));
+        app(AgreementWorkflow::class)->update($workspace, $agreement, ['agreement_text' => 'Synthetic correction after the start.']);
+        $this->assertSame('Synthetic correction after the start.', $this->agreement($enrollment)->agreement_text);
     }
 
     /**
@@ -841,7 +951,7 @@ final class PackageSignupPaymentTest extends TestCase
             ->where('checkout.autopay.wording', null)
             ->where('checkout.autopay.enable_url', null));
         try {
-            app(PackageEnrollmentWorkflow::class)->accept($eurosContact, $euros, $offer, ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true]);
+            app(PackageEnrollmentWorkflow::class)->accept($eurosContact, $euros, $offer, $this->signatureFor($offer));
             $this->fail('A sign-up whose autopay could never be met was accepted.');
         } catch (ServicePackageRefused $refused) {
             $this->assertSame(PackageRefusal::AutopayCurrencyMismatch->value, $refused->refusalCode());
@@ -974,7 +1084,9 @@ final class PackageSignupPaymentTest extends TestCase
     {
         $workflow = app(PackageEnrollmentWorkflow::class);
 
-        return $workflow->accept($contact, $company, $workflow->addFromPortal($contact, $company, $package), ['signer_name' => 'Morgan Synthetic', 'accepted_terms' => true])->refresh();
+        $offer = $workflow->addFromPortal($contact, $company, $package);
+
+        return $workflow->accept($contact, $company, $offer, $this->signatureFor($offer))->refresh();
     }
 
     private function signupInvoice(ServicePackageEnrollment $enrollment): ClientInvoice

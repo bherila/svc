@@ -1022,7 +1022,9 @@ and any removal of a row. Proposal-derived agreements instead come from confirme
 `agreements.activate`, which refuses an overlap with another active agreement for
 the same client. A draft agreement a service package sign-up created never starts
 through `agreements.activate` (`package_agreement_starts_with_service`): it starts
-with its service, automatically or through `enrollments.activate`.
+with its service, automatically or through `enrollments.activate`. Until then
+`agreements.update` refuses it too (`package_agreement_terms_fixed`): it carries
+the terms of the package version its client signs.
 
 ## Received-payment bookkeeping
 

@@ -135,7 +135,9 @@ final class ClientServiceReadService
      * signs now, or the one signed), and - when a newer version was published
      * after the offer - the offered terms and which of them changed (EDGE-7).
      * `accept_url` is set only while the offer is open, it can be accepted
-     * now, and the viewer is a company-wide contact (ACC-1).
+     * now, and the viewer is a company-wide contact (ACC-1); `accept_fields`
+     * then carries the version shown, which the acceptance sends back so it
+     * signs exactly these terms (a version published since is refused).
      *
      * `checkout` is what sign-up asks for (ACC-3, ACC-4), or null when it
      * asks for nothing: what is due now, line by line (an estimate before
@@ -143,7 +145,7 @@ final class ClientServiceReadService
      * company-wide contact the finished URLs that pay it, save a card and turn
      * autopay on at the version's limit with the exact wording.
      *
-     * @return array{service: array<string, mixed>, offered_terms: array<string, mixed>|null, changed_terms: list<string>, accept_url: string|null, accept_refusal: array{code: string, message: string}|null, checkout: array<string, mixed>|null}
+     * @return array{service: array<string, mixed>, offered_terms: array<string, mixed>|null, changed_terms: list<string>, accept_url: string|null, accept_fields: array{reviewed_version: string}|null, accept_refusal: array{code: string, message: string}|null, checkout: array<string, mixed>|null}
      */
     public function reviewForPortal(User $viewer, ClientCompany $company, string $publicId): array
     {
@@ -152,7 +154,8 @@ final class ClientServiceReadService
         $package = $enrollment->package ?? throw new \LogicException('An enrollment names a package outside its workspace.');
         $shownId = EnrollmentVersions::shown($package, $enrollment);
         $versions = $this->versions($workspace, [$shownId, $enrollment->service_package_version_id]);
-        $shown = PackageTerms::fromVersion($versions->get($shownId) ?? throw new \LogicException('An enrollment names a version outside its workspace.'));
+        $shownVersion = $versions->get($shownId) ?? throw new \LogicException('An enrollment names a version outside its workspace.');
+        $shown = PackageTerms::fromVersion($shownVersion);
         $offered = PackageTerms::fromVersion($versions->get($enrollment->service_package_version_id) ?? throw new \LogicException('An enrollment names a version outside its workspace.'));
         $changes = $shownId === $enrollment->service_package_version_id ? [] : $shown->differences($offered);
 
@@ -164,15 +167,15 @@ final class ClientServiceReadService
             default => null,
         };
         $presented = $this->present($workspace, new Collection([$enrollment]))[0];
+        $mayAccept = $open && $refusal === null && $this->contacts->isCompanyContact($company, $viewer);
 
         return [
             'service' => $presented,
             'checkout' => $this->checkout($workspace, $company, $viewer, $enrollment, $shown, $presented['payment']),
             'offered_terms' => $changes === [] ? null : PackageEnrollmentPresenter::clientTerms($offered),
             'changed_terms' => $changes,
-            'accept_url' => $open && $refusal === null && $this->contacts->isCompanyContact($company, $viewer)
-                ? route('portal.services.accept', [$company, $enrollment->public_id], absolute: false)
-                : null,
+            'accept_url' => $mayAccept ? route('portal.services.accept', [$company, $enrollment->public_id], absolute: false) : null,
+            'accept_fields' => $mayAccept ? ['reviewed_version' => $shownVersion->public_id] : null,
             'accept_refusal' => $refusal === null ? null : ['code' => $refusal->value, 'message' => $refusal->message()],
         ];
     }

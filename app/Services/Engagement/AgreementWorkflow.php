@@ -119,11 +119,18 @@ class AgreementWorkflow
      * and that refusal is the point of editing these four terms together. It
      * throws `DomainException`, which the application renders as a 422.
      *
+     * A draft a service package sign-up created carries the terms of the
+     * package version its client signs until its service starts (ACC-2), so
+     * it is refused here with `package_agreement_terms_fixed` unless
+     * `$enrollment` - passed only by the package services, which write the
+     * version's terms and the start date under the enrollment's lock - is the
+     * enrollment that owns it. Once active it is corrected like any other.
+     *
      * @param  array<string, mixed>  $attributes  only the keys the caller sent
      *
      * @throws EngagementException when the agreement is not this workspace's
      */
-    public function update(Workspace $workspace, ClientAgreement $agreement, array $attributes, ?string $expectedVersion = null): ClientAgreement
+    public function update(Workspace $workspace, ClientAgreement $agreement, array $attributes, ?string $expectedVersion = null, ?ServicePackageEnrollment $enrollment = null): ClientAgreement
     {
         if (! $this->workspaceAuthorization->isOwnedBy($workspace, $agreement)) {
             throw new EngagementException('The agreement does not belong to this workspace.');
@@ -131,7 +138,7 @@ class AgreementWorkflow
 
         $editable = array_intersect_key($attributes, array_flip(self::EDITABLE));
 
-        return DB::transaction(function () use ($workspace, $agreement, $editable, $expectedVersion): ClientAgreement {
+        return DB::transaction(function () use ($workspace, $agreement, $editable, $expectedVersion, $enrollment): ClientAgreement {
             $locked = ClientAgreement::query()
                 ->whereKey($agreement->getKey())
                 ->where('workspace_id', $workspace->id)
@@ -145,6 +152,9 @@ class AgreementWorkflow
             $this->assertVersion($locked, $expectedVersion);
             if ($editable === []) {
                 return $locked;
+            }
+            if ($locked->status === 'draft') {
+                $this->assertNotAPackageSignup($locked, $enrollment, PackageRefusal::AgreementTermsFixed);
             }
 
             if (array_key_exists('currency', $editable) && is_string($editable['currency'])) {
@@ -215,7 +225,7 @@ class AgreementWorkflow
                 throw new EngagementException('Only draft or paused agreements can be activated.');
             }
             if ($locked->status === 'draft') {
-                $this->assertNotAPackageSignup($locked, $enrollment);
+                $this->assertNotAPackageSignup($locked, $enrollment, PackageRefusal::AgreementStartsWithService);
             }
 
             $this->assertNoOverlappingActiveAgreement($locked);
@@ -239,15 +249,16 @@ class AgreementWorkflow
     }
 
     /**
-     * Refuse to start a sign-up's draft agreement anywhere but in its
-     * enrollment. An enrollment's agreement is fixed when the offer is made,
-     * in the transaction that creates both, so an ordinary read decides it.
+     * Refuse to start or rewrite a sign-up's draft agreement anywhere but in
+     * its enrollment. An enrollment's agreement is fixed when the offer is
+     * made, in the transaction that creates both, so an ordinary read decides
+     * it.
      */
-    private function assertNotAPackageSignup(ClientAgreement $agreement, ?ServicePackageEnrollment $starting): void
+    private function assertNotAPackageSignup(ClientAgreement $agreement, ?ServicePackageEnrollment $owner, PackageRefusal $refusal): void
     {
-        if ($starting instanceof ServicePackageEnrollment) {
-            if ((int) $starting->workspace_id !== (int) $agreement->workspace_id || (int) $starting->client_agreement_id !== (int) $agreement->id) {
-                throw new LogicException('An enrollment can start only its own agreement.');
+        if ($owner instanceof ServicePackageEnrollment) {
+            if ((int) $owner->workspace_id !== (int) $agreement->workspace_id || (int) $owner->client_agreement_id !== (int) $agreement->id) {
+                throw new LogicException('An enrollment can start or rewrite only its own agreement.');
             }
 
             return;
@@ -257,7 +268,7 @@ class AgreementWorkflow
             ->where('client_agreement_id', $agreement->id)
             ->exists();
         if ($owned) {
-            throw ServicePackageRefused::because(PackageRefusal::AgreementStartsWithService);
+            throw ServicePackageRefused::because($refusal);
         }
     }
 
