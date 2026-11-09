@@ -375,4 +375,3 @@ final class DisputeLedgerDependencyTest extends TestCase
         $this->assertSame(0, $this->onAnyLine($a->fresh()));
     }
 }
-
