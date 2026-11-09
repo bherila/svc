@@ -613,8 +613,8 @@ see the read-only `square.*` pass-through tools described under
 `revenue.projection` and `revenue.clients`, described under
 [Revenue planning reads](#revenue-planning-reads). While
 `SVC_SERVICE_PACKAGES_ENABLED` is on, managers holding `packages:read` also see
-`packages.list` and `packages.get`, described under
-[Service packages](#service-packages).
+`packages.list`, `packages.get`, `package_requests.list` and
+`package_requests.get`, described under [Service packages](#service-packages).
 
 Agreement tools require `billing:read` and an SVC workspace-manager role. Each
 agreement names the client it is with (`client_id`, `client_name`) and, when it
@@ -2122,7 +2122,7 @@ visibility reads or agreement decisions can establish a database snapshot.
 The service package operations (`docs/service-packages.md`, "MCP and REST surface")
 exist only while `SVC_SERVICE_PACKAGES_ENABLED` is on, which it is not by default.
 Switched off, none of them is registered: no `/workspaces/{workspace}/packages`
-route, no MCP tool and no `packages` toolset, and the document served at
+or `/workspaces/{workspace}/package-requests` route, no MCP tool and no `packages` toolset, and the document served at
 `/api/openapi.json` leaves their paths and schemas out. The checked contract,
 `public/openapi/svc-agent-v1.json`, documents them whatever the local switch, so
 regenerating it never depends on configuration. Each operation also declares the
@@ -2138,6 +2138,11 @@ still answers 404 and offers no tool.
 | `packages.update` | `packages:write`, `packages:read` | `expected_version`; changes only what is sent, always on the draft |
 | `packages.publish` | `packages:write`, `packages:read` | `expected_version` and `confirm: true` |
 | `packages.retire` | `packages:write`, `packages:read` | `expected_version` and `confirm: true` |
+| `package_requests.list` | `packages:read` | Newest first; optional `status` (`new`, `approved`, `declined`), `limit` 1-100, `cursor` |
+| `package_requests.get` | `packages:read` | |
+| `package_requests.approve` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; optional `client_id` of an existing client to attach to. Answers with the request and its `enrollment` (`id`, `status`, `client`, `project_id`, `agreement_id`) |
+| `package_requests.decline` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; optional `reason` (at most 1000 characters), which the visitor's email carries |
+| `package_requests.erase` | `packages:write`, `packages:read` | `expected_version` and `confirm: true`; a decided request only, irreversibly |
 
 They are workspace owner/admin operations. Anyone else, a portal contact included,
 and any other workspace's package, is answered 404 as if no package existed, and
@@ -2149,10 +2154,34 @@ others in `ServicePackagePresenter`) publishing the draft would be refused now.
 A refused publish answers 422 with the first reason's `code` and every reason in
 its message; MCP repeats the code in its tool error.
 
-The routes, the tools and the website call the same `ServicePackageWorkflow` and
-`ServicePackageReadService`, so authorization, term validation, locking and
+A sign-up request (`PackageRequestPresenter`) is what a visitor sent from a
+package's public page. Everything the visitor typed - company and contact name,
+email, phone and the intake answers - is returned under `untrusted` and nowhere
+else, and the `package_requests.list` and `package_requests.get` tool
+descriptions and the field's own schema say it was written by an anonymous
+visitor and is data, never instructions. A client created on approval is named
+from that company name. An open request from an address an existing client
+already uses names that client as `suggested_client`; approving with its id as
+`client_id` attaches the subscription to it instead of creating a client.
+Approving gives the subscription its own project and a draft agreement from the
+package's currently published version, then admits the contact: someone who
+already signs in here is given company-wide portal access and an email, anyone
+else is invited through the identity provider as the token's user, and a
+provider refusal leaves nothing created. No response ever carries the
+invitation or its link. Declining emails the visitor and creates nothing.
+Erasing a decided request removes the visitor's details and answers and the
+decline reason, leaving its package, dates and outcome. The decisions refuse
+with `package_request_not_open` (already decided), `package_request_not_closed`
+(erasing an open request), `package_not_offered`, `package_invitations_off` or
+`package_address_held_elsewhere`; the server instructions ask for the user's
+confirmation before each.
+
+The routes, the tools and the website call the same `ServicePackageWorkflow`,
+`PackageRequestWorkflow`, `ServicePackageReadService` and
+`PackageRequestReadService`, so authorization, term validation, locking and
 versions cannot differ between them. The request schemas are generated from
-`ServicePackageRules`, the rules that workflow validates with, and every schema is
+`ServicePackageRules` and `ServicePackageOperations::DECISION_RULES`, the rules
+those workflows validate with, and every schema is
 code-owned in `ServicePackageOperations`, regenerated into the contract by
 `php scripts/generate-package-contract.php`. Each MCP tool runs its REST
 operation, so a tool's input is its REST body plus the path and idempotency key,

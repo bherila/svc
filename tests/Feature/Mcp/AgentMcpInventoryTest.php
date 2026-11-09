@@ -159,6 +159,11 @@ final class AgentMcpInventoryTest extends TestCase
         'invoices.update_draft',
         'invoices.void',
         'operations.summary',
+        'package_requests.approve',
+        'package_requests.decline',
+        'package_requests.erase',
+        'package_requests.get',
+        'package_requests.list',
         'packages.create',
         'packages.get',
         'packages.list',
@@ -269,7 +274,7 @@ final class AgentMcpInventoryTest extends TestCase
             'collaboration_writes_enabled' => ['collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete', 'collaboration.topics.create', 'collaboration.topics.update', 'collaboration.topics.delete', 'collaboration.comments.create', 'collaboration.comments.update', 'collaboration.comments.delete', 'shared_projects.tasks.assign', 'shared_projects.comments.create'],
             'project_writes_enabled' => ['projects.create', 'projects.update', 'projects.archive', 'projects.members.update'],
             'proposal_writes_enabled' => ['proposals.create', 'proposals.send', 'proposals.accept'],
-            'package_writes_enabled' => ['packages.create', 'packages.update', 'packages.publish', 'packages.retire'],
+            'package_writes_enabled' => ['packages.create', 'packages.update', 'packages.publish', 'packages.retire', 'package_requests.approve', 'package_requests.decline', 'package_requests.erase'],
             'workspace_writes_enabled' => ['workspaces.create'],
             'file_writes_enabled' => ['attachments.upload_url', 'attachments.delete', 'attachments.visibility.update', 'collaboration.attachments.upload_url', 'collaboration.attachments.visibility.update', 'collaboration.attachments.delete'],
         ];
@@ -306,7 +311,7 @@ final class AgentMcpInventoryTest extends TestCase
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_inventory_retains_all_222_tools_when_every_cutover_is_disabled(): void
+    public function test_inventory_retains_all_227_tools_when_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $disabled = ['task_planning.labels.create', 'task_planning.labels.update', 'task_planning.labels.archive', 'task_planning.labels.restore', 'task_planning.labels.replace', 'task_planning.dependencies.replace', 'task_planning.contacts.replace', 'task_organization.lists.archive', 'task_organization.lists.create', 'task_organization.lists.reorder', 'task_organization.lists.restore', 'task_organization.lists.update', 'task_organization.tasks.create', 'task_organization.tasks.move', 'task_organization.tasks.reorder', 'time_entries.approve', 'tasks.create', 'tasks.update', 'square.sync', 'invoices.square_reconcile'];
@@ -317,14 +322,14 @@ final class AgentMcpInventoryTest extends TestCase
         config(['agent_api.writes_enabled' => false]);
         $disabled = array_values(array_unique($disabled));
         sort($disabled);
-        $this->assertCount(222, self::TOOLS);
+        $this->assertCount(227, self::TOOLS);
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $disabled)), $this->deployed());
         $this->assertSame(array_map(fn (string $name): array => ['name' => $name, 'reason' => 'deployment_disabled'], $disabled),
             app(AgentWithheldTools::class)->for(fn (string $scope): bool => true, true));
     }
 
-    public function test_actual_mcp_discovery_and_context_partition_all_222_tools_after_every_cutover_is_disabled(): void
+    public function test_actual_mcp_discovery_and_context_partition_all_227_tools_after_every_cutover_is_disabled(): void
     {
         $this->enableAll();
         $owner = User::factory()->create();
@@ -384,16 +389,17 @@ final class AgentMcpInventoryTest extends TestCase
     }
 
     /**
-     * The service package switch withholds all six package tools, reads
-     * included, and nothing else - even in a process whose routes were built
-     * while it was on (X-1).
+     * The service package switch withholds all eleven package and sign-up
+     * request tools, reads included, and nothing else - even in a process
+     * whose routes were built while it was on (X-1).
      */
     #[Requirement('X-1')]
-    public function test_the_service_package_switch_withholds_exactly_its_six_tools(): void
+    public function test_the_service_package_switch_withholds_exactly_its_eleven_tools(): void
     {
         $this->enableAll();
         config(['svc.service_packages.enabled' => false]);
-        $packages = ['packages.create', 'packages.get', 'packages.list', 'packages.publish', 'packages.retire', 'packages.update'];
+        $packages = ['package_requests.approve', 'package_requests.decline', 'package_requests.erase', 'package_requests.get', 'package_requests.list',
+            'packages.create', 'packages.get', 'packages.list', 'packages.publish', 'packages.retire', 'packages.update'];
 
         $this->assertSame(self::TOOLS, $this->inventory());
         $this->assertSame(array_values(array_diff(self::TOOLS, $packages)), $this->deployed());
@@ -456,6 +462,7 @@ final class AgentMcpInventoryTest extends TestCase
             'projects.create', 'projects.update', 'projects.archive', 'projects.members.list', 'projects.members.update',
             'proposals.create', 'proposals.send', 'time_entries.unapprove',
             'packages.list', 'packages.get', 'packages.create', 'packages.update', 'packages.publish', 'packages.retire',
+            'package_requests.list', 'package_requests.get', 'package_requests.approve', 'package_requests.decline', 'package_requests.erase',
             'attachments.list', 'attachments.get', 'attachments.download_url', 'attachments.upload_url', 'attachments.delete',
             'expense_schedules.list', 'expense_schedules.create', 'expense_schedules.update', 'expense_schedules.generate',
             'expenses.approve', 'expenses.unapprove', 'expenses.settle_dispute', 'expenses.receipts.delete', 'expenses.receipts.list', 'expenses.receipts.download', 'expenses.receipts.upload_url',

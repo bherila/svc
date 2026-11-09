@@ -1,5 +1,8 @@
 import type {
     PackageComponentTerms,
+    PackageRequestRow,
+    PackageRequestsProps,
+    PublicRequestForm,
     PackageEditProps,
     PackageListItem,
     PackageTerms,
@@ -130,6 +133,97 @@ export function editProps(
         },
         catalog_url: null,
         stripe_connected: true,
+        ...overrides,
+    };
+}
+
+/** A synthetic, still-open sign-up request, shaped like the server's presenter. */
+export function requestRow(
+    overrides: Partial<PackageRequestRow> = {},
+): PackageRequestRow {
+    return {
+        id: 'request-1',
+        status: 'new',
+        package: {
+            id: 'package-1',
+            name: 'Synthetic Hosting',
+            link_name: 'synthetic-hosting',
+            version_number: 2,
+        },
+        submitted_at: '2026-11-09T09:14:00Z',
+        decided_at: null,
+        decline_reason: null,
+        client: null,
+        suggested_client: null,
+        erased_at: null,
+        untrusted: {
+            company_name: 'Lakeside Bakery',
+            contact_name: 'Morgan Ortiz',
+            email: 'morgan@lakeside.example.test',
+            phone: null,
+            answers: [
+                {
+                    key: 'domain',
+                    question: 'Website address',
+                    answer: 'lakeside.example.test',
+                },
+            ],
+        },
+        version: 'b'.repeat(64),
+        urls: {
+            approve:
+                '/api/v1/workspaces/ws-1/package-requests/request-1/approve',
+            decline:
+                '/api/v1/workspaces/ws-1/package-requests/request-1/decline',
+            erase: null,
+        },
+        ...overrides,
+    };
+}
+
+export function requestsProps(
+    overrides: Partial<PackageRequestsProps> = {},
+): PackageRequestsProps {
+    return {
+        requests: [requestRow()],
+        next_page_url: null,
+        first_page_url: null,
+        clients: [
+            { id: 'client-1', name: 'Pine Street Dental' },
+            { id: 'client-2', name: 'Harbor Yoga' },
+        ],
+        catalog_url: null,
+        stripe_connected: true,
+        requests_url: '/workspaces/workspace-1/packages/requests',
+        open_requests_count: 1,
+        ...overrides,
+    };
+}
+
+export function requestForm(
+    overrides: Partial<PublicRequestForm> = {},
+): PublicRequestForm {
+    return {
+        submit_url: '/s/tok123/synthetic-hosting/request',
+        form_token: 'opaque-form-token',
+        honeypot_field: 'website_url',
+        questions: [
+            {
+                key: 'domain',
+                label: 'Website address',
+                kind: 'short_text',
+                required: true,
+                max_length: 255,
+            },
+            {
+                key: 'goal',
+                label: 'What should the first hours go toward?',
+                kind: 'paragraph',
+                required: false,
+                max_length: 2000,
+            },
+        ],
+        prefill: null,
         ...overrides,
     };
 }

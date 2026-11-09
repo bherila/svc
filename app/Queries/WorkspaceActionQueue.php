@@ -2,16 +2,19 @@
 
 namespace App\Queries;
 
+use App\Http\Middleware\EnsureServicePackagesEnabled;
 use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProposal;
 use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
+use App\Models\ServicePackageRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Packages\PackageRequestStatus;
 use App\Support\WorkspaceClock;
 
 /**
@@ -149,6 +152,23 @@ final class WorkspaceActionQueue
             $rows[] = $this->row('proposal-'.$proposal->public_id, 'proposal_awaiting', $proposal->title, $company['name'],
                 route('clients.proposal', [$workspace, $company['public_id'], $proposal], absolute: false), 'Open',
                 date: $proposal->sent_at?->toDateString());
+        }
+
+        // Sign-up requests from public package pages (PUB-8): one row for all
+        // of them, since they are reviewed together on one page.
+        if (EnsureServicePackagesEnabled::enabled()) {
+            $requests = ServicePackageRequest::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('status', PackageRequestStatus::New->value)
+                ->selectRaw('count(*) as requests, min(submitted_at) as oldest')
+                ->first();
+            $count = self::integer($requests?->getAttribute('requests'));
+            if ($count > 0) {
+                $oldest = $requests?->getAttribute('oldest');
+                $rows[] = $this->row('package-requests', 'package_requests', $count === 1 ? 'Sign-up request to review' : 'Sign-up requests to review', '',
+                    route('packages.requests.index', $workspace, absolute: false), 'Review',
+                    date: is_string($oldest) ? substr($oldest, 0, 10) : null, count: $count);
+            }
         }
 
         return $rows;

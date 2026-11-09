@@ -226,8 +226,11 @@ Route::prefix('v1')
 
         // Service packages exist only while their product switch is on (API-6, X-1).
         if (ServicePackageOperations::enabled()) {
-            foreach (['packages.list' => 'index', 'packages.get' => 'show', 'packages.create' => 'store', 'packages.update' => 'update', 'packages.publish' => 'publish', 'packages.retire' => 'retire'] as $id => $handler) {
-                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid('package');
+            foreach ([
+                'packages.list' => 'index', 'packages.get' => 'show', 'packages.create' => 'store', 'packages.update' => 'update', 'packages.publish' => 'publish', 'packages.retire' => 'retire',
+                'package_requests.list' => 'requests', 'package_requests.get' => 'showRequest', 'package_requests.approve' => 'approveRequest', 'package_requests.decline' => 'declineRequest', 'package_requests.erase' => 'eraseRequest',
+            ] as $id => $handler) {
+                $workspaceOperation($id, [AgentPackageController::class, $handler])->whereUuid(['package', 'request']);
             }
         }
 

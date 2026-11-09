@@ -4,7 +4,9 @@ namespace Tests\Feature\AgentApi;
 
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\ServicePackageOperations;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiScopes;
+use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\AgentOpenApi;
 use Bherila\McpLaravelBridge\Capabilities\OperationRegistry;
 use Bherila\McpLaravelBridge\OpenApi\OpenApiDocumentBuilder;
@@ -56,7 +58,7 @@ final class AgentPackageFeatureFlagTest extends TestCase
             $this->assertNull(app('router')->getRoutes()->getByName('agent-api.v1.'.ServicePackageOperations::ROUTES[$id][0]), $id);
         }
         $uris = array_map(static fn (Route $route): string => $route->uri(), app('router')->getRoutes()->getRoutes());
-        $this->assertSame([], array_values(array_filter($uris, static fn (string $uri): bool => str_starts_with($uri, 'api/') && str_contains($uri, '/packages'))));
+        $this->assertSame([], array_values(array_filter($uris, static fn (string $uri): bool => str_starts_with($uri, 'api/') && (str_contains($uri, '/packages') || str_contains($uri, '/package-requests')))));
 
         [$workspace, $owner] = $this->packageWorkspace();
         $package = $this->createPackage($workspace, $owner);
@@ -64,6 +66,16 @@ final class AgentPackageFeatureFlagTest extends TestCase
         $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/packages')->assertNotFound();
         $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/packages/'.$package->public_id)->assertNotFound();
         $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/packages', $this->hostingPackageInput(['link_name' => 'absent']), ['Idempotency-Key' => 'synthetic-absent'])->assertNotFound();
+
+        // Nor do the sign-up request operations, for a request that exists.
+        config(['svc.service_packages.enabled' => true]);
+        $request = $this->packageRequest($workspace, app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package));
+        $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/package-requests')->assertNotFound();
+        $this->getJson('/api/v1/workspaces/'.$workspace->public_id.'/package-requests/'.$request->public_id)->assertNotFound();
+        foreach (['approve', 'decline', 'erase'] as $action) {
+            $this->postJson('/api/v1/workspaces/'.$workspace->public_id.'/package-requests/'.$request->public_id.'/'.$action, ['expected_version' => AgentApiVersion::for($request), 'confirm' => true], ['Idempotency-Key' => 'synthetic-absent-'.$action])->assertNotFound();
+        }
+        $this->assertSame('new', $request->refresh()->status);
     }
 
     public function test_mcp_offers_no_package_tool_or_toolset(): void
@@ -72,7 +84,7 @@ final class AgentPackageFeatureFlagTest extends TestCase
         $this->actingAsMcp($owner, array_keys(AgentApiScopes::descriptions()));
 
         $names = $this->toolNames($this->initialize());
-        $this->assertSame([], array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'packages.'))));
+        $this->assertSame([], array_values(array_filter($names, static fn (string $name): bool => str_starts_with($name, 'packages.') || str_starts_with($name, 'package_requests.'))));
         $this->assertContains('proposals.list', $names);
 
         $session = $this->initializeProgressive();
@@ -83,13 +95,13 @@ final class AgentPackageFeatureFlagTest extends TestCase
         $this->assertTrue($enable['result']['isError'] ?? false);
         $this->assertStringContainsString('Unknown toolset: packages', json_encode($enable));
         $context = $this->getJson('/api/v1/context')->assertOk()->json('data.withheld_tools');
-        $this->assertSame([], array_values(array_filter(array_column($context, 'name'), static fn (string $name): bool => str_starts_with($name, 'packages.'))));
+        $this->assertSame([], array_values(array_filter(array_column($context, 'name'), static fn (string $name): bool => str_starts_with($name, 'packages.') || str_starts_with($name, 'package_requests.'))));
     }
 
     public function test_the_served_document_leaves_the_package_operations_out(): void
     {
         $served = $this->getJson('/api/openapi.json')->assertOk()->json();
-        $this->assertSame([], array_values(array_filter(array_keys($served['paths']), static fn (string $path): bool => str_contains($path, '/packages'))));
+        $this->assertSame([], array_values(array_filter(array_keys($served['paths']), static fn (string $path): bool => str_contains($path, '/packages') || str_contains($path, '/package-requests'))));
         $this->assertSame([], array_values(array_filter(array_keys($served['components']['schemas']), static fn (string $name): bool => str_starts_with($name, 'ServicePackage'))));
 
         // The checked contract is the same whatever the switch, and differs

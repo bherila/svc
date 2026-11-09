@@ -42,6 +42,7 @@ use App\Services\Finance\PaymentReconciliationService;
 use App\Services\History\HistoricalLibraryRepository;
 use App\Services\History\HistoricalRecordRepository;
 use App\Services\Mcp\McpCredentialSettings;
+use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\Payments\WorkspacePaymentConnections;
 use App\Services\Review\ReviewerGrants;
@@ -62,6 +63,7 @@ use App\Support\Billing\ReceivedPaymentData;
 use App\Support\Expenses\NewExpense;
 use App\Support\History\HistoryDocument;
 use App\Support\History\HistoryKind;
+use App\Support\Packages\PackageTerms;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
 use App\Support\Review\GranteeKind;
@@ -1336,9 +1338,30 @@ if (getenv('SVC_LAYOUT_PACKAGES') === '1') {
     $packages->publish($owner, $workspace, $retired);
     $packages->retire($owner, $workspace, $retired->refresh());
     $workspace->refresh();
+
+    // Sign-up requests: every field the visitor types is oversized; one open request comes
+    // from an address a client already holds (so it is suggested), one is declined with a
+    // reason, one declined and then erased, and one is plain.
+    $requests = app(PackageRequestWorkflow::class);
+    $submit = static fn (array $input, ?string $fingerprint = null) => $requests->submit($workspace, $live, [
+        'company_name' => $word, 'contact_name' => str_repeat('Contact', 12), 'phone' => str_repeat('5', 40),
+        ...$input,
+    ], null, $fingerprint);
+    $questionKeys = array_map(static fn ($question): string => $question->key, PackageTerms::fromVersion($live->refresh()->publishedVersion)->intakeQuestions);
+    $answers = static fn (): array => ['answers' => array_combine($questionKeys, [str_repeat('Unbroken', 25), str_repeat('Unbroken', 12), str_repeat('Unbroken', 100).' <b>not bold</b>'])];
+    $submit(['email' => 'layout-'.str_repeat('unbroken', 6).'@example.test', ...$answers()]);
+    $submit(['company_name' => 'Synthetic Client Company', 'email' => 'contact@example.test', ...$answers()]);
+    $submit(['company_name' => 'Plain Bakery', 'contact_name' => 'Morgan Ortiz', 'phone' => '', 'email' => 'layout-plain@example.test', 'answers' => [$questionKeys[0] => 'plain.example.test']]);
+    $declined = $submit(['email' => 'layout-declined@example.test', ...$answers()]);
+    $requests->decline($owner, $workspace, $declined, 'We do not serve that area yet. '.str_repeat('Unbroken', 20));
+    $erased = $submit(['company_name' => 'Quick Loans', 'email' => 'layout-erased@example.test', 'answers' => [$questionKeys[0] => 'gone.example.test']]);
+    $requests->decline($owner, $workspace, $erased->refresh());
+    $requests->erase($owner, $workspace, $erased->refresh());
+
     $edit = static fn ($package): string => route('packages.edit', ['workspace' => $workspace, 'servicePackage' => $package->public_id], absolute: false);
     $packagePages = [
         'packages_list' => route('packages.index', $workspace, absolute: false),
+        'packages_requests' => route('packages.requests.index', $workspace, absolute: false),
         'packages_new' => route('packages.create', $workspace, absolute: false),
         'packages_editor' => $edit($ready),
         'packages_editor_blocked' => $edit($blocked),

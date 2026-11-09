@@ -1347,6 +1347,7 @@ try {
         const isPublic = screen.startsWith('packages_public') || screen === 'packages_catalog';
         const heading = {
             packages_list: 'Packages',
+            packages_requests: 'Sign-up requests',
             packages_new: 'New package',
             packages_catalog: /^Services from /,
         }[screen];
@@ -1395,8 +1396,33 @@ try {
                 failures.push(`${screen} at ${width}px carries an id: ${id[0]}`);
             }
 
-            if ((await page.locator('form, input, textarea').count()) > 0) {
-                failures.push(`${screen} at ${width}px offers a form before sign-up requests exist.`);
+            const forms = await page.locator('form').count();
+
+            if (screen === 'packages_catalog' && forms > 0) {
+                failures.push(`${screen} at ${width}px offers a form; only a package's own page does.`);
+            }
+
+            if (screen !== 'packages_catalog') {
+                if (forms !== 1) {
+                    failures.push(`${screen} at ${width}px should offer exactly one request form, found ${forms}.`);
+                }
+
+                // The honeypot is off-screen rather than display:none, and out of the tab order.
+                const trap = await page.evaluate(() => {
+                    const input = document.querySelector('input[tabindex="-1"][autocomplete="off"]');
+
+                    if (input === null) {
+                        return null;
+                    }
+
+                    const box = input.getBoundingClientRect();
+
+                    return { right: box.right, hidden: input.closest('[aria-hidden="true"]') !== null };
+                });
+
+                if (trap === null || !trap.hidden || trap.right > 0) {
+                    failures.push(`${screen} at ${width}px has a honeypot a visitor could reach: ${JSON.stringify(trap)}.`);
+                }
             }
 
             const outside = await page.evaluate(() =>
@@ -1412,6 +1438,74 @@ try {
         }
 
         await capture(screen, 'loaded', width, false);
+
+        if (screen === 'packages_public') {
+            // The server's own submit is not called: the form is shown filled, with the
+            // oversized values a visitor could type, then with a refusal and with the sent state.
+            await page.getByLabel('Company name').fill('Unbroken'.repeat(14));
+            await page.getByLabel('Your name').fill('Contact'.repeat(12));
+            await page.getByLabel('Email').fill(`${'unbroken'.repeat(6)}@example.test`);
+            await page.getByLabel(/^Unbroken/).first().fill('Unbroken'.repeat(25));
+            await capture(screen, 'form-filled', width, false);
+            await page.route('**/s/*/*/requests', (route) =>
+                route.fulfill({
+                    status: 422,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ message: 'We could not send this request. Please try again later.', code: 'package_request_refused' }),
+                }),
+            );
+            await page.getByRole('button', { name: 'Send request' }).click();
+            await expect(page.getByRole('alert')).toContainText('We could not send this request');
+            await capture(screen, 'refused', width, false);
+            await page.unroute('**/s/*/*/requests');
+            await page.route('**/s/*/*/requests', (route) =>
+                route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ status: 'sent' }) }),
+            );
+            await page.getByRole('button', { name: 'Send request' }).click();
+            await expect(page.getByRole('heading', { name: 'Request sent' })).toBeVisible();
+            await capture(screen, 'sent', width, false);
+            await page.unroute('**/s/*/*/requests');
+        }
+
+        if (screen === 'packages_requests') {
+            if ((await page.locator('main b').count()) > 0) {
+                failures.push(`${screen} at ${width}px rendered visitor text as markup.`);
+            }
+
+            const suggested = page.getByRole('button', { name: 'Synthetic Client Company' });
+            await suggested.click();
+            await page.getByRole('button', { name: /Approve and invite/ }).click();
+            await expect(page.getByRole('alertdialog')).toBeVisible();
+            await expect(page.getByRole('alertdialog').getByRole('combobox', { name: 'Client' })).toContainText('(existing)');
+            await capture(screen, 'approve-suggested', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+            await page.getByRole('row').filter({ hasText: 'layout-unbroken' }).getByRole('button').click();
+            await page.getByRole('button', { name: /Approve and invite/ }).click();
+            await page.getByRole('alertdialog').getByRole('combobox', { name: 'Client' }).click();
+            await expect(page.getByRole('option').first()).toBeVisible();
+            await page.keyboard.press('Escape');
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+            await page.getByRole('button', { name: /Decline/ }).click();
+            await page.getByLabel('Reason (optional)').fill('Unbroken'.repeat(40));
+            await capture(screen, 'decline-dialog', width, false);
+            await page.keyboard.press('Escape');
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+
+            await page
+                .getByRole('row')
+                .filter({ hasText: 'Declined' })
+                .filter({ hasNotText: 'Erased request' })
+                .getByRole('button')
+                .first()
+                .click();
+            await capture(screen, 'declined', width, false);
+            await page.getByRole('button', { name: 'Erased request' }).click();
+            await capture(screen, 'erased', width, false);
+        }
 
         if (screen === 'packages_editor') {
             await page.getByRole('button', { name: 'Publish…' }).click();
@@ -2288,6 +2382,7 @@ try {
         for (const screen of packagesOnly
             ? [
                   'packages_list',
+                  'packages_requests',
                   'packages_new',
                   'packages_editor',
                   'packages_editor_blocked',

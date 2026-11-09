@@ -41,6 +41,7 @@ final class WebApiParityTest extends TestCase
         'workspaces.payments.webhook.fix' => 'deliberate:subscribing the Stripe webhook endpoint to the events SVC needs, or creating it and storing the new signing secret, uses the workspace\'s payment key and is confirmed in the browser by a signed-in owner or admin; payment connections have no agent writes',
         'workspaces.payments.store' => 'deliberate:payment keys are entered only by a signed-in owner or admin',
         'logout' => 'web-only:sign-out',
+        'packages.public.request' => 'deliberate:an anonymous visitor requesting a service package from its public page (docs/service-packages.md PUB-4); there is no signed-in principal and the request creates nothing until an owner or admin decides it through package_requests.* on the agent API',
         'svc.billing.brevo.webhook' => 'web-only:inbound webhook',
         'svc.billing.invoices.stripe-payment-intent' => 'web-only:payment processor hand-off',
         'svc.billing.stripe.webhook' => 'web-only:inbound webhook',

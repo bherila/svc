@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Packages;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClientCompany;
 use App\Models\ServicePackage;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\AgentAccess;
 use App\Services\Authorization\ProjectAccess;
+use App\Services\Packages\PackageRequestReadService;
 use App\Services\Packages\ServicePackageReadService;
 use App\Services\Payments\PaymentConnectionResolver;
 use App\Support\Billing\ChargeCadence;
@@ -17,6 +19,7 @@ use App\Support\Packages\PackageActivationMode;
 use App\Support\Packages\PackageComponentKind;
 use App\Support\Packages\PackageInvoiceIssuing;
 use App\Support\Packages\PackagePublicUrls;
+use App\Support\Packages\PackageRequestStatus;
 use App\Support\Packages\PackageStatus;
 use App\Support\Packages\PackageTerms;
 use Illuminate\Http\Request;
@@ -38,6 +41,7 @@ final class PackageAdminController extends Controller
         private readonly AgentAccess $access,
         private readonly PaymentConnectionResolver $payments,
         private readonly ProjectAccess $roles,
+        private readonly PackageRequestReadService $requestReads,
     ) {}
 
     /** Packages a page of the list shows; the rest are a page link away (Codex P2 on #665). */
@@ -102,6 +106,37 @@ final class PackageAdminController extends Controller
         ]);
     }
 
+    /** The sign-up request queue (ADM-1), with every decision as a finished URL. */
+    public function requests(Request $request, Workspace $workspace): Response
+    {
+        $user = $this->manager($request, $workspace);
+        $cursor = $request->query('cursor');
+        $page = $this->requestReads->list($user, $workspace, limit: self::PAGE_SIZE, cursor: is_string($cursor) ? $cursor : null);
+
+        return Inertia::render('packages/requests', [
+            ...$this->workspaceProps($workspace),
+            'requests' => array_map(function (array $packageRequest) use ($workspace): array {
+                $parameters = ['workspace' => $workspace, 'request' => $packageRequest['id']];
+                $open = $packageRequest['status'] === PackageRequestStatus::New->value;
+
+                return [
+                    ...$packageRequest,
+                    'urls' => [
+                        'approve' => $open ? route('agent-api.v1.package-requests.approve', $parameters, absolute: false) : null,
+                        'decline' => $open ? route('agent-api.v1.package-requests.decline', $parameters, absolute: false) : null,
+                        'erase' => ! $open && $packageRequest['erased_at'] === null ? route('agent-api.v1.package-requests.erase', $parameters, absolute: false) : null,
+                    ],
+                ];
+            }, $page['data']),
+            // Older requests are a page link away (Codex P2 on #666).
+            'next_page_url' => $page['meta']['next_cursor'] === null ? null : route('packages.requests.index', ['workspace' => $workspace, 'cursor' => $page['meta']['next_cursor']], absolute: false),
+            'first_page_url' => is_string($cursor) ? route('packages.requests.index', $workspace, absolute: false) : null,
+            // Existing clients a request may be attached to instead of creating one (EDGE-4).
+            'clients' => ClientCompany::query()->where('workspace_id', $workspace->id)->orderBy('name')->get(['public_id', 'name'])
+                ->map(static fn (ClientCompany $company): array => ['id' => $company->public_id, 'name' => $company->name])->values()->all(),
+        ]);
+    }
+
     private function manager(Request $request, Workspace $workspace): User
     {
         $user = $request->user();
@@ -119,6 +154,8 @@ final class PackageAdminController extends Controller
         return [
             'catalog_url' => PackagePublicUrls::catalog($workspace),
             'stripe_connected' => $this->payments->stripe($workspace) !== null,
+            'requests_url' => route('packages.requests.index', $workspace, absolute: false),
+            'open_requests_count' => $this->requestReads->openCount($workspace),
         ];
     }
 
