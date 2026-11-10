@@ -9,8 +9,9 @@ use App\Support\Billing\FirstCycleChargeOutcome;
 use Illuminate\Support\Str;
 
 /**
- * Report the agreements whose first billing period charged a recurring item
- * twice (#685).
+ * Report the agreements whose first billing periods charged a recurring item
+ * an extra time (#685, #695): one on the agreement's cadence twice, or one on
+ * another cadence once more than its cadence says.
  *
  * A printer over {@see FirstCycleChargeAuditor}. By default counts, and the
  * overcharge already issued summed per currency - no id, company or workspace
@@ -29,7 +30,7 @@ final class AuditFirstCycleChargesCommand extends SvcCommand
         {--list : Also list each agreement by public id (not safe to paste)}
         {--workspace= : Audit only this workspace (its public id); every workspace by default}';
 
-    protected $description = 'List agreements on a longer cadence started mid-month whose first period charged a recurring item twice';
+    protected $description = 'List agreements on a longer cadence started mid-month whose first periods charged a recurring item an extra time';
 
     public function handle(FirstCycleChargeAuditor $auditor): int
     {
@@ -68,13 +69,13 @@ final class AuditFirstCycleChargesCommand extends SvcCommand
         $issued = $summary['outcomes'][FirstCycleChargeOutcome::IssuedWithDuplicate->value];
         $drafts = $summary['outcomes'][FirstCycleChargeOutcome::DraftWithDuplicate->value];
         if ($issued === 0 && $drafts === 0) {
-            $this->components->info('No first period charged a recurring item twice.');
+            $this->components->info('No first period charged a recurring item an extra time.');
         }
         if ($issued > 0) {
-            $this->components->warn($issued.' agreement(s) were sent a first invoice charging a recurring item twice. Nothing has been changed: repaying it is the owner\'s decision.');
+            $this->components->warn($issued.' agreement(s) were sent an invoice charging a recurring item an extra time in its first period. Nothing has been changed: repaying it is the owner\'s decision.');
         }
         if ($drafts > 0) {
-            $this->components->warn($drafts.' draft(s) still charge a recurring item twice. Regenerate each before issuing it; as it stands it would issue the overcharge.');
+            $this->components->warn($drafts.' draft(s) still charge a recurring item an extra time. Regenerate each before issuing it; as it stands it would issue the overcharge.');
         }
 
         if ($rows !== null) {
