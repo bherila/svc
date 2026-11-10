@@ -117,6 +117,10 @@ final class FirstCycleChargeAuditor
         // so the extra charge in its first group is inside the window even a
         // year or more past the agreement's start. The union over the items.
         $periods = [];
+        // Which items' first group each period belongs to: a period read for
+        // one item is not another item's first group, whose later renewals are
+        // ordinary charges.
+        $windows = [];
         foreach ($agreements as $agreement) {
             $agreement->setRelation('recurringItems', new Collection($placed[$agreement->id]));
             $periodMonths = $agreement->effectiveBillingCadence()->monthsInCycle();
@@ -137,6 +141,7 @@ final class FirstCycleChargeAuditor
                         break;
                     }
                     $periods[$agreement->id][$cycle->start->toDateString()] = $cycle;
+                    $windows[$agreement->id][$item->id][$cycle->start->toDateString()] = true;
                 }
             }
             ksort($periods[$agreement->id]);
@@ -214,7 +219,9 @@ final class FirstCycleChargeAuditor
                 foreach ($this->biller->linesForCycle($agreement, $cycle->start, $cycle->end) as $charge) {
                     $expected[$charge['item']->id] = ($expected[$charge['item']->id] ?? 0) + 1;
                 }
-                $read[] = ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency, 'expected' => $expected, 'lines' => $lines[$invoice->id] ?? []];
+                $read[] = ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency, 'expected' => $expected,
+                    'lines' => array_values(array_filter($lines[$invoice->id] ?? [], static fn (array $line): bool => isset($windows[$agreement->id][$line['item']][$periodStart]))),
+                ];
             }
             $findings[] = FirstCycleChargeFinding::classify(
                 [

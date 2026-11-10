@@ -150,6 +150,27 @@ final class AuditFirstCycleChargesCommandTest extends TestCase
     }
 
     /**
+     * Items starting in different years each read only their own first group
+     * (#700): an annual item's ordinary renewal on an invoice read for a later
+     * quarterly item is not an overcharge.
+     */
+    #[Requirement('INV-1')]
+    public function test_an_items_renewal_in_another_items_window_is_not_an_overcharge(): void
+    {
+        $workspace = $this->workspace('renewal');
+        $agreement = $this->agreement($workspace, 'quarterly', '2026-01-09');
+        $annual = $this->item($agreement, 'annual', 48000);
+        $quarterly = $this->item($agreement, 'quarterly', 12000, start: '2027-10-20');
+        $this->firstInvoice($agreement, 'paid', [[$annual, '2026-01-09', 48000]], cycleStart: '2026-01-09');
+        // The annual item renews on this invoice, as ordinary; the quarterly
+        // item is charged once in its first period.
+        $this->firstInvoice($agreement, 'issued', [[$annual, '2028-01-01', 48000], [$quarterly, '2027-10-20', 12000]], cycleStart: '2027-10-09');
+
+        $row = $this->report(['--list' => true])['agreements'][0];
+        $this->assertSame(['charged_once', 0, 0], [$row['outcome'], $row['duplicate_lines'], $row['overcharge_minor']]);
+    }
+
+    /**
      * A sign-up made today is of the shape too, and is billed once: its
      * agreement is listed as a package's, first not invoiced, then charged once.
      */
