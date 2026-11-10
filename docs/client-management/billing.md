@@ -404,17 +404,52 @@ that service for incidence dates. There are no dedicated recurring-item CRUD
 routes in the current route files; the predecessor's `/api/client/mgmt/...`
 endpoints are not the SVC route contract.
 
-An item with no anchor of its own, on the quarterly, semi-annual or annual
-cadence its agreement bills on, is charged once per agreement billing period,
-on the day the period starts (`RecurringItemBiller::followsBillingCycles()`,
-#685): the periods are `BillingCycleResolver`'s, anchored on the agreement's
-start, so the item is charged on the same grid as the retainer it sits beside.
-Any other item - monthly, on another cadence than its agreement's, or carrying
-an anchor - is placed by its anchor day and month (unset, the 1st and its start
-month), with a first charge on its start date when the anchor has passed. The
-anchor rule put a second charge inside the first period of a longer cadence
-started on any day but the 1st; `svc:billing:audit-first-cycle-charges` lists
-the agreements whose first invoice holds one (docs/service-packages.md).
+An item with no anchor of its own, recurring, on a quarterly, semi-annual or
+annual agreement is placed on the agreement's billing periods
+(`RecurringItemBiller::followsBillingCycles()`): the periods are
+`BillingCycleResolver`'s, anchored on the agreement's start, so the item is
+charged on the same grid as the retainer it sits beside.
+
+- **On the agreement's cadence** (#685): once per billing period, on the day
+  the period starts.
+- **Recurring items on another cadence** (#695): once per period of the item's
+  own cadence, laid on the agreement's periods.
+  - A shorter cadence - a monthly item in a quarterly, semi-annual or annual
+    agreement, a quarterly one in an annual agreement - divides each billing
+    period from its first day, by the item's months, never past a month's end.
+    A quarterly agreement started on 9 January charges a monthly item on
+    9 January, 9 February and 9 March, then 9 April, 9 May and 9 June; one
+    started on 31 January charges 31 January, 28 February and 31 March, then
+    1 May, 1 June and 1 July, the grid's next period starting on 1 May.
+  - A longer cadence - an annual licence in a quarterly agreement - groups
+    whole billing periods, counted from the period the item starts in, and
+    charges on the first day of each group: from 9 January, on 9 January of
+    each year.
+  - In the period the item starts inside, the charge falls on the item's start
+    instead, as for an item on the agreement's cadence.
+
+  The rule keeps every charge inside the billing period it is invoiced with,
+  charges each period the same number of times, and charges the item exactly
+  once per period of its own cadence. The alternative - calendar months, with
+  the first prorated or dropped - was rejected: it puts charges on days the
+  agreement's periods do not, a proration the engine does not do anywhere
+  else for an item (items are never prorated; `first_cycle_proration` applies
+  to the retainer), and a dropped first month leaves the start unbilled.
+- **Unchanged**: an agreement started on the 1st, with its items started with
+  it, is charged on the same dates as before, and so is every monthly
+  agreement. An item on a monthly agreement, a one-time item, and an item
+  carrying an anchor - a move's successor (`ContinuedRecurrence`) or a day set
+  by hand - is placed by its anchor day and month (unset, the 1st and its start
+  month), with a first charge on its start date when the anchor has passed.
+
+The anchor rule put an extra charge inside the item's first period of its own
+cadence whenever a longer agreement started on any day but the 1st: a
+quarterly item from 9 January on 9 January and 1 April, a monthly one on
+9 January, 1 February, 1 March and 1 April, an annual one on 9 January and
+again on 1 January. `svc:billing:audit-first-cycle-charges` lists the
+agreements whose invoices hold one (docs/service-packages.md). Invoices,
+the sign-up estimate (`SignupCharges`), the revenue projection and the
+portal's next-invoice estimate all read the rule through `RecurringItemBiller`.
 
 ## Agreement Transitions
 
