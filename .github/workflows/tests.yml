@@ -542,7 +542,17 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
-          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
+
+      # Per-test times, for balancing the shards on measured time.
+      - name: Upload test timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-sqlite-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 7
+          if-no-files-found: warn
 
   mariadb-tests:
     name: MariaDB shard ${{ matrix.shard }}/4
@@ -635,7 +645,17 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
-          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
+
+      # Per-test times, for balancing the shards on measured time.
+      - name: Upload test timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-mariadb-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit.xml
+          retention-days: 7
+          if-no-files-found: warn
 
   mcp-smoke:
     name: MCP SDK streamable HTTP smoke
