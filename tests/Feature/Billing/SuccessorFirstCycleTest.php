@@ -121,9 +121,11 @@ final class SuccessorFirstCycleTest extends TestCase
      * nothing, an emptied draft refreshed after the termination (#689), does
      * not, and nobody has to discard it. An invoice naming no agreement still
      * refuses the successor's opening period.
+     *
+     * @param  list<string>  $outgoingCycles  shared with the provider; unused here
      */
     #[DataProvider('cadences')]
-    public function test_only_an_invoice_billing_nothing_stands_aside_for_the_successor(string $cadence, string $finalWork, string $firstCycle): void
+    public function test_only_an_invoice_billing_nothing_stands_aside_for_the_successor(string $cadence, string $finalWork, string $firstCycle, array $outgoingCycles): void
     {
         $outgoing = $this->agreement($cadence, '2026-01-01', 60000, 10000);
         app(AgreementWorkflow::class)->terminate($outgoing, '2026-09-30');
