@@ -778,9 +778,10 @@ final class PackageMigrationTest extends TestCase
     #[Requirement('MIG-3')]
     public function test_a_continuing_charge_keeps_its_schedule_across_a_move(): void
     {
-        // A quarterly service started Nov 9: its $120 charges fall on Nov 9,
-        // Feb 1, May 1. Moved on Feb 9, the next charge is still May 1 - never
-        // a fresh one on Feb 9 as well.
+        // A quarterly service started Nov 9: its $120 charges fall on the
+        // first day of each quarter it bills, Nov 9, Feb 9, May 9 (#685).
+        // Moved on Feb 9, the successor's quarters continue the old ones, so
+        // its first is charged once, on Feb 9, as the never-moved service is.
         $quarterly = ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'quarterly', 'amount' => 12000];
         [$workspace, $owner, $package, $from] = $this->world(['billing_cadence' => 'quarterly', 'components' => [$quarterly]],
             ['billing_cadence' => 'quarterly', 'summary' => 'Revised synthetic summary', 'components' => [$quarterly]]);
@@ -793,10 +794,11 @@ final class PackageMigrationTest extends TestCase
 
         $successor = $enrollment->refresh()->client_agreement_id;
         $first = ClientInvoice::query()->where('client_agreement_id', $successor)->sole();
-        $this->assertSame([['2027-05-01', 12000]], $first->lines->where('total_amount', '>', 0)
+        $this->assertSame([['2027-02-09', 12000]], $first->lines->where('total_amount', '>', 0)
             ->map(fn ($line): array => [$line->line_date?->toDateString(), $line->total_amount])->values()->all());
         $item = ClientAgreementRecurringItem::query()->where('client_agreement_id', $successor)->sole();
-        $this->assertSame(['2026-11-09', 1, 11], [$item->start_date?->toDateString(), $item->anchor_day, $item->anchor_month]);
+        // Started when the old item did, with no anchor: on the periods.
+        $this->assertSame(['2026-11-09', null, null], [$item->start_date?->toDateString(), $item->anchor_day, $item->anchor_month]);
     }
 
     #[Requirement('MIG-1', 'MIG-3')]
