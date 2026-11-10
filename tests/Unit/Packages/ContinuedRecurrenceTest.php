@@ -16,26 +16,31 @@ use Tests\Support\Requirement;
  */
 final class ContinuedRecurrenceTest extends TestCase
 {
-    /** @return iterable<string, array{BillingCadence, string, list<array{cadence: string, effective_on: string|null, anchor_day: int|null, anchor_month: int|null}>, array{effective_on: string, anchor_day: int, anchor_month: int|null}|null}> */
+    /** @return iterable<string, array{BillingCadence, string, list<array{cadence: string, effective_on: string|null, anchor_day: int|null, anchor_month: int|null}>, array{effective_on: string, anchor_day: int|null, anchor_month: int|null}|null}> */
     public static function schedules(): iterable
     {
         $item = static fn (string $cadence, ?string $start = null, ?int $day = null, ?int $month = null): array => ['cadence' => $cadence, 'effective_on' => $start, 'anchor_day' => $day, 'anchor_month' => $month];
 
-        yield 'a package item started with a quarterly agreement' => [BillingCadence::Quarterly, '2026-11-09', [$item('quarterly')], ['effective_on' => '2026-11-09', 'anchor_day' => 1, 'anchor_month' => 11]];
-        yield 'no items: the schedule one started with the agreement would have' => [BillingCadence::Annual, '2026-03-31', [], ['effective_on' => '2026-03-31', 'anchor_day' => 1, 'anchor_month' => 3]];
+        // An unanchored item on its agreement's longer cadence charges on each
+        // billing period's first day (#685), and so do the continued ones.
+        yield 'a package item started with a quarterly agreement' => [BillingCadence::Quarterly, '2026-11-09', [$item('quarterly')], ['effective_on' => '2026-11-09', 'anchor_day' => null, 'anchor_month' => null]];
+        yield 'two package items on the periods, the earliest start kept' => [BillingCadence::SemiAnnual, '2026-01-31', [$item('semi_annual', '2026-03-01'), $item('semi_annual')], ['effective_on' => '2026-01-31', 'anchor_day' => null, 'anchor_month' => null]];
+        yield 'no items: the schedule one started with the agreement has' => [BillingCadence::Annual, '2026-03-31', [], ['effective_on' => '2026-03-31', 'anchor_day' => null, 'anchor_month' => null]];
+        yield 'an item on the periods beside an anchored one' => [BillingCadence::Quarterly, '2026-01-01', [$item('quarterly'), $item('quarterly', null, 1, 1)], null];
+        yield 'an item with only an anchor month is placed by its anchor' => [BillingCadence::Quarterly, '2026-01-09', [$item('quarterly', null, null, 4)], ['effective_on' => '2026-01-09', 'anchor_day' => 1, 'anchor_month' => 4]];
         yield 'a monthly schedule names only its day' => [BillingCadence::Monthly, '2026-01-31', [$item('monthly'), $item('monthly')], ['effective_on' => '2026-01-31', 'anchor_day' => 1, 'anchor_month' => null]];
         yield 'an item already continued keeps its anchors' => [BillingCadence::SemiAnnual, '2027-05-09', [$item('semi_annual', '2026-11-09', 1, 11)], ['effective_on' => '2026-11-09', 'anchor_day' => 1, 'anchor_month' => 11]];
         yield 'two items in the same place in the cycle, the earliest start kept' => [BillingCadence::Quarterly, '2026-01-01', [$item('quarterly', '2026-04-01', 1, 4), $item('quarterly', null, 1, 1)], ['effective_on' => '2026-01-01', 'anchor_day' => 1, 'anchor_month' => 4]];
         yield 'an anchor past the 28th is the 28th, as the engine bills it' => [BillingCadence::Monthly, '2026-01-01', [$item('monthly', null, 31), $item('monthly', null, 28)], ['effective_on' => '2026-01-01', 'anchor_day' => 28, 'anchor_month' => null]];
         yield 'items on different days' => [BillingCadence::Monthly, '2026-01-01', [$item('monthly'), $item('monthly', null, 15)], null];
-        yield 'items in different places in the cycle' => [BillingCadence::Quarterly, '2026-01-01', [$item('quarterly'), $item('quarterly', '2026-02-01')], null];
+        yield 'items in different places in the cycle' => [BillingCadence::Quarterly, '2026-01-01', [$item('quarterly', null, 1), $item('quarterly', '2026-02-01', 1)], null];
         yield 'an item off the cycle' => [BillingCadence::Monthly, '2026-01-01', [$item('monthly'), $item('annual')], null];
         yield 'an item starting on or after the date' => [BillingCadence::Monthly, '2026-01-01', [$item('monthly', '2027-01-01')], null];
     }
 
     /**
      * @param  list<array{cadence: string, effective_on: string|null, anchor_day: int|null, anchor_month: int|null}>  $items
-     * @param  array{effective_on: string, anchor_day: int, anchor_month: int|null}|null  $expected
+     * @param  array{effective_on: string, anchor_day: int|null, anchor_month: int|null}|null  $expected
      */
     #[DataProvider('schedules')]
     #[Requirement('MIG-3')]

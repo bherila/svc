@@ -107,12 +107,10 @@ final class PackageRecurringInvoicesTest extends TestCase
 
         $this->assertSame([['period_start' => '2026-11-15', 'outcome' => 'issued']], $this->brief($this->issueRun()));
         $first = $this->invoiceFor($enrollment, '2026-11-15');
-        // The engine's quarterly item is anchored on the 1st of its start
-        // month, so a first quarter anchored mid-month also holds its next
-        // incidence (1 February): the engine's own rule, recorded in slice
-        // 3b and not changed here.
-        $this->assertSame(['issued', 24000, '2026-11-15', '2027-02-14'], [$first->status, $first->total_amount, $first->cycle_start?->toDateString(), $first->cycle_end?->toDateString()]);
-        $this->assertSame([['recurring_item', 12000], ['recurring_item', 12000]], $this->lines($first));
+        // The component charges once per quarter, on the day it starts, as
+        // the price is sold (#685) - not also on 1 February, its old anchor.
+        $this->assertSame(['issued', 12000, '2026-11-15', '2027-02-14'], [$first->status, $first->total_amount, $first->cycle_start?->toDateString(), $first->cycle_end?->toDateString()]);
+        $this->assertSame([['2026-11-15', 12000]], $this->recurringLines($first));
         $this->assertSame([], $this->issueRun()['outcomes']);
 
         $this->travelTo(CarbonImmutable::parse('2027-01-20 10:00:00', 'UTC'));
@@ -122,8 +120,38 @@ final class PackageRecurringInvoicesTest extends TestCase
         $this->assertSame([['period_start' => '2027-02-15', 'outcome' => 'issued']], $this->brief($this->issueRun()));
         $second = $this->invoiceFor($enrollment, '2027-02-15');
         $this->assertSame(['issued', 12000, '2027-05-14'], [$second->status, $second->total_amount, $second->cycle_end?->toDateString()]);
+        $this->assertSame([['2027-02-15', 12000]], $this->recurringLines($second));
         $this->assertSame([], $this->issueRun()['outcomes']);
         $this->assertSame(2, ClientInvoice::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /**
+     * Issue #685: a quarterly package started on 9 January charges its $120
+     * component once per quarter from the first invoice on - on the day each
+     * quarter starts, as its price is sold - and not $240 (9 January and the
+     * component's old anchor, 1 April, both inside the first quarter).
+     */
+    #[Requirement('INV-1', 'ACC-3')]
+    public function test_a_quarterly_package_started_on_the_ninth_charges_its_component_once_in_the_first_quarter(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2027-01-09 10:00:00', 'UTC'));
+        [$workspace, , $package, $company, $contact] = $this->world([
+            'billing_cadence' => 'quarterly',
+            'components' => [['kind' => 'recurring', 'description' => self::HOSTING, 'cadence' => 'quarterly', 'amount' => 12000]],
+        ]);
+        $enrollment = $this->accept($contact, $company, $package);
+
+        $this->assertSame([['period_start' => '2027-01-09', 'outcome' => 'issued']], $this->brief($this->issueRun()));
+        $first = $this->invoiceFor($enrollment, '2027-01-09');
+        $this->assertSame(['issued', 12000, '2027-04-08'], [$first->status, $first->total_amount, $first->cycle_end?->toDateString()]);
+        $this->assertSame([['2027-01-09', 12000]], $this->recurringLines($first));
+
+        $this->travelTo(CarbonImmutable::parse('2027-04-09 10:00:00', 'UTC'));
+        $this->assertSame([['period_start' => '2027-04-09', 'outcome' => 'issued']], $this->brief($this->issueRun()));
+        $second = $this->invoiceFor($enrollment, '2027-04-09');
+        $this->assertSame(['issued', 12000, '2027-07-08'], [$second->status, $second->total_amount, $second->cycle_end?->toDateString()]);
+        $this->assertSame([['2027-04-09', 12000]], $this->recurringLines($second));
+        $this->assertSame(2, ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->where('type', 'recurring_item')->count());
     }
 
     /**
@@ -575,6 +603,13 @@ final class PackageRecurringInvoicesTest extends TestCase
     {
         return ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)->orderBy('sort_order')->orderBy('id')->get()
             ->map(static fn (ClientInvoiceLine $line): array => [(string) $line->type, (int) $line->total_amount])->values()->all();
+    }
+
+    /** @return array<int, array{string, int}> date and total of each recurring-item line, in order */
+    private function recurringLines(ClientInvoice $invoice): array
+    {
+        return ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)->where('type', 'recurring_item')->orderBy('line_date')->orderBy('id')->get()
+            ->map(static fn (ClientInvoiceLine $line): array => [(string) $line->line_date?->toDateString(), (int) $line->total_amount])->values()->all();
     }
 
     /**

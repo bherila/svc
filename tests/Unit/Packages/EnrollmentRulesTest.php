@@ -242,10 +242,10 @@ final class EnrollmentRulesTest extends TestCase
         yield 'a retainer, prorated to a half cent' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 45000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'prorate_hours'], '2026-11-15', [['first_period', 23998, '2026-11-15', '2026-11-30']]];
         yield 'a retainer, full first period' => [['charge_first_period' => true, 'components' => [], 'retainer_amount' => 60000, 'retainer_minutes' => 300, 'first_cycle_proration' => 'full_period'], '2026-11-15', [['first_period', 60000, '2026-11-15', '2026-11-30']]];
         yield 'from the first of the month' => [['charge_first_period' => true, 'components' => [['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 4500]], 'retainer_amount' => 60000, 'retainer_minutes' => 300], '2026-12-01', [['first_period', 64500, '2026-12-01', '2026-12-31']]];
-        // The engine's quarterly item is anchored on the 1st of its start
-        // month: opening on the 15th it bills the start and 1 February, both
-        // inside the quarter anchored on the start. The estimate says so too.
-        yield 'a quarter anchored on the start' => [['charge_first_period' => true, 'billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Quarterly hosting', 'cadence' => 'quarterly', 'amount' => 12000]]], '2026-11-15', [['first_period', 24000, '2026-11-15', '2027-02-14']]];
+        // A quarterly component charges once in the quarter anchored on the
+        // start, on its first day, as the engine bills it (#685).
+        yield 'a quarter anchored on the start' => [['charge_first_period' => true, 'billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Quarterly hosting', 'cadence' => 'quarterly', 'amount' => 12000]]], '2026-11-15', [['first_period', 12000, '2026-11-15', '2027-02-14']]];
+        yield 'a year started on the 31st' => [['charge_first_period' => true, 'billing_cadence' => 'annual', 'components' => [['kind' => 'recurring', 'description' => 'Annual hosting', 'cadence' => 'annual', 'amount' => 48000]]], '2027-01-31', [['first_period', 48000, '2027-01-31', '2028-01-30']]];
     }
 
     /**
