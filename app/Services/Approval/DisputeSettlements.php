@@ -17,6 +17,7 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Approval\LateAnswer;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
@@ -52,6 +53,8 @@ final class DisputeSettlements
     public const int REPLY_MAX = 1000;
 
     public const string CHARGED_MESSAGE = 'An issued invoice already charges this. Answer the dispute, and correct the invoice if the charge should change.';
+
+    public const string ON_A_BUY_DOWN_MESSAGE = 'A draft buy-down holds this time. Discard that draft to write it off, or answer the dispute so the draft can issue.';
 
     public function __construct(
         private readonly ProjectAccess $access,
@@ -91,6 +94,7 @@ final class DisputeSettlements
             // Disputed and charged by no issued invoice; otherwise the charge stands.
             $held = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)->heldForDispute()->exists();
             abort_if($outcome === DisputeSettlement::WrittenOff && ! $held, 409, self::CHARGED_MESSAGE);
+            abort_if($outcome === DisputeSettlement::WrittenOff && $this->onADraftBuyDown($workspace, $entry), 409, self::ON_A_BUY_DOWN_MESSAGE);
             $this->write(ClientTimeEntry::query(), $workspace, $entry, $actor, $outcome, $reply, match ($outcome) {
                 // Answered after its own period was reconciled: it can no
                 // longer bill there, so it becomes deferred work.
@@ -130,6 +134,32 @@ final class DisputeSettlements
 
             return $expense->fresh() ?? $expense;
         });
+    }
+
+    /**
+     * Does a draft's buy-down line hold this hour? A dispute's rebuild leaves such
+     * a line in place, so writing the hour off would strand the draft: it could
+     * not issue, and no dispute would be left to answer. The allocation is read
+     * with a lock, so a buy-down committed since this transaction's snapshot is
+     * seen; the line and invoice are not locked, because discarding a draft locks
+     * its invoice before this entry and taking them here would walk that backwards.
+     */
+    private function onADraftBuyDown(Workspace $workspace, ClientTimeEntry $entry): bool
+    {
+        $lines = DB::table('client_invoice_line_time_entries')
+            ->where('client_time_entry_id', $entry->id)
+            ->orderBy('client_invoice_line_id')
+            ->tap(Locks::forUpdate())
+            ->pluck('client_invoice_line_id');
+
+        return ClientInvoiceLine::query()
+            ->where('workspace_id', $workspace->id)
+            ->whereKey($lines)
+            ->where('type', InvoiceLineType::DeferredBuyDown->value)
+            ->whereHas('invoice', fn (Builder $invoice): Builder => $invoice
+                ->where('client_invoices.workspace_id', $workspace->id)
+                ->where('client_invoices.status', InvoiceStatus::Draft->value))
+            ->exists();
     }
 
     /** Does an issued, partially paid, paid or disputed invoice of this workspace carry the expense? */

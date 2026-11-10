@@ -201,6 +201,31 @@ What remains accepted rather than fixed (see the concurrency guidance in
   while any later invoice is issued. Worth building if late time on invoiced
   months becomes routine rather than exceptional.
 
+### Late work
+
+Each period's generator selects its own dates, so an hour that arrives after the
+invoice for its own period was charged would otherwise never be billed. Generation
+rolls it forward by how it is priced:
+
+- **Priced alone** (a flat-hourly subcontractor hour, or any hour on an agreement
+  with no retainer): it goes on the next draft, at its own date.
+- **Drawing on a retainer:** it becomes deferred work, as an hour answered late
+  does, and draws on later free capacity, is settled by a buy-down, or is collected
+  at termination. It cannot go on the next draft as ordinary work, because the
+  ledger reads work by its date and would count it in its own month as well.
+  With no capacity free it waits in the backlog and adds no overage to the draft.
+
+Only a charged cadence invoice of the same agreement makes a row late. A period
+that is drafted or voided still bills its own work. Ordinary late work stays
+inside the agreement's handovers (`LateWork::withinSegment()`, #699): an
+outgoing final invoice spans its whole cycle past the successor's start, and a
+successor's opening invoice is dated over its predecessor's last period, but a
+late hour on the other agreement's days is that agreement's - it is neither put
+on this draft nor deferred into this pool. Flat-hourly time is not handed over. A disputed row stays held until
+its answer decides how it waits. Late work needs a later draft to land on, so an
+agreement with no further period leaves it unbilled. See
+[LateWork](../../app/Services/Billing/LateWork.php).
+
 ## Invoice Line Items
 
 The persisted column is `client_invoice_lines.type`.

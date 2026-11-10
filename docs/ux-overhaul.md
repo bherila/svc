@@ -450,7 +450,9 @@ dispute (`SubmissionService`).
 A new dispute clears the previous reply. Every settlement is a compare-and-set
 on the row's version, under its lock. After it commits, the drafts it affects
 are rebuilt, as after a dispute: an answered row goes back on the generated
-draft whose period covers it, and a written-off one comes off any draft.
+draft whose period covers it, and a written-off one comes off any draft. A draft's
+buy-down line is the exception: its rebuild leaves the line in place, so a write-off
+is refused while one holds the hour. Discard that draft first, or answer instead.
 When the invoice reconciling its period was charged while it was held, that
 period can no longer bill it (decided 2026-11-09, `LateAnswer`):
 

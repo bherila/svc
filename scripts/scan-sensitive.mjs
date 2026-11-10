@@ -26,7 +26,7 @@ const FORBIDDEN_EXTENSIONS = new Set([
 ])
 // Generated schema dumps are structure only, and the loader needs them as .sql.
 // The exemption is for these two exact paths; their contents are still scanned.
-const SCHEMA_DUMPS = /^database\/schema\/(?:mysql|sqlite)-schema\.sql$/
+const SCHEMA_DUMPS = /^database\/schema\/(?:mariadb|sqlite)-schema\.sql$/
 const FORBIDDEN_PATHS = [
   /^(?:backups?|billing-data|client-data|data|dumps?|exports?|production-data)\//i,
   /^database\/(?:backups?|dumps?)\//i,

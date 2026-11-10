@@ -145,6 +145,51 @@ final class SuccessorFirstCycleTest extends TestCase
     }
 
     /**
+     * Late work (#691) stays inside the handovers. The outgoing agreement's
+     * final invoice reconciles all of August though the successor took over
+     * on the 16th; an hour of the 20th logged after it was issued is the
+     * successor's, which bills it on its next draft. The outgoing agreement,
+     * on a retainer, refreshing its emptied drafts past the end, must not
+     * defer it into its own pool.
+     */
+    public function test_late_work_after_a_mid_period_handover_is_the_successors(): void
+    {
+        $outgoing = $this->agreement('monthly', '2026-01-01', 60000, 10000);
+        // Drafted while open, so the outgoing agreement has drafts past its
+        // end for every later walk to refresh.
+        app(ClientInvoicingService::class)->generateAllInvoices($this->company->refresh());
+        app(AgreementWorkflow::class)->terminate($outgoing->fresh() ?? $outgoing, '2026-08-15');
+        $successor = ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'title' => 'Synthetic hourly successor',
+            'status' => 'active', 'starts_on' => '2026-08-16', 'billing_cadence' => 'monthly', 'currency' => 'USD',
+            'hourly_rate_amount' => 5000, 'retainer_minutes' => 0, 'retainer_amount' => 0, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+        ]);
+        $this->hours('2026-08-05', 900);
+        $this->hours('2026-08-18', 60);
+        $this->assertSame([], $this->refusals(app(ClientInvoicingService::class)->generateAllInvoices($this->company->refresh())));
+        // Everything due is issued but the outgoing agreement's emptied drafts
+        // past its end, which the next walk refreshes.
+        $drafts = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('status', InvoiceStatus::Draft->value)
+            ->whereDate('issue_date', '<=', '2026-11-09')->orderBy('service_period_start')->orderBy('id')->get()
+            ->reject(fn (ClientInvoice $draft): bool => (int) $draft->client_agreement_id === $outgoing->id && $draft->service_period_start?->toDateString() > '2026-08-15');
+        $this->assertTrue(ClientInvoice::query()->where('client_agreement_id', $outgoing->id)->where('status', InvoiceStatus::Draft->value)
+            ->whereDate('service_period_start', '>', '2026-08-15')->exists(), 'The outgoing agreement keeps a draft past its end.');
+        foreach ($drafts as $draft) {
+            app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $this->workspace);
+        }
+        $this->assertSame(InvoiceStatus::Issued->value, $this->cadenceInvoice($outgoing, '2026-08-01')->status);
+
+        Carbon::setTestNow('2026-11-10 12:00:00');
+        CarbonImmutable::setTestNow('2026-11-10 12:00:00');
+        $late = $this->hours('2026-08-20', 90);
+        $this->assertSame([], $this->refusals(app(ClientInvoicingService::class)->generateAllInvoices($this->company->refresh())));
+
+        $this->assertFalse((bool) $late->fresh()?->is_deferred, 'The outgoing agreement deferred the successor\'s late hour into its own pool.');
+        $this->assertNotContains($late->id, $this->allocatedBy($outgoing));
+        $this->assertContains($late->id, $this->allocatedBy($successor), 'The successor bills its late hour.');
+    }
+
+    /**
      * #699, item 4: with no successor, work logged after a non-monthly
      * agreement's end is billed on the ended agreement's next cycle, as on the
      * monthly path - never by selling a retainer - and that draft is an
