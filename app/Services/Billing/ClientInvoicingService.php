@@ -39,6 +39,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Turns time, agreements and retainer balances into invoices.
@@ -428,6 +429,51 @@ final class ClientInvoicingService
             Carbon::instance($invoice->service_period_end),
             $agreement,
         );
+    }
+
+    /**
+     * Rebuild every generated draft of one agreement from the current history:
+     * what a change to the agreement itself - a termination - leaves stale.
+     *
+     * A termination prorates the cycle it falls in, makes the final
+     * reconciliation collect the deferred work, and leaves a draft written
+     * while the agreement was open selling a cycle after the end (#670, #699).
+     * Each draft is rebuilt by {@see self::regenerateDraftInvoice()}, in the
+     * generator's own transaction and locks: earliest period first, so each
+     * later charge is sized against the rebuilt one, and an interim draft
+     * before its period's cadence draft, which releases the interim's claims.
+     * Nothing new is opened. A refused rebuild is reported and left for issue
+     * to refuse.
+     *
+     * The caller runs this after its own transaction commits: the agreement
+     * lock it holds ranks first, but whatever it locked after that may rank
+     * after the invoices and time these rebuilds lock.
+     */
+    public function regenerateAgreementDrafts(int $workspaceId, int $agreementId): void
+    {
+        $drafts = ClientInvoice::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('client_agreement_id', $agreementId)
+            ->where('status', InvoiceStatus::Draft->value)
+            ->where(fn (Builder $kind): Builder => $kind->whereNull('invoice_kind')
+                ->orWhereIn('invoice_kind', [InvoiceKind::CadencePeriod->value, InvoiceKind::InterimOverage->value]))
+            ->get()
+            ->sortBy(fn (ClientInvoice $draft): array => [
+                $draft->service_period_start?->toDateString() ?? '',
+                $draft->invoiceKindValue() === InvoiceKind::InterimOverage->value ? 0 : 1,
+                $draft->id,
+            ]);
+
+        foreach ($drafts as $draft) {
+            try {
+                $current = $draft->fresh();
+                if ($current instanceof ClientInvoice && $current->status === InvoiceStatus::Draft->value) {
+                    $this->regenerateDraftInvoice($current);
+                }
+            } catch (HttpExceptionInterface|DomainException|RuntimeException $refused) {
+                report($refused);
+            }
+        }
     }
 
     /**
