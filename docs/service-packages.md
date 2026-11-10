@@ -965,9 +965,11 @@ Slice 6 (moving subscribers to a new version) settled these:
     ever continues items on the agreement's cadence.
   - **Agreements already invoiced:** `svc:billing:audit-first-cycle-charges`
     covers the shape too. It reads the invoices of the periods that span each
-    item's first period of its own cadence - one period for a shorter
-    component, a year of quarters for an annual licence - and counts as extra
-    any line beyond what the engine now places in that invoice's period.
+    item's first period of its own cadence, counted from the agreement period
+    the item starts in - one period for a shorter component, a year of
+    quarters for an annual licence, so an item added a year after the
+    agreement is read from its own start - and counts as extra any line beyond
+    what the engine now places in that invoice's period.
   - **Tested** by `BillingHistoryOffCadenceSignupTest`, beside the sign-up
     property in a class of its own: a monthly component in a quarterly,
     semi-annual and annual package, a quarterly one in an annual package, and

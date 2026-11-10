@@ -105,6 +105,51 @@ final class AuditFirstCycleChargesCommandTest extends TestCase
     }
 
     /**
+     * An off-cadence or on-cadence item added after the agreement's first
+     * period is read from the period it starts in (#698): an annual item
+     * from 20 April on a quarterly agreement from 9 January was charged on
+     * 20 April and on 1 April a year on, on the invoice of 9 January 2027,
+     * outside the agreement's first four quarters.
+     */
+    #[Requirement('INV-1')]
+    public function test_an_item_added_later_is_read_from_its_own_starting_period(): void
+    {
+        $workspace = $this->workspace('later');
+        $issued = $this->agreement($workspace, 'quarterly', '2026-01-09');
+        $licence = $this->item($issued, 'annual', 12000, start: '2026-04-20');
+        $this->firstInvoice($issued, 'paid', [], cycleStart: '2026-01-09');
+        $this->firstInvoice($issued, 'paid', [[$licence, '2026-04-20', 12000]], cycleStart: '2026-04-09');
+        $second = $this->firstInvoice($issued, 'issued', [[$licence, '2027-04-01', 12000]], cycleStart: '2027-01-09');
+
+        $draft = $this->agreement($workspace, 'quarterly', '2026-01-09');
+        $draftLicence = $this->item($draft, 'annual', 12000, start: '2026-04-20');
+        $this->firstInvoice($draft, 'paid', [[$draftLicence, '2026-04-20', 12000]], cycleStart: '2026-04-09');
+        $this->firstInvoice($draft, 'draft', [[$draftLicence, '2027-04-01', 12000]], cycleStart: '2027-01-09');
+
+        $once = $this->agreement($workspace, 'quarterly', '2026-01-09');
+        $onceLicence = $this->item($once, 'annual', 12000, start: '2026-04-20');
+        $this->firstInvoice($once, 'paid', [[$onceLicence, '2026-04-20', 12000]], cycleStart: '2026-04-09');
+        $this->firstInvoice($once, 'issued', [], cycleStart: '2027-01-09');
+
+        // On the agreement's own cadence, added three quarters in: the extra
+        // charge sits in the quarter from 9 October.
+        $onCadence = $this->agreement($workspace, 'quarterly', '2026-01-09');
+        $hosting = $this->item($onCadence, 'quarterly', 12000, start: '2026-10-20');
+        $this->firstInvoice($onCadence, 'issued', [[$hosting, '2026-10-20', 12000], [$hosting, '2027-01-01', 12000]], cycleStart: '2026-10-09');
+
+        $rows = $this->report(['--list' => true])['agreements'];
+
+        $this->assertSame([
+            [$issued->public_id, 'issued_with_duplicate', 'issued', 1, 12000],
+            [$draft->public_id, 'draft_with_duplicate', 'draft', 1, 12000],
+            [$once->public_id, 'charged_once', 'paid', 0, 0],
+            [$onCadence->public_id, 'issued_with_duplicate', 'issued', 1, 12000],
+        ], array_map(static fn (array $row): array => [$row['agreement'], $row['outcome'], $row['invoice_status'], $row['duplicate_lines'], $row['overcharge_minor']], $rows));
+        // Named by the invoice of 9 January 2027, past the first four quarters.
+        $this->assertSame($second->public_id, $rows[0]['invoice']);
+    }
+
+    /**
      * A sign-up made today is of the shape too, and is billed once: its
      * agreement is listed as a package's, first not invoiced, then charged once.
      */
@@ -210,11 +255,11 @@ final class AuditFirstCycleChargesCommandTest extends TestCase
         ]);
     }
 
-    private function item(ClientAgreement $agreement, string $cadence = 'quarterly', int $amount = 12000, ?int $anchorDay = null): ClientAgreementRecurringItem
+    private function item(ClientAgreement $agreement, string $cadence = 'quarterly', int $amount = 12000, ?int $anchorDay = null, ?string $start = null): ClientAgreementRecurringItem
     {
         return ClientAgreementRecurringItem::query()->create([
             'workspace_id' => $agreement->workspace_id, 'client_agreement_id' => $agreement->id, 'description' => 'Synthetic hosting',
-            'cadence' => $cadence, 'amount' => $amount, 'currency' => 'USD', 'is_active' => true, 'anchor_day' => $anchorDay,
+            'cadence' => $cadence, 'amount' => $amount, 'currency' => 'USD', 'is_active' => true, 'anchor_day' => $anchorDay, 'effective_on' => $start,
         ]);
     }
 

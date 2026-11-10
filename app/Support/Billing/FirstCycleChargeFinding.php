@@ -53,7 +53,7 @@ final readonly class FirstCycleChargeFinding
      * lines on a draft make it a draft's.
      *
      * @param  array{workspace: string, company: string, agreement: string, cadence: string, starts_on: string, package: bool, items: int}  $agreement
-     * @param  list<array{public_id: string, status: string, currency: string, expected: array<int, int>, lines: list<array{item: int, line_date: string, id: int, total: int}>}>  $invoices  the earliest live invoice of each period the items' first own periods span, by period; `expected`: the charges the engine places per item in that period; `lines`: the invoice's lines for those items
+     * @param  list<array{public_id: string, status: string, currency: string, expected: array<int, int>, lines: list<array{item: int, line_date: string, id: int, total: int}>}>  $invoices  the earliest live invoice of each period spanned by an item's first own period, counted from the period the item starts in, by period; `expected`: the charges the engine places per item in that period; `lines`: the invoice's lines for those items
      */
     public static function classify(array $agreement, array $invoices): self
     {
