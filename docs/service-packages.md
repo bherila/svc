@@ -870,15 +870,16 @@ Slice 6 (moving subscribers to a new version) settled these:
   operator's edit makes these), the subscriber is refused
   (`package_migration_ambiguous_recurrence`) and, if it happens after
   scheduling, the move holds (`ambiguous_recurrence`). With no such item, the
-  schedule an item started with the agreement would have. A property in
-  `BillingHistoryInvariantTest` proves it: for identical terms a moved twin
+  schedule an item started with the agreement would have. A property,
+  `BillingHistoryMoveTwinTest` (its own class so ParaTest schedules it beside
+  the other histories, #686), proves it: for identical terms a moved twin
   and a never-moved twin bill the same total for every period, each once, on
   every cadence, for services started on the 1st, 9th and 31st, moved on each
   of the first two dates a move may take (a full cycle apart), with one or two
   components or a setup fee billed with the first cycle.
 - **Refused classes stay refused (#686).** Each would need a handoff carrying
   state the successor cannot read today, proved by moved and never-moved twin
-  histories like the identical-terms property; none is designed until owners
+  histories like `BillingHistoryMoveTwinTest`; none is designed until owners
   ask for one.
   - **Cadence changes:** a first period of another length lands on the
     engine's period grid over periods already invoiced. Offer the new cadence
