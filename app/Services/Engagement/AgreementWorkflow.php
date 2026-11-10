@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Queries\Engagement\ProposalAcceptanceAgreementQuery;
 use App\Services\Activity\ClientActivityRecorder;
+use App\Services\Billing\ClientInvoicingService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Services\WorkspaceAuthorization;
 use App\Support\AgentApi\AgentApiVersion;
@@ -339,6 +340,14 @@ class AgreementWorkflow
             $at = $this->clock->now()->utc();
             $locked->forceFill(['status' => 'terminated', 'ends_on' => $end, 'terminated_at' => $at])->save();
             $this->cancellations->closeOnTermination($locked, $at);
+            // The end moves what the agreement's drafts charge: the cycle it
+            // falls in is prorated, the final reconciliation collects the
+            // deferred work, and a draft written while it was open sells a
+            // cycle after it. They are rebuilt in this request, once the end
+            // has committed, under the generators' own locks (#699).
+            $workspaceId = (int) $locked->workspace_id;
+            $agreementId = (int) $locked->id;
+            DB::afterCommit(fn () => app(ClientInvoicingService::class)->regenerateAgreementDrafts($workspaceId, $agreementId));
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,

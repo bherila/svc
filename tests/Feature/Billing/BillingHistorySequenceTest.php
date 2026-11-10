@@ -14,6 +14,7 @@ use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredBuyDownRequest;
@@ -22,6 +23,7 @@ use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
@@ -65,8 +67,12 @@ use Throwable;
  * the order can legitimately change the overage, so the total is bounded by the
  * retainers sold plus every hour at the full rate.
  *
- * Backdated terminations and successor agreements are left out until #670 and
- * #676 are fixed; add them to the generator when those land.
+ * A backdated termination is one of the steps, once per history: it ends the
+ * agreement at a period close or mid-period, and must rebuild the drafts it
+ * makes stale in the same request (#699), so none issues as it was. Successor
+ * agreements are left out: their handovers are scripted in
+ * BillingHistoryInvariantTest. One known gap is allowed for, narrowly, where
+ * it is cited: #703.
  *
  * A failure prints its seed and steps. Replay one with
  * `--filter 'hourly, monthly, seed 3'`; widen a run with BILLING_HISTORY_SEEDS.
@@ -127,6 +133,9 @@ final class BillingHistorySequenceTest extends TestCase
     private array $behindNewWork = [];
 
     private int $logsLeft = 3;
+
+    /** the backdated end, once the history has terminated the agreement */
+    private ?string $endsOn = null;
 
     /** @var list<string> */
     private array $trace = [];
@@ -194,6 +203,9 @@ final class BillingHistorySequenceTest extends TestCase
         if ($this->periods !== []) {
             $operations['generate the next period'] = fn (): string => $this->generateNextPeriod();
         }
+        if ($this->endsOn === null) {
+            $operations['terminate, backdated'] = fn (): string => $this->terminateBackdated();
+        }
 
         $entries = $this->entries();
         $open = $entries->filter(fn (ClientTimeEntry $entry): bool => $entry->client_disputed_at === null && $entry->client_dispute_settlement !== DisputeSettlement::WrittenOff->value);
@@ -222,7 +234,7 @@ final class BillingHistorySequenceTest extends TestCase
                 $operations['regenerate'] = fn (): string => $this->regenerate($this->pick($generated));
             }
         }
-        if (ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)->awaitingDeferredBilling()->exists()) {
+        if ($this->deferredWithinTheSegment()->exists()) {
             $operations['buy down'] = fn (): string => $this->buyDown(null);
             if ($drafts->isNotEmpty()) {
                 $operations['buy down onto a draft'] = fn (): string => $this->buyDown($this->pick($drafts));
@@ -288,6 +300,25 @@ final class BillingHistorySequenceTest extends TestCase
         $this->assertGeneratedDraftTakesNoHeldWork($invoice, "generating {$period}");
 
         return "{$period} as #{$invoice->id}, total {$invoice->total_amount}";
+    }
+
+    /**
+     * End the agreement in the past, at a period close or inside a period.
+     * The cycle it falls in is prorated and the final reconciliation now
+     * collects the deferred work, so the drafts already written are stale:
+     * the termination rebuilds them in the request, and the stale-draft
+     * invariant asks every one of them after this step.
+     */
+    private function terminateBackdated(): string
+    {
+        $ends = ($this->agreement->billing_cadence === 'quarterly')
+            ? ['2026-03-31', '2026-05-15', '2026-06-30']
+            : ['2026-03-31', '2026-04-15', '2026-05-31', '2026-06-10'];
+        $end = $ends[$this->random->getInt(0, count($ends) - 1)];
+        app(AgreementWorkflow::class)->terminate($this->agreement->fresh() ?? $this->agreement, $end);
+        $this->endsOn = $end;
+
+        return "on {$end}";
     }
 
     /**
@@ -461,8 +492,7 @@ final class BillingHistorySequenceTest extends TestCase
         $this->generateTheRest();
         $this->issueEverything();
 
-        $waiting = (int) ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
-            ->awaitingDeferredBilling()->sum('minutes');
+        $waiting = (int) $this->deferredWithinTheSegment()->sum('minutes');
         if ($waiting > 0) {
             $billing = app(DeferredBuyDownAction::class);
             $agreement = $this->agreement->fresh() ?? $this->agreement;
@@ -624,8 +654,14 @@ final class BillingHistorySequenceTest extends TestCase
             ->where(fn ($query) => $query->whereNull('client_dispute_settlement')->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
             ->sum('minutes');
         $leftOver = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
-            ->unbilled()->where('is_billable', true)->whereNull('client_disputed_at')->pluck('id')->all();
-        $this->assertSame([], $leftOver, 'Closed out: these hours were never billed.');
+            ->unbilled()->where('is_billable', true)->whereNull('client_disputed_at')->get();
+        // #703: deferred work ends with the agreement's segment (#655), so an
+        // hour deferred after a termination waits for a buy-down nothing can
+        // make. Only such rows may be left over; any other is a lost hour.
+        $deferredAfterTheEnd = $leftOver->filter(fn (ClientTimeEntry $entry): bool => $this->endsOn !== null && $entry->is_deferred
+            && $entry->worked_on->toDateString() > $this->endsOn);
+        $this->assertSame([], array_values(array_diff($leftOver->modelKeys(), $deferredAfterTheEnd->modelKeys())), 'Closed out: these hours were never billed, and none of them was deferred after the end.');
+        $minutes -= (int) $deferredAfterTheEnd->sum(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes);
         $this->assertSame([], $this->invoices(InvoiceStatus::Draft->value)->modelKeys(), 'Closed out: these drafts never issued.');
         $hoursAtRate = (int) round($minutes * self::RATE / 60);
         $billed = (int) $this->invoices(InvoiceStatus::Issued->value)->sum(static fn (ClientInvoice $invoice): int => (int) $invoice->total_amount);
@@ -641,6 +677,13 @@ final class BillingHistorySequenceTest extends TestCase
     }
 
     // ---- reads ----
+
+    /** @return EloquentBuilder<ClientTimeEntry> deferred work a buy-down can still take: none after the agreement's end */
+    private function deferredWithinTheSegment(): EloquentBuilder
+    {
+        return ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
+            ->awaitingDeferredBilling()->when($this->endsOn !== null, fn ($query) => $query->whereDate('worked_on', '<=', $this->endsOn));
+    }
 
     private function isRegenerable(ClientInvoice $draft): bool
     {

@@ -39,6 +39,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * Turns time, agreements and retainer balances into invoices.
@@ -432,6 +433,51 @@ final class ClientInvoicingService
     }
 
     /**
+     * Rebuild every generated draft of one agreement from the current history:
+     * what a change to the agreement itself - a termination - leaves stale.
+     *
+     * A termination prorates the cycle it falls in, makes the final
+     * reconciliation collect the deferred work, and leaves a draft written
+     * while the agreement was open selling a cycle after the end (#670, #699).
+     * Each draft is rebuilt by {@see self::regenerateDraftInvoice()}, in the
+     * generator's own transaction and locks: earliest period first, so each
+     * later charge is sized against the rebuilt one, and an interim draft
+     * before its period's cadence draft, which releases the interim's claims.
+     * Nothing new is opened. A refused rebuild is reported and left for issue
+     * to refuse.
+     *
+     * The caller runs this after its own transaction commits: the agreement
+     * lock it holds ranks first, but whatever it locked after that may rank
+     * after the invoices and time these rebuilds lock.
+     */
+    public function regenerateAgreementDrafts(int $workspaceId, int $agreementId): void
+    {
+        $drafts = ClientInvoice::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('client_agreement_id', $agreementId)
+            ->where('status', InvoiceStatus::Draft->value)
+            ->where(fn (Builder $kind): Builder => $kind->whereNull('invoice_kind')
+                ->orWhereIn('invoice_kind', [InvoiceKind::CadencePeriod->value, InvoiceKind::InterimOverage->value]))
+            ->get()
+            ->sortBy(fn (ClientInvoice $draft): array => [
+                $draft->service_period_start?->toDateString() ?? '',
+                $draft->invoiceKindValue() === InvoiceKind::InterimOverage->value ? 0 : 1,
+                $draft->id,
+            ]);
+
+        foreach ($drafts as $draft) {
+            try {
+                $current = $draft->fresh();
+                if ($current instanceof ClientInvoice && $current->status === InvoiceStatus::Draft->value) {
+                    $this->regenerateDraftInvoice($current);
+                }
+            } catch (HttpExceptionInterface|DomainException|RuntimeException $refused) {
+                report($refused);
+            }
+        }
+    }
+
+    /**
      * Prove that the ordinary generator lookup resolves to the supplied draft.
      *
      * The schema intentionally has no unique agreement/kind/cycle key. A
@@ -809,7 +855,7 @@ final class ClientInvoicingService
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
             $this->consultantTime->release($company, $agreement);
-            $this->lateWork->deferFromThePool($company, $agreement, $periodStart);
+            $this->lateWork->deferFromThePool($company, $agreement, $periodStart, ...$this->segmentHandovers($company, $agreement));
             $this->handovers->forAgreement($agreement)?->assertClear(
                 $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
             );
@@ -1264,7 +1310,7 @@ final class ClientInvoicingService
             $this->consultantTime->release($company, $agreement);
             // Moving work out of a pool changes what a ledger the bulk walk
             // measured before reaching this cycle would say.
-            if ($this->lateWork->deferFromThePool($company, $agreement, $periodStart) > 0) {
+            if ($this->lateWork->deferFromThePool($company, $agreement, $periodStart, ...$this->segmentHandovers($company, $agreement)) > 0) {
                 $ledger = null;
                 $immediateLedger = null;
             }
@@ -1990,6 +2036,13 @@ final class ClientInvoicingService
      * only on days both agreements bill: each bills from the later of the
      * period's start and the day it took over from a predecessor, through the
      * earlier of the period's end and the day before a successor took over.
+     *
+     * The period being generated is generation's own, so one lying wholly
+     * after this agreement's handover - a draft written while it was open and
+     * refreshed after a backdated termination (#670) - bills no ordinary work.
+     * Another agreement's invoice lying there is only taken to bill none when
+     * it carries nothing at all (#699); anything else there is history nobody
+     * can explain and still refuses.
      */
     private function workOverlaps(ClientCompany $company, ClientAgreement $agreement, Carbon $periodStart, Carbon $periodEnd, ClientInvoice $candidate): bool
     {
@@ -2003,28 +2056,61 @@ final class ClientInvoicingService
             return true;
         }
         $workspace = (int) $company->workspace_id;
-        [$ownStart, $ownEnd] = $this->billedWork($workspace, $agreement, CarbonImmutable::instance($periodStart), CarbonImmutable::instance($periodEnd));
-        [$otherStart, $otherEnd] = $this->billedWork($workspace, $other, CarbonImmutable::instance($candidate->service_period_start), CarbonImmutable::instance($candidate->service_period_end));
+        $own = $this->billedWork($workspace, $agreement, CarbonImmutable::instance($periodStart), CarbonImmutable::instance($periodEnd), fn (): bool => true);
+        $theirs = $this->billedWork(
+            $workspace,
+            $other,
+            CarbonImmutable::instance($candidate->service_period_start),
+            CarbonImmutable::instance($candidate->service_period_end),
+            fn (): bool => (int) $candidate->total_amount === 0 && ! $candidate->lines()->exists(),
+        );
+        if ($own === null || $theirs === null) {
+            return false;
+        }
 
-        return $otherStart->lte($ownEnd) && $otherEnd->gte($ownStart);
+        return $theirs[0]->lte($own[1]) && $theirs[1]->gte($own[0]);
     }
 
     /**
      * The days of a period this agreement bills ordinary work for: the period
-     * clipped to its handovers. A period lying wholly outside them - an invoice
-     * dated after its agreement handed over, which no generation writes - keeps
-     * its dates, so history nobody can explain still refuses.
+     * clipped to its handovers, or null when it bills none there.
      *
-     * @return array{CarbonImmutable, CarbonImmutable}
+     * - **Its opening period, before it took over.** An agreement's first
+     *   cycle reconciles the work period before it, to sell its first retainer
+     *   in advance. A successor bills no ordinary work from before its start,
+     *   so that period - the outgoing agreement's last, when the handover
+     *   falls on a period close - holds only the successor's advance sale
+     *   (#699). Measured by its dates, it refused the successor's first cycle,
+     *   which was then never sold.
+     * - **After it handed over, when `$billsNothingAfterHandover` says so.**
+     *
+     * Any other period lying wholly outside the handovers keeps its dates, so
+     * history nobody can explain still refuses.
+     *
+     * @param  callable(): bool  $billsNothingAfterHandover  asked only of a period lying wholly after the handover
+     * @return array{CarbonImmutable, CarbonImmutable}|null
      */
-    private function billedWork(int $workspace, ClientAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end): array
+    private function billedWork(int $workspace, ClientAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end, callable $billsNothingAfterHandover): ?array
     {
         $tookOver = $this->deferredBacklogReader->tookOverOn($workspace, $agreement);
         $handedOver = $this->deferredBacklogReader->handedOverAfter($workspace, $agreement);
         $from = $tookOver instanceof CarbonImmutable && $tookOver->gt($start) ? $tookOver : $start->startOfDay();
         $through = $handedOver instanceof CarbonImmutable && $handedOver->lt($end) ? $handedOver : $end->startOfDay();
+        if ($from->lte($through)) {
+            return [$from, $through];
+        }
+        if ($tookOver instanceof CarbonImmutable && $end->startOfDay()->lt($tookOver)) {
+            $opening = $this->billingCycleResolver->cycleContaining($agreement, $this->agreementStart($agreement));
+            $sells = $end->startOfDay()->addDay();
+            if ($sells->gte($opening->start->copy()->startOfDay()) && $sells->lte($opening->end->copy()->startOfDay())) {
+                return null;
+            }
+        }
+        if ($handedOver instanceof CarbonImmutable && $start->startOfDay()->gt($handedOver) && $billsNothingAfterHandover()) {
+            return null;
+        }
 
-        return $from->lte($through) ? [$from, $through] : [$start->startOfDay(), $end->startOfDay()];
+        return [$start->startOfDay(), $end->startOfDay()];
     }
 
     private function assertNoOverlappingInvoice(
@@ -2239,6 +2325,22 @@ final class ClientInvoicingService
     }
 
     /**
+     * The day this agreement took over from a predecessor and the last day
+     * before a successor took over from it, either null when there is none.
+     *
+     * @return array{?CarbonImmutable, ?CarbonImmutable}
+     */
+    private function segmentHandovers(ClientCompany $company, ClientAgreement $agreement): array
+    {
+        $workspace = (int) $company->workspace_id;
+
+        return [
+            $this->deferredBacklogReader->tookOverOn($workspace, $agreement),
+            $this->deferredBacklogReader->handedOverAfter($workspace, $agreement),
+        ];
+    }
+
+    /**
      * Work this agreement's retainer may draw on, inside a period - and inside
      * its handovers: from a successor's start the work is the successor's to
      * bill at its own terms, however far the period being reconciled runs, and
@@ -2279,7 +2381,7 @@ final class ClientInvoicingService
         // draft. A retainer's was set aside before the ledger was read.
         $late = $this->lateWork->drawsOnARetainer($agreement)
             ? []
-            : $this->lateWork->ids(clone $work, $agreement, $from);
+            : $this->lateWork->ids($this->lateWork->withinSegment(clone $work, $tookOver, $handedOver), $agreement, $from);
 
         return $work
             ->where(fn (Builder $window): Builder => $window
