@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { chromium, expect } from '@playwright/test';
 import { uiConsistencyRisks } from '../resources/js/test/ui-consistency.ts';
+import { axeScan } from './layout/a11y.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -2016,7 +2017,7 @@ try {
                 );
             }
 
-            const axe = await new AxeBuilder({ page })
+            const axe = await axeScan(page)
                 .include('[role="dialog"]')
                 .analyze();
             const serious = axe.violations
@@ -2466,7 +2467,7 @@ try {
         // risk (a text button without an icon) is reported without failing.
         const uiRisks = await uiConsistencyRisks(page);
         const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
-        const axeResult = await new AxeBuilder({ page }).analyze();
+        const axeResult = await axeScan(page).analyze();
         const axeFindings = axeResult.violations.map(
             (violation) =>
                 `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
