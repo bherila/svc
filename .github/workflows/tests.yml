@@ -625,6 +625,11 @@ jobs:
 
       # No lint or static analysis here; `checks` runs those and they say
       # nothing about the engine. This job exists for the database alone.
+      # Laravel loads database/schema/mariadb-schema.sql with this client, which
+      # is far quicker per worker than replaying every migration.
+      - name: Install the MariaDB client
+        run: command -v mariadb || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mariadb-client-core; }
+
       - name: Run the MariaDB shard
         env:
           SHARD: ${{ matrix.shard }}
