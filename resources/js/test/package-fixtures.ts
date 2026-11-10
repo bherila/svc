@@ -416,6 +416,7 @@ export function moveProps(
             ],
             effective_on: '2027-01-01',
             subscribers: [moveCandidate()],
+            refused: [],
             ...preview,
         },
         package_version: 'a'.repeat(64),

@@ -28,7 +28,6 @@ import { apiRequest } from '@/lib/api';
 import { formatDay } from '@/lib/datetime';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { formatMoney } from '@/lib/money';
-import { migrationRefusalLabel } from '@/lib/packages';
 import { cn } from '@/lib/utils';
 import type { PackageMoveCandidate, PackageMoveProps } from '@/types/packages';
 
@@ -36,14 +35,6 @@ const MESSAGE_MAX = 2000;
 
 const STALE =
     'The package changed since you opened this page. Reload it, check the subscribers and the date again, then schedule.';
-
-/** Whether a subscriber is refused by the planner (cannot move to this version on any date). */
-function isRefused(subscriber: PackageMoveCandidate): boolean {
-    return (
-        subscriber.refusal !== null &&
-        subscriber.refusal.code !== 'package_migration_date_not_offered'
-    );
-}
 
 /** What happens to one subscriber on the chosen date, in words. */
 function effect(subscriber: PackageMoveCandidate, date: string | null): string {
@@ -57,29 +48,23 @@ function effect(subscriber: PackageMoveCandidate, date: string | null): string {
 /**
  * Moving a version's subscribers to the package's published version (MIG-1,
  * MIG-2, MIG-4): what changes, when, and who. Every date offered and every
- * subscriber's refusal and autopay flag are the server's; another date asks the
- * server again. Scheduling is confirmed, then posts to the agent endpoint the
- * page was given, and each client is emailed.
+ * subscriber's refusal, its label and autopay flag are the server's, as is the
+ * split between those some date suits and those refused on every one; another
+ * date asks the server again. Scheduling is confirmed, then posts to the agent
+ * endpoint the page was given, and each client is emailed.
  */
 export default function PackageMove({
     preview,
     package_version: packageVersion,
     urls,
 }: PackageMoveProps) {
-    const candidates = useMemo(
-        () => preview.subscribers.filter((s) => !isRefused(s)),
-        [preview.subscribers],
-    );
-    const refused = useMemo(
-        () => preview.subscribers.filter(isRefused),
-        [preview.subscribers],
-    );
+    const refused = preview.refused;
     const eligible = useMemo(
         () =>
-            candidates
+            preview.subscribers
                 .filter((subscriber) => subscriber.refusal === null)
                 .map((subscriber) => subscriber.enrollment_id),
-        [candidates],
+        [preview.subscribers],
     );
     const [chosen, setChosen] = useState<string[]>(eligible);
     const [message, setMessage] = useState('');
@@ -87,7 +72,7 @@ export default function PackageMove({
     const selected = chosen.filter((id) => eligible.includes(id));
     const from = preview.from_version.number;
     const to = preview.to_version?.number ?? null;
-    const total = candidates.length;
+    const total = preview.subscribers.length;
     const items = preview.effective_dates.map((option) => ({
         value: option.date,
         label: `${formatDay(option.date)} · suits ${option.subscribers} of ${total}`,
@@ -270,14 +255,14 @@ export default function PackageMove({
                                 <CardTitle>Subscribers · {total}</CardTitle>
                             </CardHeader>
                             <CardContent className="grid grid-cols-1 gap-3">
-                                {preview.subscribers.length === 0 ? (
+                                {total === 0 && refused.length === 0 ? (
                                     <p className="text-sm text-muted-foreground">
                                         No active service is on v{from}.
                                     </p>
                                 ) : total === 0 ? (
                                     <p className="text-sm text-muted-foreground">
-                                        No active service on v{from} can be moved
-                                        to this version.
+                                        No active service on v{from} can be
+                                        moved to this version.
                                     </p>
                                 ) : (
                                     <div className="min-w-0 overflow-x-auto">
@@ -302,7 +287,7 @@ export default function PackageMove({
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {candidates.map(
+                                                {preview.subscribers.map(
                                                     (subscriber) => {
                                                         const id = `move-${subscriber.enrollment_id}`;
                                                         const can =
@@ -428,16 +413,17 @@ export default function PackageMove({
                         </Card>
 
                         {refused.length > 0 && (
-                            <Card aria-label="Refused subscribers">
+                            <Card aria-label="Cannot move">
                                 <CardHeader>
                                     <CardTitle>
-                                        Refused subscribers · {refused.length}
+                                        Cannot move · {refused.length}
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent className="grid grid-cols-1 gap-3">
-                                    <p className="text-sm text-muted-foreground">
-                                        These subscribers cannot be moved to this
-                                        version.
+                                    <p className="text-sm wrap-anywhere text-muted-foreground">
+                                        No date on offer suits these
+                                        subscribers, so they keep their terms
+                                        and count towards no date.
                                     </p>
                                     <div className="min-w-0 overflow-x-auto">
                                         <Table>
@@ -447,9 +433,8 @@ export default function PackageMove({
                                                         Client
                                                     </TableHead>
                                                     <TableHead>Since</TableHead>
-                                                    <TableHead>Reason</TableHead>
                                                     <TableHead className="min-w-56">
-                                                        Detail
+                                                        Reason
                                                     </TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -460,10 +445,10 @@ export default function PackageMove({
                                                             subscriber.enrollment_id
                                                         }
                                                     >
-                                                        <TableCell className="wrap-anywhere whitespace-normal font-medium">
+                                                        <TableCell className="wrap-anywhere whitespace-normal">
                                                             {
-                                                                subscriber.client
-                                                                    .name
+                                                                subscriber
+                                                                    .client.name
                                                             }
                                                         </TableCell>
                                                         <TableCell>
@@ -473,20 +458,23 @@ export default function PackageMove({
                                                                     .starts_on,
                                                             )}
                                                         </TableCell>
-                                                        <TableCell>
-                                                            <Badge variant="outline">
-                                                                {migrationRefusalLabel(
+                                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal">
+                                                            <span className="flex flex-wrap gap-1">
+                                                                <Badge variant="outline">
+                                                                    {
+                                                                        subscriber
+                                                                            .refusal
+                                                                            .label
+                                                                    }
+                                                                </Badge>
+                                                            </span>
+                                                            <span className="mt-1 block text-muted-foreground">
+                                                                {
                                                                     subscriber
                                                                         .refusal
-                                                                        ?.code,
-                                                                )}
-                                                            </Badge>
-                                                        </TableCell>
-                                                        <TableCell className="max-w-0 wrap-anywhere whitespace-normal text-muted-foreground">
-                                                            {
-                                                                subscriber.refusal
-                                                                    ?.message
-                                                            }
+                                                                        .message
+                                                                }
+                                                            </span>
                                                         </TableCell>
                                                     </TableRow>
                                                 ))}

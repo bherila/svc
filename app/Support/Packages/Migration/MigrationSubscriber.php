@@ -41,6 +41,33 @@ final readonly class MigrationSubscriber
         public array $scheduleItems = [],
     ) {}
 
+    /**
+     * The offered dates it can move on to a version billing on `$toCadence`,
+     * ascending: those {@see self::refusal()} accepts. Empty when it is
+     * refused on every one - the one place the preview's partition, its
+     * per-date counts and its suggested date all read.
+     *
+     * @return list<CarbonImmutable>
+     */
+    public function movableDates(ChargeCadence $toCadence): array
+    {
+        return array_values(array_filter(
+            $this->dates->offered ?? [],
+            fn (CarbonImmutable $day): bool => $this->refusal($day, $toCadence) === null,
+        ));
+    }
+
+    /**
+     * Why it can move on none of its offered dates, or null when one suits
+     * it. The earliest date is the first offered, so the refusal without a
+     * date is the earliest's: what holds it back from the first move it could
+     * otherwise take.
+     */
+    public function refusalOnEveryDate(ChargeCadence $toCadence): ?MigrationRefusal
+    {
+        return $this->movableDates($toCadence) === [] ? $this->refusal(null, $toCadence) : null;
+    }
+
     /** Why it cannot move on `$chosen` to a version billing on `$toCadence`, or null. */
     public function refusal(?CarbonInterface $chosen, ChargeCadence $toCadence): ?MigrationRefusal
     {
