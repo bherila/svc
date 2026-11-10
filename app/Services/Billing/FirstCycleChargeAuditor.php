@@ -11,36 +11,50 @@ use App\Support\Billing\BillingCadence;
 use App\Support\Billing\FirstCycleChargeFinding;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Lists the agreements whose first billing period the engine charged a
- * recurring item twice in (#685), and whether that invoice went out.
+ * Lists the agreements whose first periods the engine charged a recurring
+ * item an extra time in (#685, #695), and whether that invoice went out.
  *
  * A quarterly, semi-annual or annual agreement started on a day other than
- * the 1st, with an item on that cadence and no anchor of its own
- * ({@see RecurringItemBiller::followsBillingCycles()}): until #685 the item
- * was charged on its start date and again on the 1st of its start month a
- * period later, both inside the first period anchored on the start. The
- * engine now charges such an item once per period, on the day the period
- * starts, so every period not yet invoiced - a regenerated draft included -
- * is billed once. What is already issued stays as issued: no invoice is
- * rewritten, and nothing here writes anything. Repaying an overcharge (a
- * reopen and regeneration while unpaid, or a credit) is the owner's
- * decision, and the listing is what they decide from.
+ * the 1st, with a recurring item and no anchor of its own, on its cadence or
+ * another ({@see RecurringItemBiller::followsBillingCycles()}): until #685 and
+ * #695 the item was charged on its start date and again on the 1st of its
+ * start month a period of its own later, both inside its first period - a
+ * quarterly item in a quarter from 9 January on 9 January and 1 April, a
+ * monthly one four times in that quarter, an annual one on 9 January and
+ * 1 January. The engine now places such an item on the agreement's periods,
+ * so every period not yet invoiced - a regenerated draft included - charges
+ * it as often as its cadence says. What is already issued stays as issued:
+ * no invoice is rewritten, and nothing here writes anything. Repaying an
+ * overcharge (a reopen and regeneration while unpaid, or a credit) is the
+ * owner's decision, and the listing is what they decide from.
+ *
+ * The extra charge always falls inside the item's first period of its own
+ * cadence, so the invoices read are those of the agreement's periods that
+ * span the longest such first period, each against the charges the engine
+ * now places in it ({@see FirstCycleChargeFinding}).
  *
  * Every agreement of that shape is listed, a package's or not: a proposal's
- * item on its agreement's cadence had the same rule. Bounded: agreements in
- * batches, each batch's items, first invoices, their lines, and the public
- * ids that name them read in one query each, every one by the rows' own
- * workspace. Unscoped is the operator's reading; a tenant-facing caller
- * passes its workspace.
+ * item had the same rule. Bounded: agreements in batches, each batch's
+ * items, the invoices of its first periods, their lines, and the public ids
+ * that name them read in one query each, every one by the rows' own
+ * workspace; what the engine places is then worked out from those rows,
+ * without a query. Unscoped is the operator's reading; a tenant-facing
+ * caller passes its workspace.
  */
 final class FirstCycleChargeAuditor
 {
     private const int BATCH = 200;
+
+    public function __construct(
+        private readonly BillingCycleResolver $cycles = new BillingCycleResolver,
+        private readonly RecurringItemBiller $biller = new RecurringItemBiller,
+    ) {}
 
     /** @return list<FirstCycleChargeFinding> by agreement id */
     public function findings(?Workspace $workspace = null): array
@@ -75,10 +89,14 @@ final class FirstCycleChargeAuditor
 
         // Each item only under its own agreement's workspace.
         $items = [];
-        foreach (ClientAgreementRecurringItem::query()->whereIn('workspace_id', $workspaceIds)->whereIn('client_agreement_id', $agreements->keys()->all())->get() as $item) {
+        $placed = [];
+        foreach (ClientAgreementRecurringItem::query()->whereIn('workspace_id', $workspaceIds)->whereIn('client_agreement_id', $agreements->keys()->all())->orderBy('id')->get() as $item) {
             $agreement = $agreements->get($item->client_agreement_id);
             if ($agreement instanceof ClientAgreement && (int) $item->workspace_id === (int) $agreement->workspace_id && RecurringItemBiller::followsBillingCycles($agreement, $item)) {
                 $items[$agreement->id][] = $item->id;
+                // Placed as if still active: a charge made before it was
+                // deactivated was due.
+                $placed[$agreement->id][] = (clone $item)->forceFill(['is_active' => true]);
             }
         }
         // Filtered rather than `only()`, which re-indexes an Eloquent collection.
@@ -87,39 +105,63 @@ final class FirstCycleChargeAuditor
             return [];
         }
 
-        // The first period starts on the agreement's start, so its invoice
-        // names that day as its cycle start. The earliest live (non-void) one,
-        // as the engine itself looks it up.
+        // The agreement's periods spanning its items' longest first period of
+        // their own: one for an item on the agreement's cadence or a shorter
+        // one, a year of them for an annual licence in a quarterly service.
+        $periods = [];
+        foreach ($agreements as $agreement) {
+            $agreement->setRelation('recurringItems', new Collection($placed[$agreement->id]));
+            $periodMonths = $agreement->effectiveBillingCadence()->monthsInCycle();
+            $months = max($periodMonths, ...array_map(static fn (ClientAgreementRecurringItem $item): int => $item->charge_cadence?->monthsInPeriod() ?? 0, $placed[$agreement->id]));
+            $count = intdiv($months, $periodMonths);
+            // A month past the span, so the last period is never cut short.
+            foreach ($this->cycles->cyclesForAgreement($agreement, Carbon::instance($agreement->starts_on)->addMonths($months + 1)) as $cycle) {
+                if (count($periods[$agreement->id] ?? []) === $count) {
+                    break;
+                }
+                $periods[$agreement->id][$cycle->start->toDateString()] = $cycle;
+            }
+        }
+
+        // Each period's invoice names that period's first day as its cycle
+        // start. The earliest live (non-void) one, as the engine itself looks
+        // it up.
         $invoices = [];
         ClientInvoice::query()->whereIn('workspace_id', $workspaceIds)->whereIn('client_agreement_id', $agreements->keys()->all())
             ->where(fn (Builder $kind): Builder => $kind->whereNull('invoice_kind')->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
             ->whereIn('status', InvoiceStatus::live())
-            ->where(function (Builder $first) use ($agreements): void {
+            ->where(function (Builder $first) use ($agreements, $periods): void {
                 foreach ($agreements as $agreement) {
-                    $first->orWhere(fn (Builder $one): Builder => $one->where('client_agreement_id', $agreement->id)->whereDate('cycle_start', $agreement->starts_on->toDateString()));
+                    $first->orWhere(fn (Builder $one): Builder => $one->where('client_agreement_id', $agreement->id)->where(function (Builder $starts) use ($agreement, $periods): void {
+                        foreach (array_keys($periods[$agreement->id]) as $periodStart) {
+                            $starts->orWhereDate('cycle_start', $periodStart);
+                        }
+                    }));
                 }
             })
             ->orderBy('id')->get()
             ->each(function (ClientInvoice $invoice) use ($agreements, &$invoices): void {
                 $agreement = $agreements->get($invoice->client_agreement_id);
                 if ($agreement instanceof ClientAgreement && (int) $invoice->workspace_id === (int) $agreement->workspace_id && (int) $invoice->client_company_id === (int) $agreement->client_company_id) {
-                    $invoices[$agreement->id] ??= $invoice;
+                    $invoices[$agreement->id][(string) $invoice->cycle_start?->toDateString()] ??= $invoice;
                 }
             });
 
         $lines = [];
         if ($invoices !== []) {
             $agreementOf = [];
-            foreach ($invoices as $agreementId => $invoice) {
-                $agreementOf[$invoice->id] = $agreementId;
+            foreach ($invoices as $agreementId => $byPeriod) {
+                foreach ($byPeriod as $invoice) {
+                    $agreementOf[$invoice->id] = $agreementId;
+                }
             }
             $lineRows = ClientInvoiceLine::query()->whereIn('workspace_id', $workspaceIds)->whereIn('client_invoice_id', array_keys($agreementOf))
                 ->whereIn('client_agreement_recurring_item_id', array_merge(...array_values($items)))
                 ->get(['id', 'workspace_id', 'client_invoice_id', 'client_agreement_recurring_item_id', 'line_date', 'total_amount']);
             foreach ($lineRows as $line) {
                 $agreementId = $agreementOf[$line->client_invoice_id];
-                if ((int) $line->workspace_id === (int) $invoices[$agreementId]->workspace_id && in_array((int) $line->client_agreement_recurring_item_id, $items[$agreementId], true)) {
-                    $lines[$agreementId][] = ['item' => (int) $line->client_agreement_recurring_item_id, 'line_date' => (string) $line->line_date?->toDateString(), 'id' => $line->id, 'total' => (int) $line->total_amount];
+                if ((int) $line->workspace_id === (int) $agreements->get($agreementId)?->workspace_id && in_array((int) $line->client_agreement_recurring_item_id, $items[$agreementId], true)) {
+                    $lines[$line->client_invoice_id][] = ['item' => (int) $line->client_agreement_recurring_item_id, 'line_date' => (string) $line->line_date?->toDateString(), 'id' => $line->id, 'total' => (int) $line->total_amount];
                 }
             }
         }
@@ -143,7 +185,18 @@ final class FirstCycleChargeAuditor
 
         $findings = [];
         foreach ($agreements as $agreement) {
-            $invoice = $invoices[$agreement->id] ?? null;
+            $read = [];
+            foreach ($periods[$agreement->id] as $periodStart => $cycle) {
+                $invoice = $invoices[$agreement->id][$periodStart] ?? null;
+                if ($invoice === null) {
+                    continue;
+                }
+                $expected = [];
+                foreach ($this->biller->linesForCycle($agreement, $cycle->start, $cycle->end) as $charge) {
+                    $expected[$charge['item']->id] = ($expected[$charge['item']->id] ?? 0) + 1;
+                }
+                $read[] = ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency, 'expected' => $expected, 'lines' => $lines[$invoice->id] ?? []];
+            }
             $findings[] = FirstCycleChargeFinding::classify(
                 [
                     'workspace' => $workspaces[$agreement->workspace_id] ?? 'missing',
@@ -154,8 +207,7 @@ final class FirstCycleChargeAuditor
                     'package' => isset($packaged[$agreement->workspace_id][$agreement->id]),
                     'items' => count($items[$agreement->id]),
                 ],
-                $invoice === null ? null : ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency],
-                $lines[$agreement->id] ?? [],
+                $read,
             );
         }
 

@@ -2,23 +2,15 @@
 
 namespace Tests\Feature\Billing;
 
-use App\Models\ClientAgreement;
-use App\Models\ClientCompany;
-use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
-use App\Models\User;
-use App\Services\Billing\BillingCycleResolver;
-use App\Services\Packages\PackageEnrollmentWorkflow;
-use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
-use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BuildsServicePackages;
+use Tests\Concerns\SignsUpThroughPackages;
 use Tests\Concerns\WalksBillingHistories;
 use Tests\Support\Requirement;
 use Tests\TestCase;
@@ -28,12 +20,14 @@ use Tests\TestCase;
  * invariants ({@see BillingHistoryInvariantTest}) beside the moved-and-never-
  * moved twins ({@see BillingHistoryMoveTwinTest}), in a class of its own: its
  * 72 worlds each walk a service through three of its billing periods, a few
- * years for an annual one, and ParaTest schedules by class.
+ * years for an annual one, and ParaTest schedules by class. Components on
+ * another cadence than the service's are {@see BillingHistoryOffCadenceSignupTest}'s.
  */
 final class BillingHistorySignupTest extends TestCase
 {
     use BuildsServicePackages;
     use RefreshDatabase;
+    use SignsUpThroughPackages;
     use WalksBillingHistories;
 
     /** What the base price of every world sells for one period, in cents: the package's retainer. */
@@ -68,8 +62,6 @@ final class BillingHistorySignupTest extends TestCase
     #[Requirement('ACC-3', 'INV-1', 'INV-2')]
     public function test_a_sign_up_bills_every_period_once_at_the_terms_price(string $cadence, int $day, string $components): void
     {
-        config(['svc.service_packages.enabled' => true]);
-        Mail::fake();
         $amounts = ['monthly' => 4500, 'quarterly' => 12000, 'semi_annual' => 24000, 'annual' => 48000];
         $recurring = match ($components) {
             'no component' => [],
@@ -88,39 +80,13 @@ final class BillingHistorySignupTest extends TestCase
                 ...($setupFee > 0 ? [['kind' => 'setup_fee', 'description' => 'Synthetic setup', 'amount' => $setupFee]] : []),
             ],
         ];
-        if ($terms['charge_setup_fee_at_signup'] || $terms['charge_first_period']) {
-            $this->connectStripe();
-        }
-        $start = CarbonImmutable::parse(sprintf('2026-01-%02d 10:00:00', $day), 'UTC');
-        $this->travelTo($start);
-        [$workspace, $owner] = $this->packageWorkspace('Synthetic sign-up studio');
-        $workspace->forceFill(['timezone' => 'UTC'])->save();
-        $packages = app(ServicePackageWorkflow::class);
-        $package = $packages->publish($owner, $workspace, $packages->create($owner, $workspace, $this->hostingPackageInput(['link_name' => 'synthetic-signup', ...$terms])));
-        $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic sign-up client', 'slug' => 'synthetic-signup-client']);
-        $contact = User::factory()->create();
-        ClientCompanyMembership::query()->create(['client_company_id' => $company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
-        $enrollments = app(PackageEnrollmentWorkflow::class);
-        $enrollment = $enrollments->accept($contact, $company, $offer = $enrollments->addFromPortal($contact, $company, $package), $this->signatureFor($offer, 'Synthetic Signer'));
-        $this->assertSame('active', $enrollment->refresh()->status);
-        $agreement = ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->sole();
-
+        [$workspace, $company, $agreement, $start] = $this->signUpOn($day, $terms);
         // The base price's own periods, as the engine lays them out.
-        $periods = [];
-        foreach (app(BillingCycleResolver::class)->cyclesForAgreement($agreement, Carbon::parse($start->toDateString())->addYears(4)) as $cycle) {
-            $periods[] = [$cycle->start->toDateString(), $cycle->end->toDateString()];
-            if (count($periods) === self::PERIODS) {
-                break;
-            }
-        }
-        $this->assertSame($start->toDateString(), $periods[0][0]);
-        foreach ($periods as [$periodStart]) {
-            $this->tickAndIssue($company, $workspace, CarbonImmutable::parse($periodStart.' 12:00:00', 'UTC'), null);
-        }
+        $periods = $this->walkPeriods($workspace, $company, $agreement, $start, self::PERIODS);
 
         $invoices = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)
             ->where('status', '!=', InvoiceStatus::Void->value)->orderBy('id')->get();
-        $cadenceInvoices = $invoices->filter(fn (ClientInvoice $invoice): bool => $invoice->invoice_kind === InvoiceKind::CadencePeriod->value)->sortBy(fn (ClientInvoice $invoice): string => (string) $invoice->cycle_start?->toDateString())->values();
+        $cadenceInvoices = $this->cadenceInvoices($workspace, $company);
         // A monthly invoice is dated, and names its cycle from, the 1st of the month it sells.
         $sold = array_map(static fn (array $period): array => [$cadence === 'monthly' ? Carbon::parse($period[0])->startOfMonth()->toDateString() : $period[0], $period[1]], $periods);
         $issued = $cadenceInvoices->reject(fn (ClientInvoice $invoice): bool => $invoice->status === InvoiceStatus::Draft->value)->values();

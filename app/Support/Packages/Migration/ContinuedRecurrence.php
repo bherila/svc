@@ -22,8 +22,8 @@ use Carbon\CarbonInterface;
  * before, so the successor's periods continue the old ones exactly: its items
  * follow them too, with no anchor ({@see self::$followsBillingCycles}).
  *
- * Any other item - monthly, or carrying an anchor (an older successor's) - is
- * placed by its anchor day and month, when unset the 1st and the month the
+ * Any other item - on a monthly agreement, or carrying an anchor (an older
+ * successor's) - is placed by its anchor day and month, when unset the 1st and the month the
  * item starts, falling back in the item's own first cycle to a charge on its
  * start date when the anchor has already passed. A successor's items started
  * fresh on the effective date would restart that schedule (Codex P1 on #674),
@@ -34,7 +34,10 @@ use Carbon\CarbonInterface;
  * fallback ever applies.
  *
  * Read from the old agreement's open recurring items on its own cadence
- * (all of them, since a move refuses any off the cycle). Ambiguous - null -
+ * (all of them, since a move refuses any off the cycle: the engine places
+ * those on the periods too since #695, but counts a longer one's periods
+ * from the agreement it is on, so a successor would restart an annual
+ * licence's year). Ambiguous - null -
  * when they do not share one schedule, or one has not started by the
  * effective date. With no such item, the schedule a package item started
  * with the agreement has.

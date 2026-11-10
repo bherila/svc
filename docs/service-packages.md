@@ -913,11 +913,12 @@ Slice 6 (moving subscribers to a new version) settled these:
     which would leave written anchors on the old day, and anchors stop at the
     28th, so no anchor names a period starting on the 29th to the 31st. The
     period grid follows the agreement's start wherever it moves.
-  - **What it changes, and what it does not.** Monthly agreements and monthly
-    items are unchanged - a monthly period is a calendar month whatever the
-    start - and so is any item on another cadence than its agreement's (an
-    annual licence in a quarterly service) and any item carrying an anchor. An
-    agreement started on the 1st is charged on the same dates as before. A
+  - **What it changes, and what it does not.** Monthly agreements are
+    unchanged - a monthly period is a calendar month whatever the start - and
+    so is any item carrying an anchor. A component on another cadence than its
+    package's was left on the anchor rule here and is placed on the periods
+    since #695 (below). An agreement started on the 1st is charged on the same
+    dates as before. A
     proposal's item on its agreement's longer cadence had the same double
     charge and has the same fix. The sign-up estimate (`SignupCharges`), the
     revenue projection and the portal's next-invoice estimate read the same
@@ -945,6 +946,35 @@ Slice 6 (moving subscribers to a new version) settled these:
     billing period over three is invoiced exactly once, at the terms' price,
     each component once on the period's first day. `BillingHistoryMoveTwinTest`
     now also compares the day each recurring charge falls on.
+- **A component on another cadence charges once per period of its own
+  (#695).** A monthly component in a quarterly package started on 9 January
+  was charged 9 January, 1 February, 1 March and 1 April - four times in the
+  quarter 9 January - 8 April - and an annual licence in a quarterly package
+  9 January and again 1 January: #685 left items off their agreement's cadence
+  on the anchor rule. Such a component is now placed on the package's periods
+  too (docs/client-management/billing.md, "Recurring Items"): a shorter one on
+  each period's first day and each of its months after it, never past a
+  month's end (9 January, 9 February, 9 March); a longer one on the first day
+  of each run of periods it spans, counted from the one it starts in
+  (9 January each year). Every charge stays inside the period it is invoiced
+  with. Calendar months with the first one prorated or dropped were rejected:
+  the engine prorates no item, and a dropped month leaves the start unbilled.
+  - **Unchanged:** packages started on the 1st, monthly packages, and items
+    carrying an anchor. Moves are not affected: a move still refuses an
+    off-cycle component (`off_cycle_component`), so `ContinuedRecurrence` only
+    ever continues items on the agreement's cadence.
+  - **Agreements already invoiced:** `svc:billing:audit-first-cycle-charges`
+    covers the shape too. It reads the invoices of the periods that span each
+    item's first period of its own cadence - one period for a shorter
+    component, a year of quarters for an annual licence - and counts as extra
+    any line beyond what the engine now places in that invoice's period.
+  - **Tested** by `BillingHistoryOffCadenceSignupTest`, beside the sign-up
+    property in a class of its own: a monthly component in a quarterly,
+    semi-annual and annual package, a quarterly one in an annual package, and
+    an annual and a semi-annual one in a quarterly package, each beside a
+    component on the package's cadence and started on the 1st, 9th and 31st,
+    is charged once per period of its own in every billing period walked, each
+    charge inside its period, at the terms' price.
 - **Refused classes stay refused (#686).** Each would need a handoff carrying
   state the successor cannot read today, proved by moved and never-moved twin
   histories like `BillingHistoryMoveTwinTest`; none is designed until owners
