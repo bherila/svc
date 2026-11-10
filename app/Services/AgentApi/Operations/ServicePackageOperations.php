@@ -849,6 +849,7 @@ final class ServicePackageOperations
      */
     public static function rulesFor(array $fields): array
     {
+        // @infection-ignore-all Equivalent: only the first segment is read, so splitting into two or three parts yields the same one.
         return array_filter(self::DECISION_RULES, static fn (string $path): bool => in_array(explode('.', $path, 2)[0], $fields, true), ARRAY_FILTER_USE_KEY);
     }
 

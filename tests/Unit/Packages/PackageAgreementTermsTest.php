@@ -5,6 +5,7 @@ namespace Tests\Unit\Packages;
 use App\Services\Packages\PackageAgreementTerms;
 use App\Support\Packages\PackageTerms;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\Requirement;
 
@@ -50,5 +51,61 @@ final class PackageAgreementTermsTest extends TestCase
             'minimum_term_months' => 6,
             'cancellation_mode' => 'self_serve',
         ], PackageAgreementTerms::agreementTerms($terms));
+    }
+
+    /**
+     * A setup fee is skipped on a continuing service, and on a sign-up that
+     * already charged it on the sign-up invoice; otherwise it is billed once
+     * with the first cycle (ACC-3). Recurring components are always kept.
+     *
+     * @return array<string, array{bool, bool, bool}> chargeSetupFeeAtSignup, continuing, setup fee kept
+     */
+    public static function setupFeeCases(): array
+    {
+        return [
+            'sign-up, not charged at sign-up: kept as a one-time item' => [false, false, true],
+            'sign-up, charged at sign-up: skipped' => [true, false, false],
+            'continuing, not charged at sign-up: skipped' => [false, true, false],
+            'continuing, charged at sign-up: skipped' => [true, true, false],
+        ];
+    }
+
+    #[DataProvider('setupFeeCases')]
+    #[Requirement('ACC-3')]
+    public function test_a_setup_fee_is_a_recurring_item_only_when_neither_sign_up_nor_a_move_already_covers_it(bool $atSignup, bool $continuing, bool $kept): void
+    {
+        $terms = $this->termsWithSetupFee($atSignup);
+        $expected = $kept ? ['Onboarding', 'Care'] : ['Care'];
+
+        $this->assertSame($expected, array_column(PackageAgreementTerms::recurringItems($terms, $continuing), 'description'));
+    }
+
+    #[Requirement('ACC-3')]
+    public function test_the_continuing_argument_defaults_to_a_new_sign_up(): void
+    {
+        $items = PackageAgreementTerms::recurringItems($this->termsWithSetupFee(false));
+
+        $this->assertSame(['Onboarding', 'Care'], array_column($items, 'description'));
+        $this->assertSame([
+            'description' => 'Onboarding',
+            'cadence' => 'one_time',
+            'amount' => 5000,
+            'quantity' => '1.000',
+            'is_taxable' => true,
+        ], $items[0]);
+    }
+
+    private function termsWithSetupFee(bool $chargeAtSignup): PackageTerms
+    {
+        return PackageTerms::fromArray([
+            ...PackageTerms::defaults('USD'),
+            'name' => 'Care plan',
+            'charge_setup_fee_at_signup' => $chargeAtSignup,
+            'components' => [
+                // The fee first: skipping it must not stop the walk.
+                ['kind' => 'setup_fee', 'description' => 'Onboarding', 'amount' => 5000, 'is_taxable' => true],
+                ['kind' => 'recurring', 'description' => 'Care', 'cadence' => 'monthly', 'amount' => 10000],
+            ],
+        ]);
     }
 }
