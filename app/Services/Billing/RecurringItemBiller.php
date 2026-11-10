@@ -111,19 +111,16 @@ class RecurringItemBiller
 
         $effectiveStart = $rangeStart->gt($itemStart) ? $rangeStart : $itemStart;
         $effectiveEnd = ($itemEnd !== null && $itemEnd->lt($rangeEnd)) ? $itemEnd : $rangeEnd;
-        $onTheCycles = self::followsBillingCycles($agreement, $item);
+        $months = $item->charge_cadence?->monthsInPeriod();
+        if ($months !== null && self::followsBillingCycles($agreement, $item)) {
+            return $this->billingCycleIncidences($agreement, $months, $effectiveStart, $effectiveEnd, $itemStart);
+        }
 
         return match ($item->charge_cadence) {
             ChargeCadence::Monthly => $this->monthlyIncidences($anchorDay, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Quarterly => $onTheCycles
-                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
-                : $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::SemiAnnual => $onTheCycles
-                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
-                : $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Annual => $onTheCycles
-                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
-                : $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Quarterly => $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::SemiAnnual => $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Annual => $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::OneTime => $this->oneTimeIncidence($itemStart, $effectiveStart, $effectiveEnd),
             // An unrecognised cadence must stop here. Silently billing nothing
             // would look identical to an item that simply had no incidence.
@@ -132,59 +129,90 @@ class RecurringItemBiller
     }
 
     /**
-     * Does this item charge on its agreement's own billing periods (#685)?
+     * Does this item charge on its agreement's own billing periods (#685, #695)?
      *
-     * An item with no anchor of its own, on the quarterly, semi-annual or
-     * annual cadence its agreement bills on - every component of such a
-     * package, and every proposal item on its agreement's cadence. Those
-     * periods are anchored on the agreement's start, so anchoring the item on
-     * the 1st of its start month, with a first charge on its start date, put a
-     * second charge inside the first period whenever the start was not the
-     * 1st: quarterly from 9 January, 9 January and 1 April. Such an item
-     * charges once per period instead, on the day the period starts, exactly
-     * as the agreement's price is sold. From the 1st the two rules give the
-     * same dates.
+     * An item with no anchor of its own, recurring, on a quarterly,
+     * semi-annual or annual agreement - every component of such a package,
+     * and every proposal item on such an agreement, on its agreement's cadence
+     * or another. Those periods are anchored on the agreement's start, so
+     * anchoring the item on the 1st of its start month, with a first charge on
+     * its start date, put an extra charge inside its first period whenever the
+     * start was not the 1st: a quarterly item from 9 January charged 9 January
+     * and 1 April (#685), a monthly one 9 January, 1 February, 1 March and
+     * 1 April (#695). Such an item charges once per period of its own cadence
+     * laid on the agreement's periods instead ({@see billingCycleIncidences()}),
+     * exactly as the agreement's price is sold. From the 1st the two rules
+     * give the same dates.
      *
-     * Not a monthly item, whose periods are calendar months whatever the
-     * agreement's start, nor an item on another cadence than its agreement's
-     * (an annual licence in a quarterly service), nor one carrying an anchor -
-     * a move's successor continuing an older schedule (`ContinuedRecurrence`).
-     * Those keep the anchor rule below.
+     * Not an item on a monthly agreement, whose periods are calendar months
+     * whatever its start, nor a one-time item, nor one carrying an anchor - a
+     * move's successor continuing an older schedule (`ContinuedRecurrence`),
+     * or an item placed on a day by hand. Those keep the anchor rule below.
      */
     public static function followsBillingCycles(ClientAgreement $agreement, ClientAgreementRecurringItem $item): bool
     {
-        $cadence = $agreement->effectiveBillingCadence();
-
         return $item->anchor_day === null
             && $item->anchor_month === null
-            && $cadence !== BillingCadence::Monthly
-            && $item->charge_cadence?->value === $cadence->value;
+            && $agreement->effectiveBillingCadence() !== BillingCadence::Monthly
+            && $item->charge_cadence?->monthsInPeriod() !== null;
     }
 
     /**
-     * One charge per agreement billing period, on the day it starts - or, in a
-     * period the item starts inside, on the item's start - read from the
-     * engine's own period grid ({@see BillingCycleResolver}), so every start
-     * day, the 29th to the 31st included, lands where the price does.
+     * One charge per period of the item's own cadence, each period laid on
+     * the agreement's billing periods - read from the engine's own grid
+     * ({@see BillingCycleResolver}), so every start day, the 29th to the 31st
+     * included, lands where the price does - on the day it starts, or, in the
+     * period the item starts inside, on the item's start.
+     *
+     * - The agreement's cadence: each billing period (#685).
+     * - A shorter one (a monthly item in a quarterly service): each billing
+     *   period divided from its first day, never past a month's end - from
+     *   31 January, 31 January, 28 February and 31 March. Every charge stays
+     *   inside the period it is sold with, and each period holds the same
+     *   number of them.
+     * - A longer one (an annual licence in a quarterly service): whole billing
+     *   periods grouped, counted from the one the item starts in, charged on
+     *   the group's first day.
+     *
+     * The cadences are 1, 3, 6 and 12 months, so one always divides the other.
      *
      * @return Carbon[]
      */
-    private function billingCycleIncidences(ClientAgreement $agreement, Carbon $start, Carbon $end, Carbon $itemStart): array
+    private function billingCycleIncidences(ClientAgreement $agreement, int $itemMonths, Carbon $start, Carbon $end, Carbon $itemStart): array
     {
         $agreementStart = Carbon::instance($agreement->retainerStartsOn())->startOfDay();
-        $from = $start->gt($agreementStart) ? $start->copy() : $agreementStart;
+        $periodMonths = $agreement->effectiveBillingCadence()->monthsInCycle();
+        // The period the item's schedule is counted from: the one it starts
+        // inside, or the agreement's first when it started before it.
+        $origin = $itemStart->gt($agreementStart) ? $itemStart : $agreementStart;
         $incidences = [];
-        if ($from->gt($end)) {
+        if ($origin->gt($end)) {
             return $incidences;
         }
 
-        $cycle = $this->cycles->cycleContaining($agreement, $from);
-        while ($cycle->start->lte($end)) {
-            $date = ($cycle->start->gt($itemStart) ? $cycle->start : $itemStart)->copy()->startOfDay();
-            if ($date->gte($start) && $date->lte($end)) {
-                $incidences[] = $date;
+        // Charges per billing period, and billing periods per charge: one of
+        // the two is 1.
+        $perPeriod = max(1, intdiv($periodMonths, $itemMonths));
+        $periodsPerCharge = max(1, intdiv($itemMonths, $periodMonths));
+        $index = 0;
+        // Walked from the agreement's start, as the grid itself is stepped,
+        // and counted from the period holding the origin.
+        foreach ($this->cycles->cyclesForAgreement($agreement, $end) as $cycle) {
+            if ($cycle->end->lt($origin)) {
+                continue;
             }
-            $cycle = $this->cycles->cycleContaining($agreement, $cycle->end->copy()->addDay());
+            // A longer cadence charges only on a group's first period.
+            $parts = $index % $periodsPerCharge === 0 ? $perPeriod : 0;
+            for ($part = 0; $part < $parts; $part++) {
+                $slotStart = $cycle->start->copy()->addMonthsNoOverflow($part * $itemMonths);
+                $slotEnd = $part + 1 < $parts ? $cycle->start->copy()->addMonthsNoOverflow(($part + 1) * $itemMonths)->subDay() : $cycle->end;
+                $date = ($slotStart->gt($itemStart) ? $slotStart : $itemStart)->copy()->startOfDay();
+                // A part that ended before the item started sells nothing.
+                if ($date->lte($slotEnd) && $date->gte($start) && $date->lte($end)) {
+                    $incidences[] = $date;
+                }
+            }
+            $index++;
         }
 
         return $incidences;
