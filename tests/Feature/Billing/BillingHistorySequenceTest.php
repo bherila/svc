@@ -49,8 +49,7 @@ use Throwable;
  *
  * - **Every minute is accounted for.** Splitting a row never creates or loses time.
  * - **Charged once.** No hour is allocated by two live invoices.
- * - **Written off stays off.** No live invoice carries a written-off hour, but
- *   for a draft's buy-down line (#680), which cannot issue.
+ * - **Written off stays off.** No live invoice carries a written-off hour.
  * - **Held is not billed.** Generating or regenerating never takes a disputed
  *   hour, and a draft that still carries one cannot issue.
  * - **Stale is refused.** A draft regeneration would change cannot issue.
@@ -67,8 +66,7 @@ use Throwable;
  * retainers sold plus every hour at the full rate.
  *
  * Backdated terminations and successor agreements are left out until #670 and
- * #676 are fixed; add them to the generator when those land. Two known defects
- * are allowed for, narrowly, where they are cited: #680 and #681.
+ * #676 are fixed; add them to the generator when those land.
  *
  * A failure prints its seed and steps. Replay one with
  * `--filter 'hourly, monthly, seed 3'`; widen a run with BILLING_HISTORY_SEEDS.
@@ -114,6 +112,9 @@ final class BillingHistorySequenceTest extends TestCase
     /** @var list<string> the periods still to generate, earliest first */
     private array $periods = [];
 
+    /** The period after the last, which rolled-forward work can land on at close-out. */
+    private string $onePeriodMore = '';
+
     private int $loggedMinutes = 0;
 
     /** @var array<int, string> each issued invoice as it was issued */
@@ -126,9 +127,6 @@ final class BillingHistorySequenceTest extends TestCase
     private array $behindNewWork = [];
 
     private int $logsLeft = 3;
-
-    /** @var array<int, true> rows logged into a period an invoice already covered (#681) */
-    private array $loggedLate = [];
 
     /** @var list<string> */
     private array $trace = [];
@@ -275,12 +273,7 @@ final class BillingHistorySequenceTest extends TestCase
         $day = sprintf('2026-%02d-%02d', $this->random->getInt(1, 6), $this->random->getInt(1, 28));
         $minutes = 30 * $this->random->getInt(1, 40);
         $deferred = $this->random->getInt(1, 5) === 1;
-        $id = $this->hours($day, $minutes, $deferred);
-        $covered = ClientInvoice::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
-            ->whereDate('service_period_start', '<=', $day)->whereDate('service_period_end', '>=', $day)->exists();
-        if ($covered) {
-            $this->loggedLate[$id] = true;
-        }
+        $this->hours($day, $minutes, $deferred);
         $this->markDraftsBehind();
 
         return "{$minutes}m on {$day}".($deferred ? ', deferred' : '');
@@ -341,6 +334,10 @@ final class BillingHistorySequenceTest extends TestCase
     private function issue(ClientInvoice $draft): string
     {
         app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $this->workspace);
+        // Whatever is logged next arrives after this was issued.
+        $later = CarbonImmutable::now()->addMinute();
+        Carbon::setTestNow($later);
+        CarbonImmutable::setTestNow($later);
 
         return "#{$draft->id}";
     }
@@ -426,12 +423,6 @@ final class BillingHistorySequenceTest extends TestCase
         }
     }
 
-    private function carriesWrittenOffWork(ClientInvoice $invoice): bool
-    {
-        return $this->allocations()->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
-            ->where('invoice.id', $invoice->id)->where('entry.client_dispute_settlement', DisputeSettlement::WrittenOff->value)->exists();
-    }
-
     private function carriesDisputeTouchedWork(ClientInvoice $invoice): bool
     {
         return $this->allocations()->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
@@ -463,7 +454,10 @@ final class BillingHistorySequenceTest extends TestCase
         }
         $this->generateTheRest();
         $this->issueEverything();
-        $this->discardDraftsCarryingWrittenOffWork();
+
+        // Work rolled forward onto a draft after the last period was generated
+        // needs one more period to land on.
+        $this->periods = [$this->onePeriodMore];
         $this->generateTheRest();
         $this->issueEverything();
 
@@ -490,25 +484,6 @@ final class BillingHistorySequenceTest extends TestCase
             if (count($this->periods) === $count) {
                 array_shift($this->periods);
             }
-        }
-    }
-
-    /** #680: such a draft cannot issue or lose the row, so the operator's way out is to discard it. */
-    private function discardDraftsCarryingWrittenOffWork(): void
-    {
-        foreach ($this->invoices(InvoiceStatus::Draft->value) as $draft) {
-            if (! $this->carriesWrittenOffWork($draft)) {
-                continue;
-            }
-            $this->attempt('close: discard #'.$draft->id, function () use ($draft): string {
-                app(InvoiceLifecycleService::class)->discardDraft($draft->fresh() ?? $draft, $this->workspace, 'Synthetic discard');
-                if (isset($this->generatedFor[$draft->id])) {
-                    $this->periods[] = $this->generatedFor[$draft->id];
-                    sort($this->periods);
-                }
-
-                return 'discarded';
-            });
         }
     }
 
@@ -569,8 +544,6 @@ final class BillingHistorySequenceTest extends TestCase
     {
         $charged = $this->allocations()->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
             ->where('entry.client_dispute_settlement', DisputeSettlement::WrittenOff->value)
-            // #680: a draft's buy-down keeps a written-off row. Held to refusing to issue, below.
-            ->where(fn ($query) => $query->where('invoice.status', '!=', InvoiceStatus::Draft->value)->orWhere('line.type', '!=', InvoiceLineType::DeferredBuyDown->value))
             ->pluck('entry.id')->all();
         $this->assertSame([], $charged, "After {$step}, a live invoice still carries written-off work.");
     }
@@ -650,21 +623,10 @@ final class BillingHistorySequenceTest extends TestCase
         $minutes = (int) ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
             ->where(fn ($query) => $query->whereNull('client_dispute_settlement')->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
             ->sum('minutes');
-        // #681: nothing bills an hour logged into a period already
-        // invoiced. Only such rows may be left over; any other is a lost hour.
         $leftOver = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
-            ->unbilled()->where('is_billable', true)->whereNull('client_disputed_at')->get();
-        $this->assertSame([], array_values(array_diff($leftOver->modelKeys(), array_keys($this->loggedLate))), 'Closed out: these hours were never billed, and none of them was logged late.');
-        $minutes -= (int) $leftOver->sum(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes);
-        // #680: a draft that can neither issue nor be discarded is
-        // not billed, nor is the other work on it, nor the later drafts queued
-        // behind it. Nothing else may stay a draft.
-        $stuck = $this->invoices(InvoiceStatus::Draft->value);
-        $this->assertTrue($stuck->isEmpty() || $stuck->contains(fn (ClientInvoice $draft): bool => $this->carriesWrittenOffWork($draft)), 'Closed out: drafts never issued, and none carries written-off work.');
-        $minutes -= (int) $this->allocations()->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
-            ->whereIn('invoice.id', $stuck->modelKeys())
-            ->where(fn ($query) => $query->whereNull('entry.client_dispute_settlement')->orWhere('entry.client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
-            ->sum('entry.minutes');
+            ->unbilled()->where('is_billable', true)->whereNull('client_disputed_at')->pluck('id')->all();
+        $this->assertSame([], $leftOver, 'Closed out: these hours were never billed.');
+        $this->assertSame([], $this->invoices(InvoiceStatus::Draft->value)->modelKeys(), 'Closed out: these drafts never issued.');
         $hoursAtRate = (int) round($minutes * self::RATE / 60);
         $billed = (int) $this->invoices(InvoiceStatus::Issued->value)->sum(static fn (ClientInvoice $invoice): int => (int) $invoice->total_amount);
 
@@ -770,6 +732,7 @@ final class BillingHistorySequenceTest extends TestCase
         $this->periods = ($terms['billing_cadence'] ?? 'monthly') === 'quarterly'
             ? ['2026-04-01', '2026-07-01', '2026-10-01']
             : ['2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01', '2026-08-01'];
+        $this->onePeriodMore = ($terms['billing_cadence'] ?? 'monthly') === 'quarterly' ? '2027-01-01' : '2026-09-01';
 
         foreach (range(1, 9) as $_) {
             $this->logHours();

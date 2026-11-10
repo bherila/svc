@@ -151,7 +151,7 @@ final class DisputeLedgerDependencyTest extends TestCase
         [$workspace, $company, $project, $agreement, $owner] = $this->world('backstop', 600);
         $this->hours($workspace, $company, $project, $owner, '2026-01-10', 60);
         app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
-        // Logged after January was reconciled: unlinked, and in the ledger.
+        // Logged at the moment January was reconciled: unlinked, and in the ledger.
         $late = $this->hours($workspace, $company, $project, $owner, '2026-01-25', 900);
         $this->hours($workspace, $company, $project, $owner, '2026-02-10', 600);
         $march = $this->period($company, $agreement, '2026-03-01');
@@ -176,18 +176,21 @@ final class DisputeLedgerDependencyTest extends TestCase
     {
         [$workspace, $company, $project, $agreement, $owner] = $this->world('dependents', 600);
         $this->hours($workspace, $company, $project, $owner, '2026-01-10', 60);
-        app(InvoiceLifecycleService::class)->issue($this->period($company, $agreement, '2026-02-01'), $workspace);
-        $late = $this->hours($workspace, $company, $project, $owner, '2026-01-25', 900);
+        // Still a draft, so the hour logged after it is ordinary work in January's
+        // ledger rather than late work, and March's charge depends on it.
+        $january = $this->period($company, $agreement, '2026-02-01');
+        $disputed = $this->hours($workspace, $company, $project, $owner, '2026-01-25', 900);
         $this->hours($workspace, $company, $project, $owner, '2026-02-10', 1200);
         $march = $this->period($company, $agreement, '2026-03-01');
         $before = (int) $march->total_amount;
 
-        $this->stampDispute($late);
-        app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [$late->id], []);
+        $this->stampDispute($disputed);
+        app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [$disputed->id], []);
 
         $march = $march->fresh();
         $this->assertLessThan($before, (int) $march->total_amount, 'Without the disputed hours, January carries no debt into February.');
-        app(InvoiceLifecycleService::class)->issue($march, $workspace);
+        app(InvoiceLifecycleService::class)->issue($january->fresh(), $workspace);
+        app(InvoiceLifecycleService::class)->issue($march->fresh(), $workspace);
         $this->assertSame('issued', $march->fresh()->status);
     }
 
