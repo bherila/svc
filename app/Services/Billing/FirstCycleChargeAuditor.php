@@ -35,9 +35,13 @@ use Illuminate\Support\Facades\DB;
  * owner's decision, and the listing is what they decide from.
  *
  * The extra charge always falls inside the item's first period of its own
- * cadence, so the invoices read are those of the agreement's periods that
- * span the longest such first period, each against the charges the engine
- * now places in it ({@see FirstCycleChargeFinding}).
+ * cadence, counted from the agreement period the item starts in, so the
+ * invoices read are those of the periods spanning each item's first group,
+ * each against the charges the engine now places in it
+ * ({@see FirstCycleChargeFinding}). An off-cadence item added later is read
+ * from its own start: an annual item from 20 April on a quarterly agreement
+ * from 9 January was charged on 20 April and on 1 April a year on, on the
+ * invoice of the period from 9 January.
  *
  * Every agreement of that shape is listed, a package's or not: a proposal's
  * item had the same rule. Bounded: agreements in batches, each batch's
@@ -105,22 +109,42 @@ final class FirstCycleChargeAuditor
             return [];
         }
 
-        // The agreement's periods spanning its items' longest first period of
-        // their own: one for an item on the agreement's cadence or a shorter
-        // one, a year of them for an annual licence in a quarterly service.
+        // The agreement's periods each item's first group of its own cadence
+        // spans, counted from the period the item starts in (the agreement's
+        // first when it started before it): one for an item on the agreement's
+        // cadence or a shorter one, a year of them for an annual licence in a
+        // quarterly service. An item added later is read from its own start,
+        // so the extra charge in its first group is inside the window even a
+        // year or more past the agreement's start. The union over the items.
         $periods = [];
+        // Which items' first group each period belongs to: a period read for
+        // one item is not another item's first group, whose later renewals are
+        // ordinary charges.
+        $windows = [];
         foreach ($agreements as $agreement) {
             $agreement->setRelation('recurringItems', new Collection($placed[$agreement->id]));
             $periodMonths = $agreement->effectiveBillingCadence()->monthsInCycle();
-            $months = max($periodMonths, ...array_map(static fn (ClientAgreementRecurringItem $item): int => $item->charge_cadence?->monthsInPeriod() ?? 0, $placed[$agreement->id]));
-            $count = intdiv($months, $periodMonths);
-            // A month past the span, so the last period is never cut short.
-            foreach ($this->cycles->cyclesForAgreement($agreement, Carbon::instance($agreement->starts_on)->addMonths($months + 1)) as $cycle) {
-                if (count($periods[$agreement->id] ?? []) === $count) {
-                    break;
+            $agreementStart = Carbon::instance($agreement->retainerStartsOn())->startOfDay();
+            $periods[$agreement->id] = [];
+            foreach ($placed[$agreement->id] as $item) {
+                $itemStart = Carbon::instance($item->start_date ?? $agreement->starts_on)->startOfDay();
+                $origin = $itemStart->gt($agreementStart) ? $itemStart : $agreementStart;
+                $months = max($periodMonths, $item->charge_cadence?->monthsInPeriod() ?? 0);
+                $count = intdiv($months, $periodMonths);
+                $taken = 0;
+                // A month past the span, so the last period is never cut short.
+                foreach ($this->cycles->cyclesForAgreement($agreement, $origin->copy()->addMonths($months + 1)) as $cycle) {
+                    if ($cycle->end->lt($origin)) {
+                        continue;
+                    }
+                    if ($taken++ === $count) {
+                        break;
+                    }
+                    $periods[$agreement->id][$cycle->start->toDateString()] = $cycle;
+                    $windows[$agreement->id][$item->id][$cycle->start->toDateString()] = true;
                 }
-                $periods[$agreement->id][$cycle->start->toDateString()] = $cycle;
             }
+            ksort($periods[$agreement->id]);
         }
 
         // Each period's invoice names that period's first day as its cycle
@@ -195,7 +219,9 @@ final class FirstCycleChargeAuditor
                 foreach ($this->biller->linesForCycle($agreement, $cycle->start, $cycle->end) as $charge) {
                     $expected[$charge['item']->id] = ($expected[$charge['item']->id] ?? 0) + 1;
                 }
-                $read[] = ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency, 'expected' => $expected, 'lines' => $lines[$invoice->id] ?? []];
+                $read[] = ['public_id' => $invoice->public_id, 'status' => (string) $invoice->status, 'currency' => (string) $invoice->currency, 'expected' => $expected,
+                    'lines' => array_values(array_filter($lines[$invoice->id] ?? [], static fn (array $line): bool => isset($windows[$agreement->id][$line['item']][$periodStart]))),
+                ];
             }
             $findings[] = FirstCycleChargeFinding::classify(
                 [

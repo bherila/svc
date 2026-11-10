@@ -447,7 +447,9 @@ cadence whenever a longer agreement started on any day but the 1st: a
 quarterly item from 9 January on 9 January and 1 April, a monthly one on
 9 January, 1 February, 1 March and 1 April, an annual one on 9 January and
 again on 1 January. `svc:billing:audit-first-cycle-charges` lists the
-agreements whose invoices hold one (docs/service-packages.md). Invoices,
+agreements whose invoices hold one, reading each item's first group of its own
+cadence from the period the item starts in, so an item added later is covered
+(docs/service-packages.md). Invoices,
 the sign-up estimate (`SignupCharges`), the revenue projection and the
 portal's next-invoice estimate all read the rule through `RecurringItemBiller`.
 
