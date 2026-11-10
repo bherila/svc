@@ -128,6 +128,46 @@ final class PackageMigrationTest extends TestCase
     }
 
     #[Requirement('MIG-1')]
+    public function test_the_suggested_date_and_counts_ignore_a_refused_late_notice_subscriber(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world(['notice_days' => 0]);
+        $movable = $this->subscriber($workspace, $package, 'Lakeside');
+        // Billing by usage and with a longer notice: counted, it would push the suggestion to January.
+        $refused = $this->subscriber($workspace, $package, 'Harbor');
+        $refused->agreement->forceFill(['notice_days' => 60, 'hourly_rate_amount' => 12000])->save();
+
+        $preview = $this->preview($owner, $workspace, $package, $from);
+
+        $this->assertSame('2026-12-01', $preview['effective_on']);
+        $this->assertSame(array_fill(0, 6, 1), array_column($preview['effective_dates'], 'subscribers'));
+        $this->assertSame([[$movable->public_id, '2026-12-01', null]], array_map(
+            static fn (array $row): array => [$row['enrollment_id'], $row['earliest_effective_on'], $row['refusal']], $preview['subscribers']));
+        $this->assertSame([[$refused->public_id, 'Harbor Synthetic Bakery', MigrationRefusal::BillsByUsage->toArray()]], array_map(
+            static fn (array $row): array => [$row['enrollment_id'], $row['client']['name'], $row['refusal']], $preview['refused']));
+        $this->assertSame('Bills by usage', $preview['refused'][0]['refusal']['label']);
+    }
+
+    #[Requirement('MIG-1')]
+    public function test_a_subscriber_refused_only_on_the_earliest_date_moves_on_a_later_one(): void
+    {
+        [$workspace, $owner, $package, $from] = $this->world();
+        $enrollment = $this->subscriber($workspace, $package, 'Lakeside');
+        // An add-on starting mid-January: on Jan 1 it has not started, so there is no one schedule to continue.
+        ClientAgreement::query()->findOrFail($enrollment->client_agreement_id)->recurringItems()->create([
+            'workspace_id' => $workspace->id, 'description' => 'Synthetic add-on', 'cadence' => 'monthly', 'amount' => 1000, 'quantity' => '1',
+            'effective_on' => '2027-01-15', 'currency' => 'USD', 'is_taxable' => false, 'is_active' => true, 'sort_order' => 5,
+        ]);
+
+        $preview = $this->preview($owner, $workspace, $package, $from);
+
+        $this->assertSame([], $preview['refused']);
+        $this->assertSame(['2027-02-01', '2027-02-01'], [$preview['effective_on'], $preview['subscribers'][0]['earliest_effective_on']]);
+        $this->assertSame(['2027-02-01', '2027-03-01', '2027-04-01', '2027-05-01', '2027-06-01'], $preview['subscribers'][0]['effective_dates']);
+        $this->assertSame($preview['subscribers'][0]['effective_dates'], array_column($preview['effective_dates'], 'date'));
+        $this->assertSame(MigrationRefusal::AmbiguousRecurrence->toArray(), $this->preview($owner, $workspace, $package, $from, '2027-01-01')['subscribers'][0]['refusal']);
+    }
+
+    #[Requirement('MIG-1')]
     public function test_scheduling_refuses_what_the_rules_refuse_and_writes_nothing(): void
     {
         [$workspace, $owner, $package, $from, $to] = $this->world();
@@ -512,7 +552,8 @@ final class PackageMigrationTest extends TestCase
             ['hourly_rate_amount' => 15000]);
         $this->subscriber($workspace, $package, 'Lakeside');
 
-        $this->assertSame(MigrationRefusal::BillsByUsage->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code']);
+        $preview = $this->preview($owner, $workspace, $package, $from);
+        $this->assertSame([[], MigrationRefusal::BillsByUsage->value, []], [$preview['subscribers'], $preview['refused'][0]['refusal']['code'], $preview['effective_dates']]);
         $this->expectRefusal(MigrationRefusal::BillsByUsage, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
     }
 
@@ -530,7 +571,7 @@ final class PackageMigrationTest extends TestCase
 
             $preview = $this->preview($owner, $workspace, $package, $from);
             $this->assertSame(MigrationRefusal::ChangesCadence->value, $preview['refusal']['code'] ?? null, "{$was} to {$becomes}");
-            $this->assertSame([[], null], [$preview['subscribers'], $preview['effective_on']]);
+            $this->assertSame([[], [], null], [$preview['subscribers'], $preview['refused'], $preview['effective_on']]);
             $this->expectRefusal(MigrationRefusal::ChangesCadence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
             $this->assertSame(0, ServicePackageMigration::query()->where('workspace_id', $workspace->id)->count());
         }
@@ -544,7 +585,7 @@ final class PackageMigrationTest extends TestCase
         // An operator moved this one agreement to quarterly billing by hand.
         ClientAgreement::query()->whereKey($edited->client_agreement_id)->update(['billing_cadence' => 'quarterly']);
 
-        $this->assertSame(MigrationRefusal::ChangesCadence->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->assertSame(MigrationRefusal::ChangesCadence->value, $this->preview($owner, $workspace, $package, $from)['refused'][0]['refusal']['code'] ?? null);
         $this->expectRefusal(MigrationRefusal::ChangesCadence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
 
         // Changed after scheduling, the move waits for an owner rather than leave a period unbilled.
@@ -566,7 +607,7 @@ final class PackageMigrationTest extends TestCase
         $square = ['square_series_key' => '000901', 'square_location_id' => 'SYNTEST-LOCATION-1'];
         ClientAgreement::query()->whereKey($enrollment->client_agreement_id)->update($square);
 
-        $this->assertSame(MigrationRefusal::SquareCollected->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->assertSame(MigrationRefusal::SquareCollected->value, $this->preview($owner, $workspace, $package, $from)['refused'][0]['refusal']['code'] ?? null);
         $this->expectRefusal(MigrationRefusal::SquareCollected, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
         $this->assertSame(0, ServicePackageMigration::query()->count());
 
@@ -770,7 +811,7 @@ final class PackageMigrationTest extends TestCase
         ]);
         // An item charging on the 15th beside one on the 1st: no one schedule to continue.
         $added = $addOn();
-        $this->assertSame(MigrationRefusal::AmbiguousRecurrence->value, $this->preview($owner, $workspace, $package, $from)['subscribers'][0]['refusal']['code'] ?? null);
+        $this->assertSame(MigrationRefusal::AmbiguousRecurrence->value, $this->preview($owner, $workspace, $package, $from)['refused'][0]['refusal']['code'] ?? null);
         $this->expectRefusal(MigrationRefusal::AmbiguousRecurrence, fn () => $this->schedule($owner, $workspace, $package, $from, '2027-01-01'));
 
         // Added after scheduling, it holds the move on its date.

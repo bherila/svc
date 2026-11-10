@@ -417,10 +417,19 @@ final class ServicePackageOperations
         $versionRef = self::object(['id' => $uuid, 'number' => ['type' => 'integer', 'minimum' => 1]]);
         // Signed by a company contact, who typed the name and title (ACC-2).
         $nullableUuid = ['type' => ['string', 'null'], 'format' => 'uuid'];
-        $refusal = static fn (array $codes): array => ['oneOf' => [self::object([
-            'code' => ['type' => 'string', 'enum' => $codes],
-            'message' => ['type' => 'string'],
-        ]), ['type' => 'null']]];
+        // Why a move, or one subscriber of it, is refused (MigrationRefusal::toArray).
+        $migrationRefusal = self::object([
+            'code' => ['type' => 'string', 'enum' => self::values(MigrationRefusal::cases())],
+            'label' => $text,
+            'message' => $text,
+        ]);
+        $refusal = ['oneOf' => [$migrationRefusal, ['type' => 'null']]];
+        // Who one subscriber of a previewed move is.
+        $moveSubscriber = [
+            'enrollment_id' => $uuid,
+            'client' => $named,
+            'agreement' => self::object(['id' => $uuid, 'title' => $text, 'starts_on' => $date, 'ends_on' => $nullableDate]),
+        ];
         // Why a subscriber was skipped, or why it waits (MIG-3).
         $moveOutcome = ['oneOf' => [self::object([
             'code' => ['type' => 'string', 'enum' => [...self::values(MigrationSkip::cases()), ...self::values(MigrationHold::cases())]],
@@ -581,7 +590,7 @@ final class ServicePackageOperations
                 'package' => self::object(['id' => $uuid, 'link_name' => $text, 'name' => $text]),
                 'from_version' => $versionRef,
                 'to_version' => ['oneOf' => [$versionRef, ['type' => 'null']]],
-                'refusal' => $refusal(self::values(MigrationRefusal::cases())),
+                'refusal' => $refusal,
                 'changes' => $changes,
                 'new_price' => $price,
                 'effective_dates' => ['type' => 'array', 'maxItems' => PackageMigrationPlanner::MAX_DATES, 'items' => self::object([
@@ -589,18 +598,19 @@ final class ServicePackageOperations
                     'subscribers' => ['type' => 'integer', 'minimum' => 1],
                 ])],
                 'effective_on' => $nullableDate,
+                // Each subscriber some offered date suits; `refusal` is why the chosen date does not.
                 'subscribers' => ['type' => 'array', 'items' => self::object([
-                    'enrollment_id' => $uuid,
-                    'client' => $named,
-                    'agreement' => self::object(['id' => $uuid, 'title' => $text, 'starts_on' => $date, 'ends_on' => $nullableDate]),
+                    ...$moveSubscriber,
                     'earliest_effective_on' => $nullableDate,
                     'effective_dates' => ['type' => 'array', 'maxItems' => MigrationDates::DEFAULT_OFFERED, 'items' => $date],
                     'autopay_limit_amount' => $nullableInt,
                     'autopay_below_price' => $bool,
                     'pending_cancellation_end_on' => $nullableDate,
                     'scheduled_end_on' => $nullableDate,
-                    'refusal' => $refusal(self::values(MigrationRefusal::cases())),
+                    'refusal' => $refusal,
                 ])],
+                // Each subscriber refused on every date it is offered, with why.
+                'refused' => ['type' => 'array', 'items' => self::object([...$moveSubscriber, 'refusal' => $migrationRefusal])],
             ]),
             'PackageMigrationPreviewResponse' => self::object(['data' => ['$ref' => '#/components/schemas/PackageMigrationPreview']]),
             // A move (PackageMigrationPresenter::forManager).

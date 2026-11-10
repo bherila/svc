@@ -64,6 +64,7 @@ describe('moving package subscribers', () => {
                                 },
                                 refusal: {
                                     code: 'package_migration_date_not_offered',
+                                    label: 'Date not offered',
                                     message:
                                         'That effective date is not a billing period start after this subscriber’s notice.',
                                 },
@@ -194,6 +195,107 @@ describe('moving package subscribers', () => {
         ).toBeInTheDocument();
     });
 
+    it('[MIG-1] lists the subscribers the server refused apart, with its label and reason', () => {
+        render(
+            <PackageMove
+                {...moveProps(
+                    {},
+                    {
+                        effective_dates: [
+                            { date: '2027-01-01', subscribers: 1 },
+                        ],
+                        subscribers: [moveCandidate()],
+                        refused: [
+                            {
+                                enrollment_id: 'enrollment-2',
+                                client: {
+                                    id: 'company-2',
+                                    name: 'Pine Street Dental',
+                                },
+                                agreement: moveCandidate().agreement,
+                                refusal: {
+                                    code: 'package_migration_bills_by_usage',
+                                    label: 'Synthetic usage label',
+                                    message:
+                                        'This agreement bills by usage (an hourly rate or a retainer).',
+                                },
+                            },
+                        ],
+                    },
+                )}
+            />,
+        );
+
+        const subscribersCard = screen.getByLabelText('Subscribers');
+        expect(
+            within(subscribersCard).getByText('Subscribers · 1'),
+        ).toBeInTheDocument();
+        expect(
+            within(subscribersCard).getByText('Lakeside Synthetic Bakery'),
+        ).toBeInTheDocument();
+        expect(
+            within(subscribersCard).queryByText('Pine Street Dental'),
+        ).toBeNull();
+        expect(screen.getByLabelText('Takes effect')).toHaveTextContent(
+            'Jan 1, 2027 · suits 1 of 1',
+        );
+        const refusedCard = screen.getByLabelText('Cannot move');
+        expect(
+            within(refusedCard).getByText('Cannot move · 1'),
+        ).toBeInTheDocument();
+        expect(
+            within(refusedCard).getByText('Pine Street Dental'),
+        ).toBeInTheDocument();
+        // The label is the server's, printed as sent.
+        expect(
+            within(refusedCard).getByText('Synthetic usage label'),
+        ).toBeInTheDocument();
+        expect(
+            within(refusedCard).getByText(/This agreement bills by usage/),
+        ).toBeInTheDocument();
+        expect(within(refusedCard).queryByRole('checkbox')).toBeNull();
+    });
+
+    it('[MIG-1] says when every subscriber on the version is refused', () => {
+        render(
+            <PackageMove
+                {...moveProps(
+                    {},
+                    {
+                        effective_dates: [],
+                        effective_on: null,
+                        subscribers: [],
+                        refused: [
+                            {
+                                enrollment_id: 'enrollment-2',
+                                client: {
+                                    id: 'company-2',
+                                    name: 'Pine Street Dental',
+                                },
+                                agreement: moveCandidate().agreement,
+                                refusal: {
+                                    code: 'package_migration_square_collected',
+                                    label: 'Collected by Square',
+                                    message:
+                                        'Square collects this agreement’s invoices.',
+                                },
+                            },
+                        ],
+                    },
+                )}
+            />,
+        );
+
+        expect(
+            within(screen.getByLabelText('Subscribers')).getByText(
+                'No active service on v2 can be moved to this version.',
+            ),
+        ).toBeInTheDocument();
+        expect(screen.getByLabelText('Cannot move')).toHaveTextContent(
+            'Collected by Square',
+        );
+    });
+
     it('[MIG-1] says why nothing can move, and offers no schedule', () => {
         render(
             <PackageMove
@@ -203,6 +305,7 @@ describe('moving package subscribers', () => {
                         to_version: null,
                         refusal: {
                             code: 'package_migration_not_newer',
+                            label: 'Not a newer version',
                             message:
                                 'Subscribers can only move to the package’s published version, from an older version of the same package.',
                         },
@@ -235,6 +338,18 @@ describe('moving package subscribers', () => {
                             moveCandidate({
                                 client: { id: 'company-1', name: LONG },
                             }),
+                        ],
+                        refused: [
+                            {
+                                enrollment_id: 'enrollment-2',
+                                client: { id: 'company-2', name: LONG },
+                                agreement: moveCandidate().agreement,
+                                refusal: {
+                                    code: 'package_migration_ambiguous_recurrence',
+                                    label: LONG,
+                                    message: LONG.repeat(3),
+                                },
+                            },
                         ],
                     },
                 )}

@@ -870,12 +870,27 @@ Slice 6 (moving subscribers to a new version) settled these:
   operator's edit makes these), the subscriber is refused
   (`package_migration_ambiguous_recurrence`) and, if it happens after
   scheduling, the move holds (`ambiguous_recurrence`). With no such item, the
-  schedule an item started with the agreement would have. A property in
-  `BillingHistoryInvariantTest` proves it: for identical terms a moved twin
+  schedule an item started with the agreement would have. A property,
+  `BillingHistoryMoveTwinTest` (its own class so ParaTest schedules it beside
+  the other histories, #686), proves it: for identical terms a moved twin
   and a never-moved twin bill the same total for every period, each once, on
   every cadence, for services started on the 1st, 9th and 31st, moved on each
   of the first two dates a move may take (a full cycle apart), with one or two
   components or a setup fee billed with the first cycle.
+- **Refused classes stay refused (#686).** Each would need a handoff carrying
+  state the successor cannot read today, proved by moved and never-moved twin
+  histories like `BillingHistoryMoveTwinTest`; none is designed until owners
+  ask for one.
+  - **Cadence changes:** a first period of another length lands on the
+    engine's period grid over periods already invoiced. Offer the new cadence
+    as a new service.
+  - **Square-collected:** SVC never reshapes what Square collects (INV-3, X-2).
+    Change it in Square.
+  - **Off-cycle components:** the successor would charge an annual or one-time
+    charge again from its own start; a handoff needs each component's
+    paid-through date and its identity across versions.
+  - **Ambiguous charge schedules:** there is no one schedule to continue. Once
+    an operator aligns the items, the move is offered.
 - **Asked again on the date.** The version is fixed at scheduling, but an
   operator can change an active agreement's cadence or recurring items, and a
   Square series can be linked to it, after scheduling, so the applier reads
@@ -939,7 +954,10 @@ Slice 6 (moving subscribers to a new version) settled these:
   whose own periods it does not start, or whose notice it falls inside, is
   refused by name (`package_migration_date_not_offered`), and the preview
   offers every subscriber's dates with how many each suits, suggesting the
-  earliest that suits the most. Only to the package's published version, from
+  earliest that suits the most. A subscriber refused on every date it is
+  offered (`MigrationSubscriber::refusalOnEveryDate`) is listed apart in
+  `refused`, with its refusal's code, label and message, and counts towards no
+  date or suggestion (#686). Only to the package's published version, from
   an older one, in the same currency, both billing in periods on the same
   cadence; a subscriber in one scheduled move at a time.
 - **Records.** `service_package_migrations` (package, from/to version, date,
@@ -1145,7 +1163,7 @@ part of the agent API.
 | `cancellation_requests.approve`, `cancellation_requests.decline` | `clients:write` | owner/admin | `confirm`; approve takes an end date from the offered dates |
 | `agreements.update` (extended) | `clients:write` | owner/admin | Gains `notice_days`, `minimum_term_months`, `cancellation_mode` |
 | `agreements.get` (extended) | `billing:read` | owner/admin | Adds cancellation terms, the earliest end date, the package version, and any pending cancellation or scheduled move |
-| `package_migrations.preview` | `packages:read` | owner/admin | Term differences, eligible subscribers, earliest effective date, autopay-limit flags; changes nothing |
+| `package_migrations.preview` | `packages:read` | owner/admin | Term differences, eligible subscribers, earliest effective date, autopay-limit flags, refused subscribers apart; changes nothing |
 | `package_migrations.schedule`, `package_migrations.cancel` | `packages:write` | owner/admin | `confirm`; both email clients |
 | `client_services.list`, `client_services.get` | `packages:read` | company contact | Client side, read-only. The company's service agreements and terms, the earliest end date and offered end dates, any pending cancellation or scheduled move, and the portal-addable packages. Project-limited contacts see only their projects' services. |
 

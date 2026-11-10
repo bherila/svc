@@ -2260,7 +2260,12 @@ cancellation made today could choose (so a client told now can always leave
 before the new terms), and after every period an issued invoice already sold -
 its autopay limit and `autopay_below_price`, any pending cancellation or
 scheduled end, and `refusal`, why it cannot move on the date asked (or the
-suggested one: the earliest date that suits the most subscribers). It also
+suggested one: the earliest date that suits the most subscribers). A service
+refused on every date it could take - billing by usage, collected by Square,
+on another cadence, charging off one schedule, ending first or already in
+another move - is in `refused` instead, with its `refusal`, and counts towards
+no date or suggestion. Each `refusal` carries a `code`, a short `label` and a
+`message`. It also
 answers `changes`, each term that differs with its old and new value in words
 (operator settings and terms that only shape a new sign-up included, marked as
 such), and `new_price`.
