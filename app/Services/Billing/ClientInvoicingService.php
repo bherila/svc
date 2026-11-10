@@ -531,17 +531,30 @@ final class ClientInvoicingService
         $this->releaseConsultantTime($company, $agreement);
         $handover = $this->handovers->forAgreement($agreement);
         $through = $this->retainerGenerationThroughDate($agreement, $successorAgreement);
+        // A successor caps what is generated, not what is refreshed. A draft
+        // written while this agreement was open - the next cycle's, selling
+        // its retainer - can lie past that cap once a backdated termination
+        // and a successor move the end back (#670). The walk still reaches
+        // the horizon it would have without the successor, so such a draft is
+        // regenerated from the corrected history, selling nothing after the
+        // end, while a cycle past the cap with no invoice is left alone.
+        $refreshThrough = $successorAgreement instanceof ClientAgreement
+            ? $this->retainerGenerationThroughDate($agreement)
+            : $through;
         $billExcessImmediately = $agreement->effectiveBillingCadence() !== BillingCadence::Monthly
             && (bool) $agreement->bill_overage_interim;
-        $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $through, $billExcessImmediately);
+        $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $refreshThrough, $billExcessImmediately);
         $immediateLedger = $billExcessImmediately ? $ledger : null;
 
         $monthsWithUnbilledPostTermination = null;
         $activeDate = $this->agreementStart($agreement);
 
-        foreach ($this->retainerPeriodsThrough($agreement, $through) as $retainerPeriod) {
+        foreach ($this->retainerPeriodsThrough($agreement, $refreshThrough) as $retainerPeriod) {
             $workCycle = $this->previousBillingCycle($agreement, $retainerPeriod);
             $existingInvoice = $this->findGeneratedInvoiceForWorkCycle($company, $agreement, $workCycle);
+            if ($retainerPeriod->start->gt($through) && ! $existingInvoice instanceof ClientInvoice) {
+                continue;
+            }
             $periodLabel = $this->generationPeriodLabel($agreement, $workCycle, $retainerPeriod);
 
             if ($this->shouldSkipEmptyPostTerminationWorkCycle(
@@ -617,7 +630,7 @@ final class ClientInvoicingService
                 // The draft just written may have drawn deferred work on a
                 // pool, or spent rollover; the next period measures again
                 // rather than spend what this one took (docs/ux-overhaul.md 7b″).
-                $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $through, $billExcessImmediately);
+                $ledger = $this->invoiceLedgerBuilder->buildAgreementLedgerThrough($company, $agreement, $refreshThrough, $billExcessImmediately);
                 $immediateLedger = $billExcessImmediately ? $ledger : null;
                 $result = [
                     'period' => $periodLabel,

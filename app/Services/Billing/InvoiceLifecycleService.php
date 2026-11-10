@@ -467,7 +467,8 @@ final class InvoiceLifecycleService
                 // already charged. They rank after the invoice and its lines
                 // and before the company, and a locking read fixes no snapshot
                 // for the credit check that follows.
-                $lineIds = $this->lockLineIds($locked);
+                $lines = $this->lockLines($locked);
+                $lineIds = array_values($lines->map(fn (ClientInvoiceLine $line): int => $line->id)->all());
                 // The interim claim's time fingerprint, also a locking read
                 // of time entries, after the lines and before the company.
                 if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
@@ -482,6 +483,7 @@ final class InvoiceLifecycleService
                 );
                 $this->assertSnapshotHoldsTheLockedLines($locked);
                 $this->assertChargesOnlyItsAgreementsSegment($locked, $handoverSegments);
+                $this->assertSellsNothingAfterItsAgreementEnds($locked, $lines, $handoverSegments);
             }
 
             // Re-read even when the caller supplied the authorized workspace.
@@ -1022,16 +1024,51 @@ final class InvoiceLifecycleService
             ->all();
     }
 
-    /** @return list<int> the draft's lines, locked */
-    private function lockLineIds(ClientInvoice $draft): array
+    /** @return SupportCollection<int, ClientInvoiceLine> the draft's lines, locked, with what each sells and when */
+    private function lockLines(ClientInvoice $draft): SupportCollection
     {
-        return array_values(ClientInvoiceLine::query()
+        return ClientInvoiceLine::query()
             ->where('workspace_id', $draft->workspace_id)
             ->where('client_invoice_id', $draft->id)
             ->tap(Locks::forUpdate())
-            ->get(['id'])
-            ->map(fn (ClientInvoiceLine $line): int => $line->id)
-            ->all());
+            ->get(['id', 'type', 'line_date'])
+            ->toBase();
+    }
+
+    /**
+     * Refuse a draft that sells a retainer cycle, or a recurring item's
+     * incidence, after its agreement ended (#670). Generation sells neither
+     * past the end, but a draft written while the agreement was open - the
+     * next cycle's, selling its retainer in advance - still carries the sale
+     * once a termination, backdated or not, moves the end before it.
+     * Regenerating the draft prices it from the agreement as it now stands.
+     *
+     * Asked of the lines and agreements already locked: nothing is read here.
+     *
+     * @param  SupportCollection<int, ClientInvoiceLine>  $lines  from {@see self::lockLines()}
+     * @param  SupportCollection<int, ClientAgreement>|null  $segments  the client's agreements, locked
+     */
+    private function assertSellsNothingAfterItsAgreementEnds(ClientInvoice $draft, SupportCollection $lines, ?SupportCollection $segments): void
+    {
+        $agreement = $segments?->firstWhere('id', (int) $draft->client_agreement_id);
+        $end = $agreement instanceof ClientAgreement ? $agreement->ends_on?->toDateString() : null;
+        if ($end === null) {
+            return;
+        }
+        foreach ($lines as $line) {
+            // A retainer line is dated the day its cycle opens, an item's line
+            // the day of its incidence.
+            $type = InvoiceLineType::tryFrom((string) $line->type);
+            $dated = $line->line_date?->toDateString();
+            if (($type === InvoiceLineType::Retainer || $type === InvoiceLineType::RecurringItem)
+                && $dated !== null && $dated > $end) {
+                throw new DomainException(sprintf(
+                    'This draft sells a %s after its agreement ended on %s. Regenerate the draft, then issue it.',
+                    $type === InvoiceLineType::Retainer ? 'retainer cycle' : 'recurring item',
+                    $end,
+                ));
+            }
+        }
     }
 
     /**

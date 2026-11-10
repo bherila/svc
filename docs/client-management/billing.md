@@ -448,6 +448,17 @@ Flat-hourly and direct time is priced at its own terms and is not handed over.
 Pinned by `AgreementSegmentBoundaryTest` and the handover histories in
 `BillingHistoryInvariantTest`.
 
+The same holds for what a draft sells. One written while the agreement was
+open sells the next cycle's retainer, and its item incidences, in advance; a
+termination dated before that cycle, backdated or not, leaves it selling past
+the end (#670). Generation walks every cadence, with or without a successor,
+to the horizon it would reach if the agreement had none, and regenerates such
+a draft so it sells nothing after the end; a cycle past a successor's cap with
+no invoice is not opened. Until it is regenerated, issue refuses a draft
+selling a retainer cycle or an item incidence dated after its agreement's
+`ends_on`. Pinned by
+`BillingHistoryInvariantTest::test_a_termination_after_its_drafts_refreshes_every_draft_past_the_end`.
+
 ## Payment Handling
 
 See [Payments](payments.md), [Stripe billing](stripe-billing.md), and
