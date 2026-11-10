@@ -200,6 +200,15 @@ class PhpunitShardTest extends TestCase
         $this->assertSame(['tests/Unit/MeasuredTest.php' => 10_000, 'tests/Unit/NewTest.php' => 20_000], $weights);
     }
 
+    public function test_a_shard_lists_its_heaviest_file_first(): void
+    {
+        // ParaTest starts files in the listed order, so the longest must not wait behind the rest.
+        $listing = $this->listing(['tests/Unit/ATest.php' => 9, 'tests/Unit/BTest.php' => 1, 'tests/Unit/CTest.php' => 1]);
+        $times = $this->times(['tests/Unit/ATest.php' => 1, 'tests/Unit/BTest.php' => 300, 'tests/Unit/CTest.php' => 20]);
+
+        $this->assertSame(['tests/Unit/BTest.php', 'tests/Unit/CTest.php', 'tests/Unit/ATest.php'], $this->plan(1, $listing, $times)[0]['files']);
+    }
+
     public function test_unreadable_times_fail_closed(): void
     {
         $listing = $this->listing(['tests/Unit/ATest.php' => 1, 'tests/Unit/BTest.php' => 1]);

@@ -141,8 +141,11 @@ function shard_partition(array $weights, int $total): array
         $loads[$lightest] += $weights[$file];
     }
 
+    // Heaviest first: ParaTest hands files to its workers in the order the configuration lists
+    // them, so the longest file starts at once while the other workers share the rest, rather
+    // than starting last and running on alone.
     foreach ($shards as $index => $shard) {
-        sort($shard, SORT_STRING);
+        usort($shard, fn (string $a, string $b): int => [$weights[$b], $a] <=> [$weights[$a], $b]);
         $shards[$index] = $shard;
     }
 
