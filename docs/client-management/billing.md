@@ -404,6 +404,18 @@ that service for incidence dates. There are no dedicated recurring-item CRUD
 routes in the current route files; the predecessor's `/api/client/mgmt/...`
 endpoints are not the SVC route contract.
 
+An item with no anchor of its own, on the quarterly, semi-annual or annual
+cadence its agreement bills on, is charged once per agreement billing period,
+on the day the period starts (`RecurringItemBiller::followsBillingCycles()`,
+#685): the periods are `BillingCycleResolver`'s, anchored on the agreement's
+start, so the item is charged on the same grid as the retainer it sits beside.
+Any other item - monthly, on another cadence than its agreement's, or carrying
+an anchor - is placed by its anchor day and month (unset, the 1st and its start
+month), with a first charge on its start date when the anchor has passed. The
+anchor rule put a second charge inside the first period of a longer cadence
+started on any day but the 1st; `svc:billing:audit-first-cycle-charges` lists
+the agreements whose first invoice holds one (docs/service-packages.md).
+
 ## Agreement Transitions
 
 There is no `AgreementTransitionService` or matching transition endpoint in the

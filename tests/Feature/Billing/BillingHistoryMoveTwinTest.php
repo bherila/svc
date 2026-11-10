@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ServicePackageMigrationTarget;
 use App\Models\ServicePackageVersion;
 use App\Models\User;
@@ -56,9 +57,11 @@ final class BillingHistoryMoveTwinTest extends TestCase
      * of the first two dates a move may take (one full cycle apart), with one
      * or two recurring components on its cadence or a setup fee billed with
      * the first cycle. Version 2 differs from version 1 only in wording, so
-     * nothing a client pays may change (Codex P1 on #674: a quarterly service
-     * started Nov 9 and moved Feb 9 was charged Feb 9 and May 1 in its first
-     * new quarter, where the never-moved twin is charged May 1 alone).
+     * nothing a client pays may change, nor the day a recurring charge falls
+     * on (Codex P1 on #674: a quarterly service started Nov 9 and moved Feb 9
+     * was charged Feb 9 and May 1 in its first new quarter, where the
+     * never-moved twin was charged May 1 alone; since #685 both are charged
+     * on the day each quarter starts).
      */
     #[DataProvider('continuedScheduleWorlds')]
     #[Requirement('MIG-3')]
@@ -118,7 +121,12 @@ final class BillingHistoryMoveTwinTest extends TestCase
             $invoices = ClientInvoice::query()->where('client_company_id', $company->id)->where('status', '!=', InvoiceStatus::Void->value)->orderBy('cycle_start')->orderBy('id')->get();
             $periods = $invoices->map(fn (ClientInvoice $invoice): string => (string) $invoice->cycle_start?->toDateString())->all();
             $this->assertSame(array_values(array_unique($periods)), $periods, "{$twin}: every period invoiced once.");
-            $billed[$twin] = $invoices->mapWithKeys(fn (ClientInvoice $invoice): array => [(string) $invoice->cycle_start?->toDateString() => (int) $invoice->total_amount])->all();
+            // The total, and the day each recurring charge falls on: a successor
+            // charges on the dates the never-moved service does (#685).
+            $billed[$twin] = $invoices->mapWithKeys(fn (ClientInvoice $invoice): array => [(string) $invoice->cycle_start?->toDateString() => [
+                (int) $invoice->total_amount,
+                ClientInvoiceLine::query()->where('client_invoice_id', $invoice->id)->where('type', 'recurring_item')->orderBy('line_date')->pluck('line_date')->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())->all(),
+            ]])->all();
         }
 
         $this->assertNotSame([], $billed['never moved']);
