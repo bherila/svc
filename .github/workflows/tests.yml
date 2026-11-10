@@ -635,10 +635,20 @@ jobs:
 
       # No lint or static analysis here; `checks` runs those and they say
       # nothing about the engine. This job exists for the database alone.
-      # Laravel loads database/schema/mariadb-schema.sql with this client, which
-      # is far quicker per worker than replaying every migration.
-      - name: Install the MariaDB client
-        run: command -v mariadb || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends mariadb-client-core; }
+      # Laravel loads database/schema/mariadb-schema.sql with the `mariadb` client,
+      # which is far quicker per worker than replaying every migration. The runner
+      # has none, and installing one costs about 20s a shard; the service container
+      # already holds the server's own client, and reaches the same server at the
+      # same 127.0.0.1:3306. The dump arrives on stdin, which `docker exec -i` passes.
+      - name: Reach the MariaDB client in the service container
+        env:
+          MARIADB_CONTAINER: ${{ job.services.mariadb.id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec docker exec -i %s mariadb "$@"\n' "$MARIADB_CONTAINER" > "$RUNNER_TEMP/bin/mariadb"
+          chmod +x "$RUNNER_TEMP/bin/mariadb"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/mariadb" --version
 
       - name: Run the MariaDB shard
         env:
