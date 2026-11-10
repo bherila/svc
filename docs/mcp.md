@@ -877,7 +877,7 @@ workflow is outside the read-GA authorization:
 | Agreement list/get with derived terms          | Implemented; manager-only `agreements.list` / `agreements.get`                                                                                           |
 | Signed monthly capacity ledger                 | Implemented; manager-only bounded `capacity_ledger.get` over `InvoiceLedgerBuilder`, with the agreement's deferred backlog (#366), on REST and MCP          |
 | Duplicate-time diagnostics                     | Deferred: no checked-in canonical query or privacy-reviewed grouping contract exists. It will not be inferred from raw time rows.                        |
-| Read-only `svc:billing:audit-*` operations | Implemented as five aggregate-only, manager-scoped tools, including `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. Each is a `GET /workspaces/{workspace}/billing-audits/...` REST operation in the OpenAPI document, and its MCP tool reaches it through that route (#459), so scope, manager checks and preflight budgets apply to both. `svc:billing:audit-overpayment-credit` takes `--workspace=` and is not yet exposed |
+| Read-only `svc:billing:audit-*` operations | Implemented as five aggregate-only, manager-scoped tools, including `billing.preflight_schedule_generation`, over the same auditors used by their CLI workflows. Each is a `GET /workspaces/{workspace}/billing-audits/...` REST operation in the OpenAPI document, and its MCP tool reaches it through that route (#459), so scope, manager checks and preflight budgets apply to both. `svc:billing:audit-overpayment-credit` and `svc:billing:audit-first-cycle-charges` (#685) take `--workspace=` and are not yet exposed |
 | Billing-schedule visibility                    | Implemented; manager-only `billing_schedules.list` / `billing_schedules.get`                                                                             |
 | Imported-duplicate maintenance preview/execute | Obsolete for #187 after #196 retired the importer; no maintenance write is authorized                                                                    |
 | One-workspace-per-session binding              | Per-call authorized selection is the accepted v1 contract; any pinned-session replacement requires a future versioned migration                          |
@@ -2260,7 +2260,12 @@ cancellation made today could choose (so a client told now can always leave
 before the new terms), and after every period an issued invoice already sold -
 its autopay limit and `autopay_below_price`, any pending cancellation or
 scheduled end, and `refusal`, why it cannot move on the date asked (or the
-suggested one: the earliest date that suits the most subscribers). It also
+suggested one: the earliest date that suits the most subscribers). A service
+refused on every date it could take - billing by usage, collected by Square,
+on another cadence, charging off one schedule, ending first or already in
+another move - is in `refused` instead, with its `refusal`, and counts towards
+no date or suggestion. Each `refusal` carries a `code`, a short `label` and a
+`message`. It also
 answers `changes`, each term that differs with its old and new value in words
 (operator settings and terms that only shape a new sign-up included, marked as
 such), and `new_price`.

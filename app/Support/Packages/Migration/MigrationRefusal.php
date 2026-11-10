@@ -24,6 +24,37 @@ enum MigrationRefusal: string
     case OffCycleComponent = 'package_migration_off_cycle_component';
     case AmbiguousRecurrence = 'package_migration_ambiguous_recurrence';
 
+    /** A few words for a badge beside the message; the message says why. */
+    public function label(): string
+    {
+        return match ($this) {
+            self::NotNewer => 'Not a newer version',
+            self::NotRecurring => 'Does not bill in periods',
+            self::NoSubscribers => 'No subscriber chosen',
+            self::NotASubscriber => 'Not on this version',
+            self::AlreadyScheduled => 'In another move',
+            self::EndsFirst => 'Ends before it could move',
+            self::DateNotOffered => 'Date not offered',
+            self::CurrencyChanged => 'Changes currency',
+            self::NotScheduled => 'No longer scheduled',
+            self::BillsByUsage => 'Bills by usage',
+            self::ChangesCadence => 'Changes cadence',
+            self::OffCycleComponent => 'Off-cycle charge',
+            self::AmbiguousRecurrence => 'Charges on mixed schedules',
+            self::SquareCollected => 'Collected by Square',
+        };
+    }
+
+    /**
+     * The code, its label and its message, as a preview shows each refusal.
+     *
+     * @return array{code: string, label: string, message: string}
+     */
+    public function toArray(): array
+    {
+        return ['code' => $this->value, 'label' => $this->label(), 'message' => $this->message()];
+    }
+
     public function message(): string
     {
         return match ($this) {

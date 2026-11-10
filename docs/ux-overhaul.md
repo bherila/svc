@@ -1905,6 +1905,61 @@ Answers the owner gave in an interview on 2026-11-06.
     portal. They send `Idempotency-Key`, which becomes the SetupIntent's Stripe
     idempotency key so a retried request is handed the same intent.
 
+- **2026-11-07, Stripe test-mode end-to-end suite.**
+  - **Own PHPUnit configuration, not a suite in `phpunit.xml`.** The suite lives in
+    `tests/StripeLive/` and is configured by `phpunit.stripe-live.xml`
+    (`--configuration=phpunit.stripe-live.xml --testsuite=StripeLive`). PHPUnit has no
+    "default suite": every `<testsuite>` in `phpunit.xml` is collected by a bare run, by
+    `scripts/ci/phpunit-shard.php` (which lists files from that config) and by Infection. A
+    separate file keeps the network suite out of all three without touching them.
+  - **The workspace uses the key through the environment connection** (`services.stripe.*`,
+    the legacy webhook route), not a saved `WorkspacePaymentConnection`: saving one verifies
+    the key and registers a webhook endpoint at Stripe, which a test run must not leave
+    behind. The production adapters, the autopay command and `StripeWebhookService` run
+    unchanged.
+  - **Cards.** `pm_card_visa` saves through a SetupIntent (the portal path). A card that
+    declines on charge cannot be saved by a SetupIntent, so decline and authentication
+    scenarios attach `pm_card_chargeCustomerFail` / `pm_card_authenticationRequired` to the
+    customer and record them through `StripePaymentMethodService::attach` and
+    `PortalPaymentMethodService::makeDefault`. `pm_card_chargeDeclined` is refused at attach
+    time by Stripe, which is why it is not used.
+  - **Authentication required** asserts a failed attempt, no retry, nothing charged and the
+    intent not `succeeded`; it accepts `canceled`, `requires_payment_method` or
+    `requires_action`, because Stripe may refuse the off-session confirmation before an
+    intent is left to cancel (SVC cancels only an intent that stays open).
+  - **Webhook settlement without a public URL.** Events are read from the Events API
+    (created at or after run start, matched on the customer, intent, setup intent or method
+    id), then POSTed, oldest first, to the real route signed with a per-run `whsec_` secret.
+    The required-event list in the tests is local; it does not duplicate the public constant
+    the webhook-subscription health check will define.
+  - **Waits are on predicates, not types (review follow-up).** Setup tags the customer
+    before the default is set, so a customer produces two `customer.updated` events and
+    the first used to end a wait for the type. `StripeExpectation` can name the object
+    and, for `customer.updated`, the exact `invoice_settings.default_payment_method`;
+    `StripeEventFeed` reads through a `StripeEventSource` so a scripted two-poll unit test
+    proves poll 1 (metadata update, setup and attach events) does not end the wait.
+  - **Ordering is a first delivery.** The old replay delivered in order and then the same
+    ids reversed; the dedup ledger made pass 2 a no-op, so it proved only duplicate
+    handling. Reordered scenarios now clear the local projection and receipt ledger
+    (methods, method states, events, payment-method activity; the customer mapping and
+    autopay consent stay) and make newest-first, and a fixed `Mt19937` shuffle, the first
+    delivery, retrying a 503 as Stripe would, then assert SVC holds what Stripe holds.
+    The duplicate replay remains as an extra assertion. These scenarios need the
+    default-method reconciliation (it reads the customer from Stripe instead of ordering
+    events); on a build without it they fail, which is the point.
+  - **One scenario through a saved connection.** A `WorkspacePaymentConnection` row is
+    written directly (saving through the page would register a webhook endpoint at
+    Stripe), the environment key is removed, and setup, the autopay charge and
+    reordered webhook delivery to the connection's own endpoint all go through it.
+  - **Safety.** Only `sk_test_` / `rk_test_` keys run (unit-tested in `tests/Unit/StripeLive`);
+    an absent key skips; anything else fails; customers are checked to be `livemode: false`;
+    the key is never printed. Customers are tagged `svc_e2e=1` plus a run id with
+    `example.test` addresses and deleted afterwards on a best-effort basis.
+  - **CI.** `.github/workflows/stripe-test-mode.yml`, a separate workflow so it runs in
+    parallel and is not a need of the required `ci` aggregate (advisory for now). It runs on
+    billing-path pull requests, pushes to `main` and nightly, and succeeds with a notice when
+    the secret is unavailable (forks, Dependabot).
+
 ### Stripe webhook health (check and fix)
 
 SVC checks, and for an owner or admin can fix, its own Stripe webhook

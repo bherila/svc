@@ -24,6 +24,9 @@ const FORBIDDEN_EXTENSIONS = new Set([
   '.ndjson', '.ofx', '.pdf', '.qbo', '.qfx', '.sql', '.sqlite', '.sqlite3',
   '.tsv', '.xls', '.xlsx', '.zip',
 ])
+// Generated schema dumps are structure only, and the loader needs them as .sql.
+// The exemption is for these two exact paths; their contents are still scanned.
+const SCHEMA_DUMPS = /^database\/schema\/(?:mysql|sqlite)-schema\.sql$/
 const FORBIDDEN_PATHS = [
   /^(?:backups?|billing-data|client-data|data|dumps?|exports?|production-data)\//i,
   /^database\/(?:backups?|dumps?)\//i,
@@ -104,8 +107,8 @@ for (const file of files) {
   const extension = path.extname(file).toLowerCase()
 
   if (
-    FORBIDDEN_EXTENSIONS.has(extension)
-    || FORBIDDEN_PATHS.some((pattern) => pattern.test(file))
+    !SCHEMA_DUMPS.test(file)
+    && (FORBIDDEN_EXTENSIONS.has(extension) || FORBIDDEN_PATHS.some((pattern) => pattern.test(file)))
   ) {
     findings.push({ file, line: 0, rule: 'private-data-file' })
     continue

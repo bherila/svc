@@ -5960,6 +5960,7 @@ export interface components {
                     | 'package_migration_square_collected'
                     | 'package_migration_off_cycle_component'
                     | 'package_migration_ambiguous_recurrence';
+                label: string;
                 message: string;
             } | null;
             changes: components['schemas']['PackageMigrationTermChange'][];
@@ -6015,8 +6016,44 @@ export interface components {
                         | 'package_migration_square_collected'
                         | 'package_migration_off_cycle_component'
                         | 'package_migration_ambiguous_recurrence';
+                    label: string;
                     message: string;
                 } | null;
+            }[];
+            refused: {
+                enrollment_id: components['schemas']['Uuid'];
+                client: {
+                    id: components['schemas']['Uuid'];
+                    name: string;
+                };
+                agreement: {
+                    id: components['schemas']['Uuid'];
+                    title: string;
+                    /** Format: date */
+                    starts_on: string;
+                    /** Format: date */
+                    ends_on: string | null;
+                };
+                refusal: {
+                    /** @enum {string} */
+                    code:
+                        | 'package_migration_not_newer'
+                        | 'package_migration_not_recurring'
+                        | 'package_migration_no_subscribers'
+                        | 'package_migration_not_a_subscriber'
+                        | 'package_migration_already_scheduled'
+                        | 'package_migration_ends_first'
+                        | 'package_migration_date_not_offered'
+                        | 'package_migration_currency_changed'
+                        | 'package_migration_not_scheduled'
+                        | 'package_migration_bills_by_usage'
+                        | 'package_migration_changes_cadence'
+                        | 'package_migration_square_collected'
+                        | 'package_migration_off_cycle_component'
+                        | 'package_migration_ambiguous_recurrence';
+                    label: string;
+                    message: string;
+                };
             }[];
         };
         PackageMigrationPreviewResponse: {

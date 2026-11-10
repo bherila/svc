@@ -35788,7 +35788,8 @@
                                     "new_price",
                                     "effective_dates",
                                     "effective_on",
-                                    "subscribers"
+                                    "subscribers",
+                                    "refused"
                                 ],
                                 "properties": {
                                     "package": {
@@ -35859,6 +35860,7 @@
                                                 "additionalProperties": false,
                                                 "required": [
                                                     "code",
+                                                    "label",
                                                     "message"
                                                 ],
                                                 "properties": {
@@ -35880,6 +35882,9 @@
                                                             "package_migration_off_cycle_component",
                                                             "package_migration_ambiguous_recurrence"
                                                         ]
+                                                    },
+                                                    "label": {
+                                                        "type": "string"
                                                     },
                                                     "message": {
                                                         "type": "string"
@@ -36066,6 +36071,7 @@
                                                             "additionalProperties": false,
                                                             "required": [
                                                                 "code",
+                                                                "label",
                                                                 "message"
                                                             ],
                                                             "properties": {
@@ -36088,6 +36094,9 @@
                                                                         "package_migration_ambiguous_recurrence"
                                                                     ]
                                                                 },
+                                                                "label": {
+                                                                    "type": "string"
+                                                                },
                                                                 "message": {
                                                                     "type": "string"
                                                                 }
@@ -36097,6 +36106,105 @@
                                                             "type": "null"
                                                         }
                                                     ]
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "refused": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "enrollment_id",
+                                                "client",
+                                                "agreement",
+                                                "refusal"
+                                            ],
+                                            "properties": {
+                                                "enrollment_id": {
+                                                    "$ref": "#/$defs/Uuid"
+                                                },
+                                                "client": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "id",
+                                                        "name"
+                                                    ],
+                                                    "properties": {
+                                                        "id": {
+                                                            "$ref": "#/$defs/Uuid"
+                                                        },
+                                                        "name": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                },
+                                                "agreement": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "id",
+                                                        "title",
+                                                        "starts_on",
+                                                        "ends_on"
+                                                    ],
+                                                    "properties": {
+                                                        "id": {
+                                                            "$ref": "#/$defs/Uuid"
+                                                        },
+                                                        "title": {
+                                                            "type": "string"
+                                                        },
+                                                        "starts_on": {
+                                                            "type": "string",
+                                                            "format": "date"
+                                                        },
+                                                        "ends_on": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ],
+                                                            "format": "date"
+                                                        }
+                                                    }
+                                                },
+                                                "refusal": {
+                                                    "type": "object",
+                                                    "additionalProperties": false,
+                                                    "required": [
+                                                        "code",
+                                                        "label",
+                                                        "message"
+                                                    ],
+                                                    "properties": {
+                                                        "code": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "package_migration_not_newer",
+                                                                "package_migration_not_recurring",
+                                                                "package_migration_no_subscribers",
+                                                                "package_migration_not_a_subscriber",
+                                                                "package_migration_already_scheduled",
+                                                                "package_migration_ends_first",
+                                                                "package_migration_date_not_offered",
+                                                                "package_migration_currency_changed",
+                                                                "package_migration_not_scheduled",
+                                                                "package_migration_bills_by_usage",
+                                                                "package_migration_changes_cadence",
+                                                                "package_migration_square_collected",
+                                                                "package_migration_off_cycle_component",
+                                                                "package_migration_ambiguous_recurrence"
+                                                            ]
+                                                        },
+                                                        "label": {
+                                                            "type": "string"
+                                                        },
+                                                        "message": {
+                                                            "type": "string"
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -59898,7 +60006,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -61444,7 +61552,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -62595,7 +62703,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -62899,7 +63007,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -64382,7 +64490,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -64686,7 +64794,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -68018,7 +68126,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -68316,7 +68424,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -69778,7 +69886,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -70080,7 +70188,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -71524,7 +71632,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -71827,7 +71935,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -73370,7 +73478,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -73668,7 +73776,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -75086,7 +75194,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -75388,7 +75496,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -76885,7 +76993,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -77183,7 +77291,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -80152,7 +80260,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -80456,7 +80564,7 @@
                 "package_migrations.cancel": "320381d8f64a30cb",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_migrations.schedule": "559a425890cea55c",
                 "package_requests.approve": "7fa9c51b071a264e",
                 "package_requests.decline": "fa8c7c331610f5a2",
@@ -81962,7 +82070,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",
@@ -82266,7 +82374,7 @@
                 "operations.summary": "08d142f6e474e32c",
                 "package_migrations.get": "3e5d250728559cf7",
                 "package_migrations.list": "ceb0383c5c96d113",
-                "package_migrations.preview": "573aed98bef7d640",
+                "package_migrations.preview": "67a8b1784a65a974",
                 "package_requests.get": "efc25d75de54eda0",
                 "package_requests.list": "9e4a620f7338222c",
                 "packages.get": "5618d200c1ca6ea6",

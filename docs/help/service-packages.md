@@ -17,6 +17,8 @@ Open **Clients**, then **Packages**, and choose **New package**. A package has:
 - **Agreement text**, which is copied onto each client's agreement.
 - **Sign-up, invoicing and cancellation rules**: whether a setup fee or the first period is paid by card at sign-up, whether autopay is required, whether you review a sign-up before it starts, whether monthly invoices are issued automatically, and the notice period and minimum term.
 
+A package is billed in periods that start on the day the service starts: a quarterly package started on 9 January bills 9 January to 8 April, then 9 April to 8 July, and so on. Each recurring charge on the package's own billing period is charged once per period, on the day the period starts, and in full in the first period too. A monthly package bills calendar months, with its first charge on the start date.
+
 ## Publishing and versions
 
 A package is a draft until you publish it. Publishing freezes that version, and later edits make a new draft that you publish when it's ready. Clients who signed up keep the terms they agreed to.

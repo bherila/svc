@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientInvoiceLine;
+use App\Support\Billing\BillingCadence;
 use App\Support\Billing\ChargeCadence;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -17,9 +18,15 @@ use Carbon\CarbonInterface;
  * comparing against existing lines and inserting the missing ones.
  *
  * Idempotence key: (client_agreement_recurring_item_id, line_date).
+ *
+ * An item's charges are a property of the item and its agreement, never of the
+ * window a caller asks about: a window only selects which of them it sees, so
+ * an invoice, a monthly projection and the sign-up estimate agree.
  */
 class RecurringItemBiller
 {
+    public function __construct(private readonly BillingCycleResolver $cycles = new BillingCycleResolver) {}
+
     /**
      * Return the recurring-item line descriptors for the given [start, end] cycle span.
      *
@@ -70,7 +77,7 @@ class RecurringItemBiller
                 continue;
             }
 
-            $incidences = $this->incidencesInRange($item, $cycleStart, $cycleEnd, $itemStart);
+            $incidences = $this->incidencesInRange($agreement, $item, $cycleStart, $cycleEnd, $itemStart);
 
             foreach ($incidences as $incidenceDate) {
                 $lines[] = [
@@ -93,6 +100,7 @@ class RecurringItemBiller
      * @return Carbon[]
      */
     private function incidencesInRange(
+        ClientAgreement $agreement,
         ClientAgreementRecurringItem $item,
         Carbon $rangeStart,
         Carbon $rangeEnd,
@@ -103,17 +111,83 @@ class RecurringItemBiller
 
         $effectiveStart = $rangeStart->gt($itemStart) ? $rangeStart : $itemStart;
         $effectiveEnd = ($itemEnd !== null && $itemEnd->lt($rangeEnd)) ? $itemEnd : $rangeEnd;
+        $onTheCycles = self::followsBillingCycles($agreement, $item);
 
         return match ($item->charge_cadence) {
             ChargeCadence::Monthly => $this->monthlyIncidences($anchorDay, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Quarterly => $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::SemiAnnual => $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
-            ChargeCadence::Annual => $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Quarterly => $onTheCycles
+                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(3, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::SemiAnnual => $onTheCycles
+                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(6, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
+            ChargeCadence::Annual => $onTheCycles
+                ? $this->billingCycleIncidences($agreement, $effectiveStart, $effectiveEnd, $itemStart)
+                : $this->periodicIncidences(12, $anchorDay, $item->anchor_month, $effectiveStart, $effectiveEnd, $itemStart),
             ChargeCadence::OneTime => $this->oneTimeIncidence($itemStart, $effectiveStart, $effectiveEnd),
             // An unrecognised cadence must stop here. Silently billing nothing
             // would look identical to an item that simply had no incidence.
             null => throw new \DomainException("Recurring item {$item->id} has an unrecognised charge cadence."),
         };
+    }
+
+    /**
+     * Does this item charge on its agreement's own billing periods (#685)?
+     *
+     * An item with no anchor of its own, on the quarterly, semi-annual or
+     * annual cadence its agreement bills on - every component of such a
+     * package, and every proposal item on its agreement's cadence. Those
+     * periods are anchored on the agreement's start, so anchoring the item on
+     * the 1st of its start month, with a first charge on its start date, put a
+     * second charge inside the first period whenever the start was not the
+     * 1st: quarterly from 9 January, 9 January and 1 April. Such an item
+     * charges once per period instead, on the day the period starts, exactly
+     * as the agreement's price is sold. From the 1st the two rules give the
+     * same dates.
+     *
+     * Not a monthly item, whose periods are calendar months whatever the
+     * agreement's start, nor an item on another cadence than its agreement's
+     * (an annual licence in a quarterly service), nor one carrying an anchor -
+     * a move's successor continuing an older schedule (`ContinuedRecurrence`).
+     * Those keep the anchor rule below.
+     */
+    public static function followsBillingCycles(ClientAgreement $agreement, ClientAgreementRecurringItem $item): bool
+    {
+        $cadence = $agreement->effectiveBillingCadence();
+
+        return $item->anchor_day === null
+            && $item->anchor_month === null
+            && $cadence !== BillingCadence::Monthly
+            && $item->charge_cadence?->value === $cadence->value;
+    }
+
+    /**
+     * One charge per agreement billing period, on the day it starts - or, in a
+     * period the item starts inside, on the item's start - read from the
+     * engine's own period grid ({@see BillingCycleResolver}), so every start
+     * day, the 29th to the 31st included, lands where the price does.
+     *
+     * @return Carbon[]
+     */
+    private function billingCycleIncidences(ClientAgreement $agreement, Carbon $start, Carbon $end, Carbon $itemStart): array
+    {
+        $agreementStart = Carbon::instance($agreement->retainerStartsOn())->startOfDay();
+        $from = $start->gt($agreementStart) ? $start->copy() : $agreementStart;
+        $incidences = [];
+        if ($from->gt($end)) {
+            return $incidences;
+        }
+
+        $cycle = $this->cycles->cycleContaining($agreement, $from);
+        while ($cycle->start->lte($end)) {
+            $date = ($cycle->start->gt($itemStart) ? $cycle->start : $itemStart)->copy()->startOfDay();
+            if ($date->gte($start) && $date->lte($end)) {
+                $incidences[] = $date;
+            }
+            $cycle = $this->cycles->cycleContaining($agreement, $cycle->end->copy()->addDay());
+        }
+
+        return $incidences;
     }
 
     /**

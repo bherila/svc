@@ -2,8 +2,12 @@
 
 namespace Tests\Unit\Packages;
 
+use App\Models\ClientAgreement;
+use App\Models\ClientCompany;
+use App\Models\ServicePackageEnrollment;
 use App\Services\Billing\BillingCycleResolver;
 use App\Support\Billing\BillingCadence;
+use App\Support\Billing\ChargeCadence;
 use App\Support\Engagement\CancellationCycleAnchor;
 use App\Support\Engagement\CancellationDates;
 use App\Support\Packages\Migration\MigrationDates;
@@ -13,6 +17,7 @@ use App\Support\Packages\Migration\MigrationRefusal;
 use App\Support\Packages\Migration\MigrationRules;
 use App\Support\Packages\Migration\MigrationSkip;
 use App\Support\Packages\Migration\MigrationStatus;
+use App\Support\Packages\Migration\MigrationSubscriber;
 use App\Support\Packages\Migration\MigrationTargetStatus;
 use App\Support\Packages\Migration\MigrationTermChanges;
 use App\Support\Packages\PackageTerms;
@@ -311,6 +316,71 @@ final class MigrationRulesTest extends TestCase
         $this->assertSame('Issued automatically', $owner['invoice_issuing']);
         $this->assertSame('12 months', $owner['minimum_term_months']);
         $this->assertSame([], MigrationTermChanges::forClient($from, $from));
+    }
+
+    #[Requirement('MIG-1')]
+    public function test_every_refusal_has_its_own_label_beside_its_message(): void
+    {
+        $labels = array_map(static fn (MigrationRefusal $refusal): string => $refusal->label(), MigrationRefusal::cases());
+
+        $this->assertSame(count(MigrationRefusal::cases()), count(array_unique($labels)));
+        $this->assertSame([], array_filter($labels, static fn (string $label): bool => trim($label) === '' || mb_strlen($label) > 30));
+        $this->assertSame(
+            ['code' => 'package_migration_bills_by_usage', 'label' => 'Bills by usage', 'message' => MigrationRefusal::BillsByUsage->message()],
+            MigrationRefusal::BillsByUsage->toArray(),
+        );
+    }
+
+    #[Requirement('MIG-1')]
+    public function test_a_subscriber_moves_only_on_the_offered_dates_the_rules_accept(): void
+    {
+        $offered = [self::day('2027-01-01'), self::day('2027-02-01'), self::day('2027-03-01')];
+        $dates = new MigrationEffectiveDates($offered[0], $offered);
+        $monthly = ['cadence' => 'monthly', 'effective_on' => null, 'anchor_day' => null, 'anchor_month' => null];
+        $strings = static fn (array $days): array => array_map(static fn (CarbonImmutable $day): string => $day->toDateString(), $days);
+
+        $plain = self::moveSubscriber($dates, [$monthly]);
+        $this->assertSame(['2027-01-01', '2027-02-01', '2027-03-01'], $strings($plain->movableDates(ChargeCadence::Monthly)));
+        $this->assertNull($plain->refusalOnEveryDate(ChargeCadence::Monthly));
+
+        // An add-on starting Jan 15 has no schedule to continue on Jan 1, and has from Feb 1.
+        $later = self::moveSubscriber($dates, [$monthly, [...$monthly, 'effective_on' => self::day('2027-01-15')]]);
+        $this->assertSame(['2027-02-01', '2027-03-01'], $strings($later->movableDates(ChargeCadence::Monthly)));
+        $this->assertNull($later->refusalOnEveryDate(ChargeCadence::Monthly));
+        $this->assertSame(MigrationRefusal::AmbiguousRecurrence, $later->refusal(self::day('2027-01-01'), ChargeCadence::Monthly));
+
+        // Refused on every date, with the earliest's reason.
+        $this->assertSame([], $plain->movableDates(ChargeCadence::Quarterly));
+        $this->assertSame(MigrationRefusal::ChangesCadence, $plain->refusalOnEveryDate(ChargeCadence::Quarterly));
+        $usage = self::moveSubscriber($dates, [$monthly], ['hourly_rate_amount' => 12000]);
+        $this->assertSame(MigrationRefusal::BillsByUsage, $usage->refusalOnEveryDate(ChargeCadence::Monthly));
+        $this->assertSame(MigrationRefusal::AlreadyScheduled, self::moveSubscriber($dates, [$monthly], scheduled: true)->refusalOnEveryDate(ChargeCadence::Monthly));
+        $endsFirst = self::moveSubscriber(new MigrationEffectiveDates($offered[0], []), [$monthly]);
+        $this->assertSame([[], MigrationRefusal::EndsFirst], [$endsFirst->movableDates(ChargeCadence::Monthly), $endsFirst->refusalOnEveryDate(ChargeCadence::Monthly)]);
+        $periodless = self::moveSubscriber(null, [$monthly]);
+        $this->assertSame([[], MigrationRefusal::NotRecurring], [$periodless->movableDates(ChargeCadence::Monthly), $periodless->refusalOnEveryDate(ChargeCadence::Monthly)]);
+    }
+
+    /**
+     * A subscriber of a monthly agreement started Nov 9, 2026, built without a database.
+     *
+     * @param  list<array{cadence: string, effective_on: CarbonImmutable|null, anchor_day: int|null, anchor_month: int|null}>  $items
+     * @param  array<string, mixed>  $agreement
+     */
+    private static function moveSubscriber(?MigrationEffectiveDates $dates, array $items, array $agreement = [], bool $scheduled = false): MigrationSubscriber
+    {
+        return new MigrationSubscriber(
+            enrollment: new ServicePackageEnrollment,
+            agreement: (new ClientAgreement)->setRawAttributes(['billing_cadence' => 'monthly', 'starts_on' => '2026-11-09', ...$agreement]),
+            company: new ClientCompany,
+            activeOnFromVersion: true,
+            alreadyScheduled: $scheduled,
+            dates: $dates,
+            autopayLimit: null,
+            pendingEndOn: null,
+            scheduledEndOn: null,
+            scheduleItems: $items,
+        );
     }
 
     /**

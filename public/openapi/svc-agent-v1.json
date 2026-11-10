@@ -33223,7 +33223,8 @@
                     "new_price",
                     "effective_dates",
                     "effective_on",
-                    "subscribers"
+                    "subscribers",
+                    "refused"
                 ],
                 "properties": {
                     "package": {
@@ -33294,6 +33295,7 @@
                                 "additionalProperties": false,
                                 "required": [
                                     "code",
+                                    "label",
                                     "message"
                                 ],
                                 "properties": {
@@ -33315,6 +33317,9 @@
                                             "package_migration_off_cycle_component",
                                             "package_migration_ambiguous_recurrence"
                                         ]
+                                    },
+                                    "label": {
+                                        "type": "string"
                                     },
                                     "message": {
                                         "type": "string"
@@ -33501,6 +33506,7 @@
                                             "additionalProperties": false,
                                             "required": [
                                                 "code",
+                                                "label",
                                                 "message"
                                             ],
                                             "properties": {
@@ -33523,6 +33529,9 @@
                                                         "package_migration_ambiguous_recurrence"
                                                     ]
                                                 },
+                                                "label": {
+                                                    "type": "string"
+                                                },
                                                 "message": {
                                                     "type": "string"
                                                 }
@@ -33532,6 +33541,105 @@
                                             "type": "null"
                                         }
                                     ]
+                                }
+                            }
+                        }
+                    },
+                    "refused": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "enrollment_id",
+                                "client",
+                                "agreement",
+                                "refusal"
+                            ],
+                            "properties": {
+                                "enrollment_id": {
+                                    "$ref": "#/components/schemas/Uuid"
+                                },
+                                "client": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "name"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "$ref": "#/components/schemas/Uuid"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "agreement": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "id",
+                                        "title",
+                                        "starts_on",
+                                        "ends_on"
+                                    ],
+                                    "properties": {
+                                        "id": {
+                                            "$ref": "#/components/schemas/Uuid"
+                                        },
+                                        "title": {
+                                            "type": "string"
+                                        },
+                                        "starts_on": {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        "ends_on": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ],
+                                            "format": "date"
+                                        }
+                                    }
+                                },
+                                "refusal": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "code",
+                                        "label",
+                                        "message"
+                                    ],
+                                    "properties": {
+                                        "code": {
+                                            "type": "string",
+                                            "enum": [
+                                                "package_migration_not_newer",
+                                                "package_migration_not_recurring",
+                                                "package_migration_no_subscribers",
+                                                "package_migration_not_a_subscriber",
+                                                "package_migration_already_scheduled",
+                                                "package_migration_ends_first",
+                                                "package_migration_date_not_offered",
+                                                "package_migration_currency_changed",
+                                                "package_migration_not_scheduled",
+                                                "package_migration_bills_by_usage",
+                                                "package_migration_changes_cadence",
+                                                "package_migration_square_collected",
+                                                "package_migration_off_cycle_component",
+                                                "package_migration_ambiguous_recurrence"
+                                            ]
+                                        },
+                                        "label": {
+                                            "type": "string"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -385,7 +385,12 @@ export type PackageMovesPanel = {
     moves: PackageMoveRow[];
 };
 
-export type PackageMoveRefusal = { code: string; message: string };
+/** Why a move, or one subscriber of it, is refused: the code, a badge label and why, in words. */
+export type PackageMoveRefusal = {
+    code: string;
+    label: string;
+    message: string;
+};
 
 /** One subscriber a move could take (package_migrations.preview). */
 export type PackageMoveCandidate = {
@@ -407,6 +412,12 @@ export type PackageMoveCandidate = {
     refusal: PackageMoveRefusal | null;
 };
 
+/** A subscriber refused on every date it is offered (package_migrations.preview). */
+export type PackageMoveRefused = Pick<
+    PackageMoveCandidate,
+    'enrollment_id' | 'client' | 'agreement'
+> & { refusal: PackageMoveRefusal };
+
 export type PackageMovePreview = {
     package: { id: string; link_name: string; name: string };
     from_version: { id: string; number: number };
@@ -416,7 +427,10 @@ export type PackageMovePreview = {
     new_price: { amount: number; currency: string; label: string } | null;
     effective_dates: { date: string; subscribers: number }[];
     effective_on: string | null;
+    /** Those some offered date suits; the dates and counts are theirs alone. */
     subscribers: PackageMoveCandidate[];
+    /** Those no offered date suits, with why. */
+    refused: PackageMoveRefused[];
 };
 
 export type PackageMoveProps = {
