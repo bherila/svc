@@ -101,7 +101,7 @@ final class MigrationTermChanges
     {
         $items = array_map(
             static fn (PackageComponentTerms $component): string => $component->description.': '.self::money($component->total(), $currency).' '.self::cadence($component->cadence, true),
-            array_values(array_filter($terms->components, static fn (PackageComponentTerms $component): bool => $component->kind === PackageComponentKind::Recurring)),
+            array_filter($terms->components, static fn (PackageComponentTerms $component): bool => $component->kind === PackageComponentKind::Recurring),
         );
 
         return $items === [] ? 'Nothing recurring' : implode('; ', $items);

@@ -174,7 +174,12 @@ final class MigrationRules
      */
     public static function billsByUsage(?int $hourlyRate, ?int $retainerAmount, ?int $retainerMinutes, ?int $periodRetainerAmount, ?int $periodRetainerMinutes): bool
     {
-        return $hourlyRate !== null || ($retainerAmount ?? 0) > 0 || ($retainerMinutes ?? 0) > 0 || ($periodRetainerAmount ?? 0) > 0 || ($periodRetainerMinutes ?? 0) > 0;
+        return $hourlyRate !== null || self::positive($retainerAmount) || self::positive($retainerMinutes) || self::positive($periodRetainerAmount) || self::positive($periodRetainerMinutes);
+    }
+
+    private static function positive(?int $value): bool
+    {
+        return $value !== null && $value > 0;
     }
 
     /**
@@ -205,6 +210,7 @@ final class MigrationRules
         }
         $months = 1;
         while ($effective->addMonthsNoOverflow($months)->subDay()->lt($termEnds)) {
+            // @infection-ignore-all Unobservable: counting down never satisfies the loop, so the mutant hangs until the timeout and no assertion can fail.
             $months++;
         }
 

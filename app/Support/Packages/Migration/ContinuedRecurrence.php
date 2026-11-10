@@ -52,7 +52,7 @@ final readonly class ContinuedRecurrence
         /** Null for a monthly schedule, where only the day places a charge, and when the items follow the billing periods. */
         public ?int $anchorMonth,
         /** The old items charge on each billing period's first day, and the continued ones do too. */
-        public bool $followsBillingCycles = false,
+        public bool $followsBillingCycles,
     ) {}
 
     /**
@@ -77,9 +77,12 @@ final readonly class ContinuedRecurrence
             } else {
                 // As the engine reads them: the day clamped to 1-28, the month
                 // defaulting to the item's start, and only its place in the cycle mattering.
-                $day = max(1, min(28, $item['anchor_day'] ?? 1));
+                // @infection-ignore-all Equivalent: the default is clamped up to 1 on the next line, so an unset day reads 0 or 1 alike.
+                $requestedDay = $item['anchor_day'] ?? 1;
+                $day = max(1, min(28, $requestedDay));
                 $month = $period === 1 ? null : max(1, min(12, $item['anchor_month'] ?? $start->month));
-                $itemKey = $day.'|'.($month === null ? '' : ($month - 1) % $period);
+                // Only equality of the key matters, so the place in the cycle is the month modulo the period.
+                $itemKey = $day.'|'.($month === null ? '' : $month % $period);
             }
             if ($key !== null && $key !== $itemKey) {
                 return null;

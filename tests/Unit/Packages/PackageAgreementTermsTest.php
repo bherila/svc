@@ -75,7 +75,7 @@ final class PackageAgreementTermsTest extends TestCase
     public function test_a_setup_fee_is_a_recurring_item_only_when_neither_sign_up_nor_a_move_already_covers_it(bool $atSignup, bool $continuing, bool $kept): void
     {
         $terms = $this->termsWithSetupFee($atSignup);
-        $expected = $kept ? ['Care', 'Onboarding'] : ['Care'];
+        $expected = $kept ? ['Onboarding', 'Care'] : ['Care'];
 
         $this->assertSame($expected, array_column(PackageAgreementTerms::recurringItems($terms, $continuing), 'description'));
     }
@@ -85,14 +85,14 @@ final class PackageAgreementTermsTest extends TestCase
     {
         $items = PackageAgreementTerms::recurringItems($this->termsWithSetupFee(false));
 
-        $this->assertSame(['Care', 'Onboarding'], array_column($items, 'description'));
+        $this->assertSame(['Onboarding', 'Care'], array_column($items, 'description'));
         $this->assertSame([
             'description' => 'Onboarding',
             'cadence' => 'one_time',
             'amount' => 5000,
             'quantity' => '1.000',
             'is_taxable' => true,
-        ], $items[1]);
+        ], $items[0]);
     }
 
     private function termsWithSetupFee(bool $chargeAtSignup): PackageTerms
@@ -102,8 +102,9 @@ final class PackageAgreementTermsTest extends TestCase
             'name' => 'Care plan',
             'charge_setup_fee_at_signup' => $chargeAtSignup,
             'components' => [
-                ['kind' => 'recurring', 'description' => 'Care', 'cadence' => 'monthly', 'amount' => 10000],
+                // The fee first: skipping it must not stop the walk.
                 ['kind' => 'setup_fee', 'description' => 'Onboarding', 'amount' => 5000, 'is_taxable' => true],
+                ['kind' => 'recurring', 'description' => 'Care', 'cadence' => 'monthly', 'amount' => 10000],
             ],
         ]);
     }
