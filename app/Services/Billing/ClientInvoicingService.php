@@ -1982,6 +1982,13 @@ final class ClientInvoicingService
      * only on days both agreements bill: each bills from the later of the
      * period's start and the day it took over from a predecessor, through the
      * earlier of the period's end and the day before a successor took over.
+     *
+     * The period being generated is generation's own, so one lying wholly
+     * after this agreement's handover - a draft written while it was open and
+     * refreshed after a backdated termination (#670) - bills no ordinary work.
+     * Another agreement's invoice lying there is only taken to bill none when
+     * it carries nothing at all (#699); anything else there is history nobody
+     * can explain and still refuses.
      */
     private function workOverlaps(ClientCompany $company, ClientAgreement $agreement, Carbon $periodStart, Carbon $periodEnd, ClientInvoice $candidate): bool
     {
@@ -1995,28 +2002,61 @@ final class ClientInvoicingService
             return true;
         }
         $workspace = (int) $company->workspace_id;
-        [$ownStart, $ownEnd] = $this->billedWork($workspace, $agreement, CarbonImmutable::instance($periodStart), CarbonImmutable::instance($periodEnd));
-        [$otherStart, $otherEnd] = $this->billedWork($workspace, $other, CarbonImmutable::instance($candidate->service_period_start), CarbonImmutable::instance($candidate->service_period_end));
+        $own = $this->billedWork($workspace, $agreement, CarbonImmutable::instance($periodStart), CarbonImmutable::instance($periodEnd), fn (): bool => true);
+        $theirs = $this->billedWork(
+            $workspace,
+            $other,
+            CarbonImmutable::instance($candidate->service_period_start),
+            CarbonImmutable::instance($candidate->service_period_end),
+            fn (): bool => (int) $candidate->total_amount === 0 && ! $candidate->lines()->exists(),
+        );
+        if ($own === null || $theirs === null) {
+            return false;
+        }
 
-        return $otherStart->lte($ownEnd) && $otherEnd->gte($ownStart);
+        return $theirs[0]->lte($own[1]) && $theirs[1]->gte($own[0]);
     }
 
     /**
      * The days of a period this agreement bills ordinary work for: the period
-     * clipped to its handovers. A period lying wholly outside them - an invoice
-     * dated after its agreement handed over, which no generation writes - keeps
-     * its dates, so history nobody can explain still refuses.
+     * clipped to its handovers, or null when it bills none there.
      *
-     * @return array{CarbonImmutable, CarbonImmutable}
+     * - **Its opening period, before it took over.** An agreement's first
+     *   cycle reconciles the work period before it, to sell its first retainer
+     *   in advance. A successor bills no ordinary work from before its start,
+     *   so that period - the outgoing agreement's last, when the handover
+     *   falls on a period close - holds only the successor's advance sale
+     *   (#699). Measured by its dates, it refused the successor's first cycle,
+     *   which was then never sold.
+     * - **After it handed over, when `$billsNothingAfterHandover` says so.**
+     *
+     * Any other period lying wholly outside the handovers keeps its dates, so
+     * history nobody can explain still refuses.
+     *
+     * @param  callable(): bool  $billsNothingAfterHandover  asked only of a period lying wholly after the handover
+     * @return array{CarbonImmutable, CarbonImmutable}|null
      */
-    private function billedWork(int $workspace, ClientAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end): array
+    private function billedWork(int $workspace, ClientAgreement $agreement, CarbonImmutable $start, CarbonImmutable $end, callable $billsNothingAfterHandover): ?array
     {
         $tookOver = $this->deferredBacklogReader->tookOverOn($workspace, $agreement);
         $handedOver = $this->deferredBacklogReader->handedOverAfter($workspace, $agreement);
         $from = $tookOver instanceof CarbonImmutable && $tookOver->gt($start) ? $tookOver : $start->startOfDay();
         $through = $handedOver instanceof CarbonImmutable && $handedOver->lt($end) ? $handedOver : $end->startOfDay();
+        if ($from->lte($through)) {
+            return [$from, $through];
+        }
+        if ($tookOver instanceof CarbonImmutable && $end->startOfDay()->lt($tookOver)) {
+            $opening = $this->billingCycleResolver->cycleContaining($agreement, $this->agreementStart($agreement));
+            $sells = $end->startOfDay()->addDay();
+            if ($sells->gte($opening->start->copy()->startOfDay()) && $sells->lte($opening->end->copy()->startOfDay())) {
+                return null;
+            }
+        }
+        if ($handedOver instanceof CarbonImmutable && $start->startOfDay()->gt($handedOver) && $billsNothingAfterHandover()) {
+            return null;
+        }
 
-        return $from->lte($through) ? [$from, $through] : [$start->startOfDay(), $end->startOfDay()];
+        return [$start->startOfDay(), $end->startOfDay()];
     }
 
     private function assertNoOverlappingInvoice(
