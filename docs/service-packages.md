@@ -452,9 +452,10 @@ Slice 3b (payment at sign-up) settled these:
   recurring item per incidence, so a monthly hosting item's opening month is
   charged in full on the start date, as for every other agreement. The engine
   was not changed: prorating recurring items would change every existing
-  agreement's first invoice. A quarterly item anchored on the 1st also bills
-  its next incidence inside a first quarter anchored mid-month. Both are
-  recorded in the tests and are an owner decision if they should change.
+  agreement's first invoice. A quarterly item anchored on the 1st also billed
+  its next incidence inside a first quarter anchored mid-month; that was a
+  double charge, fixed by #685 ("A recurring component charges once per
+  billing period" below).
 - **The setup fee charged at sign-up** is added to that invoice as manual
   `adjustment` lines with no date (the one line type regeneration keeps, and
   undated so it never widens the work period the engine reconciles). With no
@@ -851,10 +852,13 @@ Slice 6 (moving subscribers to a new version) settled these:
   current or new version has any recurring component off the service's cadence,
   a one-time one included, is refused whole. A setup fee is not one (the
   successor never carries it, above).
-- **The charge schedule continues** (`ContinuedRecurrence`). The engine places
+- **The charge schedule continues** (`ContinuedRecurrence`). The engine placed
   a recurring item's charges by its anchor day and month - unset, the 1st and
   the month the item starts - and in the item's first cycle falls back to a
-  charge on its start date when the anchor has passed. A successor's items
+  charge on its start date when the anchor has passed (since #685 an
+  unanchored item on its agreement's longer cadence follows the agreement's
+  billing periods instead, and a successor's follow its own, which continue
+  them; below). A successor's items
   started fresh on the effective date restarted that schedule: a quarterly
   service started Nov 9 charges Nov 9, Feb 1, May 1; moved on Feb 9, it was
   charged Feb 9 and May 1 in its first new quarter, where the never-moved
@@ -877,6 +881,70 @@ Slice 6 (moving subscribers to a new version) settled these:
   every cadence, for services started on the 1st, 9th and 31st, moved on each
   of the first two dates a move may take (a full cycle apart), with one or two
   components or a setup fee billed with the first cycle.
+- **A recurring component charges once per billing period (#685).** A
+  package billed quarterly, semi-annually or annually and started on any day
+  but the 1st charged each recurring component twice on its first invoice:
+  quarterly from 9 January, $240 for a $120 component (9 January, and 1 April,
+  inside the quarter 9 January - 8 April). The engine placed an item with no
+  anchor on the 1st of its start month, with a first charge on its start date
+  when that anchor had passed, while the agreement's periods - what its price
+  sells - are anchored on the start itself. The rule now:
+  - **Billed from the start date, on the price's own grid.** An item with no
+    anchor, on the quarterly, semi-annual or annual cadence its agreement bills
+    on, is charged once per agreement billing period, on the day the period
+    starts, exactly as the package's price is sold
+    (`RecurringItemBiller::followsBillingCycles()`). The periods are read from
+    `BillingCycleResolver`, the grid the price, `UncoveredCadencePeriods` and
+    `generateNonMonthlyInvoiceForPeriod()` share, so a start on the 29th to the
+    31st lands where the price does too (quarterly from 31 January: 31 January,
+    1 May, 1 August, by the grid's own month arithmetic). An item that starts
+    inside a period - an operator's addition - is charged on its start for that
+    period, then on each period's first day.
+  - **Not prorated, and not aligned to an anchor.** The price of a longer
+    cadence's first period is not prorated: that period is a whole one,
+    anchored on the start (EDGE-6's proration is a monthly agreement's partial
+    first month). So the component is billed in full in it, once, as the price
+    is. Aligning it to an anchor would need a short stub period the price does
+    not have.
+  - **In the engine, not as anchors written at sign-up.** Writing each sign-up
+    item's anchor from its start, as a move's successor's are written, was
+    tried first and rejected: a sign-up's start date moves after its items are
+    written (acceptance and activation set it to the day the service starts),
+    which would leave written anchors on the old day, and anchors stop at the
+    28th, so no anchor names a period starting on the 29th to the 31st. The
+    period grid follows the agreement's start wherever it moves.
+  - **What it changes, and what it does not.** Monthly agreements and monthly
+    items are unchanged - a monthly period is a calendar month whatever the
+    start - and so is any item on another cadence than its agreement's (an
+    annual licence in a quarterly service) and any item carrying an anchor. An
+    agreement started on the 1st is charged on the same dates as before. A
+    proposal's item on its agreement's longer cadence had the same double
+    charge and has the same fix. The sign-up estimate (`SignupCharges`), the
+    revenue projection and the portal's next-invoice estimate read the same
+    rule through the same engine part.
+  - **Moves continue it** (`ContinuedRecurrence`): a move takes effect on one
+    of the old agreement's period starts and the grid steps each period from
+    the one before, so a successor's periods continue the old ones exactly; its
+    items carry no anchor and charge on its periods' first days, the dates the
+    old ones would have. Items placed by an anchor - an older successor's -
+    keep continuing theirs.
+  - **Agreements already invoiced.** No issued invoice is rewritten, and no
+    data migration was written: the engine reads the rule, so every period not
+    yet invoiced is billed once, including a first period whose draft is
+    regenerated. `svc:billing:audit-first-cycle-charges` (read-only, counts by
+    default, `--list` for each agreement by public id, `--workspace=` to scope
+    it) lists every agreement of the shape, a package's or not, with what its
+    first period's invoice holds: issued with the duplicate (and the
+    overcharge), a draft with it (regenerate it before issuing it), charged
+    once, or not invoiced. Repaying an issued overcharge - a reopen and
+    regeneration while it is unpaid, or a credit - is the owner's decision.
+  - **Tested** by a property, `BillingHistorySignupTest` (its own class beside
+    the twins, for the same reason): for every cadence, a start on the 1st, 9th
+    and 31st, and no component, one, two, a setup fee with the first cycle, a
+    setup fee charged at sign-up, or the first period charged at sign-up, every
+    billing period over three is invoiced exactly once, at the terms' price,
+    each component once on the period's first day. `BillingHistoryMoveTwinTest`
+    now also compares the day each recurring charge falls on.
 - **Refused classes stay refused (#686).** Each would need a handoff carrying
   state the successor cannot read today, proved by moved and never-moved twin
   histories like `BillingHistoryMoveTwinTest`; none is designed until owners
