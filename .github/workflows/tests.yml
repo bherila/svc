@@ -1,8 +1,6 @@
 # Both database lanes use four independent shards, with four ParaTest workers each. Laravel gives
 # each MariaDB worker an isolated `svc_testing_test_<token>` schema, created
 # automatically by the root CI connection inside the ephemeral service container.
-# `--functional` queues test methods rather than files: a file of long billing histories
-# otherwise holds one worker for minutes while the other three sit idle.
 name: tests
 
 on:
@@ -544,7 +542,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
-          php -d memory_limit=1G artisan test --parallel --processes=4 --functional --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
 
       # Per-test times, for balancing the shards on measured time.
       - name: Upload test timings
@@ -647,7 +645,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           php -d memory_limit=1G scripts/ci/phpunit-shard.php "$SHARD" 4 "$RUNNER_TEMP/phpunit-shard.xml"
-          php -d memory_limit=1G artisan test --parallel --processes=4 --functional --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
+          php -d memory_limit=1G artisan test --parallel --processes=4 --configuration="$RUNNER_TEMP/phpunit-shard.xml" --log-junit="$RUNNER_TEMP/junit.xml"
 
       # Per-test times, for balancing the shards on measured time.
       - name: Upload test timings
