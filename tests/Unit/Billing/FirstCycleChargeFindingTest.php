@@ -38,6 +38,18 @@ final class FirstCycleChargeFindingTest extends TestCase
             $invoice('draft', [], [], 'synthetic-second'),
             $invoice('issued', [$line(1, '2027-01-01', 9, 48000)], [], 'synthetic-fourth'),
         ], FirstCycleChargeOutcome::IssuedWithDuplicate, 'issued', 1, 48000, 'synthetic-fourth'];
+        // #698: an annual item added in the second quarter, charged again on
+        // 1 April a year on, in the invoice of the fifth quarter.
+        yield 'an annual item added later, again a year on' => [[
+            $invoice('paid', [$line(1, '2026-04-20', 1, 12000)], [1 => 1], 'synthetic-second-quarter'),
+            $invoice('draft', [], [], 'synthetic-third'),
+            $invoice('issued', [], [], 'synthetic-fourth'),
+            $invoice('issued', [$line(1, '2027-04-01', 9, 12000)], [], 'synthetic-fifth'),
+        ], FirstCycleChargeOutcome::IssuedWithDuplicate, 'issued', 1, 12000, 'synthetic-fifth'];
+        yield 'an annual item added later, charged once' => [[
+            $invoice('paid', [$line(1, '2026-04-20', 1, 12000)], [1 => 1], 'synthetic-second-quarter'),
+            $invoice('issued', [], [], 'synthetic-fifth'),
+        ], FirstCycleChargeOutcome::ChargedOnce, 'paid', 0, 0, 'synthetic-second-quarter'];
         // An extra line issued outweighs one still in draft, and only the issued one is counted.
         yield 'issued and in draft' => [[
             $invoice('draft', [$line(1, '2026-01-09', 1, 12000), $line(1, '2026-04-01', 2, 12000)], [1 => 1], 'synthetic-draft'),
