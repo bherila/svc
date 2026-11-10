@@ -30,4 +30,4 @@ A **Retainer** is a block of hours the client pays for each period, used or not.
 
 ## Recurring services
 
-Hosting and similar services are charged on their own cadence, separate from hours. A charge on the agreement's own billing period, such as a quarterly charge on a quarterly agreement, is charged once per billing period, on the day the period starts.
+Hosting and similar services are charged on their own cadence, separate from hours. A charge on the agreement's own billing period, such as a quarterly charge on a quarterly agreement, is charged once per billing period, on the day the period starts. A charge on another cadence follows the same periods: a monthly charge on a quarterly agreement is charged once a month counted from the day each period starts, so every period holds three.

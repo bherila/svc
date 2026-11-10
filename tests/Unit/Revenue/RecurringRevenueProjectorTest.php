@@ -317,6 +317,20 @@ final class RecurringRevenueProjectorTest extends TestCase
         $this->assertSame([0, 700], [$months['2027-01']['recurring_items'], $months['2027-02']['recurring_items']]);
     }
 
+    /**
+     * A monthly item with no anchor in a quarter from 31 January is charged
+     * once per month of each quarter laid on the agreement's periods (#695):
+     * 31 January, 28 February, 31 March, then 1 May as the next quarter
+     * starts - none in April, where the anchor rule charged a fourth time.
+     */
+    public function test_an_unanchored_item_on_another_cadence_is_projected_on_the_agreements_periods(): void
+    {
+        $agreement = $this->agreement(cadence: 'quarterly', startsOn: '2027-01-31', items: [$this->item('monthly', anchorDay: null, amount: 700)]);
+        $months = $this->months($this->project([$agreement])->agreements[0]);
+
+        $this->assertSame([700, 700, 700, 0, 700], array_map(static fn (string $month): int => $months[$month]['recurring_items'], ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05']));
+    }
+
     public function test_a_monthly_row_reports_its_client_and_amounts(): void
     {
         $agreement = $this->agreement(retainerAmount: 100000, items: [$this->item('monthly', amount: 700)]);
@@ -390,7 +404,7 @@ final class RecurringRevenueProjectorTest extends TestCase
     private function item(
         string $cadence,
         ?int $anchorMonth = null,
-        int $anchorDay = 1,
+        ?int $anchorDay = 1,
         int $amount = 1000,
         ?string $effectiveOn = null,
         ?string $expiresOn = null,

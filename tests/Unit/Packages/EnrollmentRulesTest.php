@@ -246,6 +246,12 @@ final class EnrollmentRulesTest extends TestCase
         // start, on its first day, as the engine bills it (#685).
         yield 'a quarter anchored on the start' => [['charge_first_period' => true, 'billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Quarterly hosting', 'cadence' => 'quarterly', 'amount' => 12000]]], '2026-11-15', [['first_period', 12000, '2026-11-15', '2027-02-14']]];
         yield 'a year started on the 31st' => [['charge_first_period' => true, 'billing_cadence' => 'annual', 'components' => [['kind' => 'recurring', 'description' => 'Annual hosting', 'cadence' => 'annual', 'amount' => 48000]]], '2027-01-31', [['first_period', 48000, '2027-01-31', '2028-01-30']]];
+        // A component on another cadence charges once per period of its own
+        // inside the service's period (#695): three months of a quarter from
+        // the 9th, not four, and a year's licence once in its first quarter.
+        yield 'a monthly component in a quarter from the 9th' => [['charge_first_period' => true, 'billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Monthly hosting', 'cadence' => 'monthly', 'amount' => 4500]]], '2026-01-09', [['first_period', 13500, '2026-01-09', '2026-04-08']]];
+        yield 'a monthly component in a year from the 31st' => [['charge_first_period' => true, 'billing_cadence' => 'annual', 'components' => [['kind' => 'recurring', 'description' => 'Monthly hosting', 'cadence' => 'monthly', 'amount' => 4500]]], '2027-01-31', [['first_period', 54000, '2027-01-31', '2028-01-30']]];
+        yield 'an annual licence in a quarter from the 31st' => [['charge_first_period' => true, 'billing_cadence' => 'quarterly', 'components' => [['kind' => 'recurring', 'description' => 'Annual licence', 'cadence' => 'annual', 'amount' => 48000]]], '2027-01-31', [['first_period', 48000, '2027-01-31', '2027-04-30']]];
     }
 
     /**

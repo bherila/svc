@@ -4,6 +4,7 @@ namespace Tests\Unit\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
+use App\Services\Billing\BillingCycleResolver;
 use App\Services\Billing\RecurringItemBiller;
 use App\Support\Billing\ChargeCadence;
 use Carbon\Carbon;
@@ -417,13 +418,140 @@ class RecurringItemBillerTest extends TestCase
         $this->assertSame(['2026-04-09', '2026-07-09'], $this->dates($agreement, '2026-01-01', '2026-09-30'));
     }
 
+    // =========================================================================
+    // An unanchored item on another cadence than its longer agreement's (#695)
+    // =========================================================================
+
+    public function test_a_monthly_item_in_a_quarter_started_on_the_9th_charges_three_times_in_it(): void
+    {
+        // The issue's example: it charged 9 January, 1 February, 1 March and 1 April.
+        $agreement = $this->agreementOn('quarterly', '2026-01-09', [$item = $this->unanchoredItem(ChargeCadence::Monthly, null)]);
+
+        $this->assertTrue(RecurringItemBiller::followsBillingCycles($agreement, $item));
+        $this->assertSame(['2026-01-09', '2026-02-09', '2026-03-09'], $this->dates($agreement, '2026-01-09', '2026-04-08'));
+        $this->assertSame(['2026-04-09', '2026-05-09', '2026-06-09'], $this->dates($agreement, '2026-04-09', '2026-07-08'));
+    }
+
+    /** @return iterable<string, array{string, ChargeCadence, string, string, list<string>}> */
+    public static function offCadenceItems(): iterable
+    {
+        yield 'monthly in a quarter from the 1st' => ['quarterly', ChargeCadence::Monthly, '2026-01-01', '2026-06-30', ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-05-01', '2026-06-01']];
+        yield 'monthly in a quarter from the 9th' => ['quarterly', ChargeCadence::Monthly, '2026-01-09', '2026-07-08', ['2026-01-09', '2026-02-09', '2026-03-09', '2026-04-09', '2026-05-09', '2026-06-09']];
+        // Divided from each period's first day and never past a month's end;
+        // the second quarter starts on 1 May, as the grid lays it out.
+        yield 'monthly in a quarter from the 31st' => ['quarterly', ChargeCadence::Monthly, '2026-01-31', '2026-07-31', ['2026-01-31', '2026-02-28', '2026-03-31', '2026-05-01', '2026-06-01', '2026-07-01']];
+        yield 'monthly in a half-year from the 9th' => ['semi_annual', ChargeCadence::Monthly, '2026-01-09', '2026-07-08', ['2026-01-09', '2026-02-09', '2026-03-09', '2026-04-09', '2026-05-09', '2026-06-09']];
+        yield 'monthly in a year from the 31st, a leap February' => ['annual', ChargeCadence::Monthly, '2027-12-31', '2028-03-31', ['2027-12-31', '2028-01-31', '2028-02-29', '2028-03-31']];
+        yield 'quarterly in a year from the 31st' => ['annual', ChargeCadence::Quarterly, '2026-01-31', '2027-01-30', ['2026-01-31', '2026-04-30', '2026-07-31', '2026-10-31']];
+        yield 'semi-annual in a year from the 9th' => ['annual', ChargeCadence::SemiAnnual, '2026-01-09', '2027-07-09', ['2026-01-09', '2026-07-09', '2027-01-09', '2027-07-09']];
+        yield 'annual in a quarter from the 9th' => ['quarterly', ChargeCadence::Annual, '2026-01-09', '2028-01-08', ['2026-01-09', '2027-01-09']];
+        yield 'annual in a quarter from the 31st' => ['quarterly', ChargeCadence::Annual, '2026-01-31', '2028-01-30', ['2026-01-31', '2027-02-01']];
+        yield 'semi-annual in a quarter from the 9th' => ['quarterly', ChargeCadence::SemiAnnual, '2026-01-09', '2027-01-08', ['2026-01-09', '2026-07-09']];
+        yield 'annual in a half-year from the 1st' => ['semi_annual', ChargeCadence::Annual, '2026-03-01', '2028-02-29', ['2026-03-01', '2027-03-01']];
+    }
+
+    /** @param list<string> $expected */
+    #[DataProvider('offCadenceItems')]
+    public function test_an_unanchored_item_on_another_cadence_charges_once_per_period_of_its_own(string $agreementCadence, ChargeCadence $cadence, string $startsOn, string $through, array $expected): void
+    {
+        $agreement = $this->agreementOn($agreementCadence, $startsOn, [$item = $this->unanchoredItem($cadence, null)]);
+
+        $this->assertTrue(RecurringItemBiller::followsBillingCycles($agreement, $item));
+        $this->assertSame($expected, $this->dates($agreement, $startsOn, $through));
+        // Asked month by month, as the projector does, or period by period,
+        // as invoices do, the same charges.
+        $monthly = [];
+        for ($month = Carbon::parse($startsOn)->startOfMonth(); $month->lte(Carbon::parse($through)); $month->addMonth()) {
+            $monthly = [...$monthly, ...$this->dates($agreement, $month->max(Carbon::parse($startsOn))->toDateString(), $month->copy()->endOfMonth()->min(Carbon::parse($through))->toDateString())];
+        }
+        $this->assertSame($expected, $monthly);
+        $byPeriod = [];
+        foreach ((new BillingCycleResolver)->cyclesForAgreement($agreement, Carbon::parse($through)) as $cycle) {
+            $inPeriod = $this->dates($agreement, $cycle->start->toDateString(), $cycle->end->toDateString());
+            // Every charge inside the period it is sold with.
+            foreach ($inPeriod as $date) {
+                $this->assertTrue($date >= $cycle->start->toDateString() && $date <= $cycle->end->toDateString());
+            }
+            $byPeriod = [...$byPeriod, ...$inPeriod];
+        }
+        $this->assertSame($expected, $byPeriod);
+    }
+
+    /** @return iterable<string, array{string, ChargeCadence}> */
+    public static function offCadenceFromTheFirst(): iterable
+    {
+        yield 'monthly in a quarter' => ['quarterly', ChargeCadence::Monthly];
+        yield 'monthly in a year' => ['annual', ChargeCadence::Monthly];
+        yield 'annual in a quarter' => ['quarterly', ChargeCadence::Annual];
+        yield 'quarterly in a year' => ['annual', ChargeCadence::Quarterly];
+        yield 'semi-annual in a quarter' => ['quarterly', ChargeCadence::SemiAnnual];
+    }
+
+    /** An agreement started on the 1st is charged on the days the anchor rule gave it. */
+    #[DataProvider('offCadenceFromTheFirst')]
+    public function test_from_the_first_an_off_cadence_item_keeps_the_anchor_rules_dates(string $agreementCadence, ChargeCadence $cadence): void
+    {
+        $unanchored = $this->agreementOn($agreementCadence, '2026-03-01', [$this->unanchoredItem($cadence, null)]);
+        $anchored = $this->agreementOn($agreementCadence, '2026-03-01', [$item = $this->unanchoredItem($cadence, null)]);
+        $item->setRawAttributes(['anchor_day' => 1] + $item->getAttributes());
+
+        $this->assertNotSame([], $this->dates($unanchored, '2026-03-01', '2028-12-31'));
+        $this->assertSame($this->dates($anchored, '2026-03-01', '2028-12-31'), $this->dates($unanchored, '2026-03-01', '2028-12-31'));
+    }
+
+    public function test_an_off_cadence_item_starting_inside_a_period_charges_on_its_start_then_on_its_own_schedule(): void
+    {
+        $agreement = $this->agreementOn('quarterly', '2026-01-09', [$this->unanchoredItem(ChargeCadence::Monthly, '2026-02-20', '2026-05-31')]);
+
+        // The part from 9 February holds the start; nothing before it, nothing after the expiry.
+        $this->assertSame(['2026-02-20', '2026-03-09', '2026-04-09', '2026-05-09'], $this->dates($agreement, '2026-01-09', '2026-12-31'));
+        $this->assertSame([], $this->dates($agreement, '2026-02-21', '2026-03-08'), 'a window opening after the start inside its part sells nothing');
+    }
+
+    public function test_an_item_starting_on_a_periods_last_day_charges_on_it(): void
+    {
+        // The quarter from 31 January ends on 30 April, its last month running
+        // from 31 March: an item starting that day is charged that day.
+        $agreement = $this->agreementOn('quarterly', '2026-01-31', [$this->unanchoredItem(ChargeCadence::Monthly, '2026-04-30')]);
+
+        $this->assertSame(['2026-04-30', '2026-05-01', '2026-06-01'], $this->dates($agreement, '2026-01-31', '2026-06-30'));
+        $this->assertSame(['2026-04-30'], $this->dates($agreement, '2026-04-30', '2026-04-30'));
+    }
+
+    public function test_a_longer_item_counts_its_periods_from_the_one_it_starts_in(): void
+    {
+        // An annual licence added in the second quarter: a year of quarters from 9 April.
+        $agreement = $this->agreementOn('quarterly', '2026-01-09', [$this->unanchoredItem(ChargeCadence::Annual, '2026-05-15')]);
+
+        $this->assertSame(['2026-05-15', '2027-04-09', '2028-04-09'], $this->dates($agreement, '2026-01-09', '2028-12-31'));
+        $this->assertSame([], $this->dates($agreement, '2027-01-09', '2027-04-08'));
+    }
+
+    public function test_an_off_cadence_item_started_before_its_agreement_charges_from_the_agreements_start(): void
+    {
+        $agreement = $this->agreementOn('quarterly', '2026-04-09', [$this->unanchoredItem(ChargeCadence::Monthly, '2026-01-09')]);
+
+        $this->assertSame(['2026-04-09', '2026-05-09', '2026-06-09'], $this->dates($agreement, '2026-01-01', '2026-07-08'));
+    }
+
+    public function test_an_off_cadence_item_stops_with_its_agreement(): void
+    {
+        $agreement = $this->agreementOn('quarterly', '2026-01-09', [$this->unanchoredItem(ChargeCadence::Monthly, null)]);
+        $agreement->setRawAttributes(['ends_on' => '2026-03-09'] + $agreement->getAttributes());
+
+        $this->assertSame(['2026-01-09', '2026-02-09', '2026-03-09'], $this->dates($agreement, '2026-01-09', '2026-04-08'));
+        $this->assertSame([], $this->dates($agreement, '2026-03-10', '2026-12-31'));
+    }
+
     /** @return iterable<string, array{string, ChargeCadence, int|null, int|null}> */
     public static function itemsOnTheirAnchors(): iterable
     {
         yield 'a monthly agreement' => ['monthly', ChargeCadence::Quarterly, null, null];
-        yield 'another cadence than the agreement\'s' => ['quarterly', ChargeCadence::Annual, null, null];
-        yield 'a monthly item in a quarterly agreement' => ['quarterly', ChargeCadence::Monthly, null, null];
+        yield 'a monthly item in a monthly agreement' => ['monthly', ChargeCadence::Monthly, null, null];
+        yield 'a one-time item' => ['quarterly', ChargeCadence::OneTime, null, null];
         yield 'an anchor day' => ['quarterly', ChargeCadence::Quarterly, 1, null];
+        yield 'a monthly item with an anchor day' => ['quarterly', ChargeCadence::Monthly, 1, null];
+        yield 'an annual item with an anchor month' => ['quarterly', ChargeCadence::Annual, null, 1];
         yield 'an anchor month' => ['quarterly', ChargeCadence::Quarterly, null, 1];
     }
 

@@ -73,12 +73,26 @@ final class MigrationDates
         $earliest = $this->close($anchor, $floor)->addDay();
 
         $ceiling = $endsOn === null ? null : self::day($endsOn)->toDateString();
+
+        return new MigrationEffectiveDates($earliest, $this->starts($anchor, $earliest, $ceiling, $count));
+    }
+
+    /**
+     * Up to `$count` period starts from `$earliest`, none after `$ceiling`.
+     *
+     * @return list<CarbonImmutable>
+     */
+    private function starts(CancellationCycleAnchor $anchor, CarbonImmutable $earliest, ?string $ceiling, int $count): array
+    {
         $offered = [];
-        for ($start = $earliest; count($offered) < $count && ($ceiling === null || $start->toDateString() <= $ceiling); $start = $this->close($anchor, $start)->addDay()) {
+        for ($start = $earliest; count($offered) < $count; $start = $this->close($anchor, $start)->addDay()) {
+            if ($ceiling !== null && $start->toDateString() > $ceiling) {
+                return $offered;
+            }
             $offered[] = $start;
         }
 
-        return new MigrationEffectiveDates($earliest, $offered);
+        return $offered;
     }
 
     /** The last day of the engine's billing period that contains `$day`. */

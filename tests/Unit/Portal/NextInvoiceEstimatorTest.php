@@ -182,6 +182,18 @@ final class NextInvoiceEstimatorTest extends TestCase
         $this->assertSame(['2026-10-10', '2026-11-10', '2026-12-10'], array_values($dates));
     }
 
+    /** With no anchor, each month of the quarter counted from its first day, as the invoice charges it (#695). */
+    public function test_a_quarter_from_the_9th_carries_a_monthly_item_from_the_quarters_first_day(): void
+    {
+        $item = $this->item('monthly', anchorDay: null, amount: 1000);
+        $estimate = $this->estimate($this->agreement(cadence: 'quarterly', startsOn: '2026-01-09', retainerAmount: 800000, items: [$item]));
+
+        $this->assertNotNull($estimate);
+        $this->assertSame(['2026-10-09', '2027-01-08'], [$estimate->periodStart, $estimate->periodEnd]);
+        $dates = array_column(array_filter($estimate->parts, static fn (array $part): bool => $part['kind'] === 'recurring_item'), 'date');
+        $this->assertSame(['2026-10-09', '2026-11-09', '2026-12-09'], array_values($dates));
+    }
+
     public function test_an_agreement_not_yet_started_is_estimated_from_its_start(): void
     {
         $estimate = $this->estimate($this->agreement(startsOn: '2027-02-01', retainerAmount: 800000));
@@ -401,7 +413,7 @@ final class NextInvoiceEstimatorTest extends TestCase
         );
     }
 
-    private function item(string $cadence, ?int $anchorMonth = null, int $anchorDay = 1, int $amount = 1000, ?string $quantity = '1.000', bool $active = true): ProjectedRecurringItem
+    private function item(string $cadence, ?int $anchorMonth = null, ?int $anchorDay = 1, int $amount = 1000, ?string $quantity = '1.000', bool $active = true): ProjectedRecurringItem
     {
         $id = $this->nextItemId++;
 
