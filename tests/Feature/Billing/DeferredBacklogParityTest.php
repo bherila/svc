@@ -233,7 +233,7 @@ final class DeferredBacklogParityTest extends TestCase
         );
     }
 
-    public function test_a_terminated_agreement_reads_its_backlog_through_its_own_end(): void
+    public function test_an_ended_agreement_shows_later_work_for_settlement_but_capacity_stops_at_its_end(): void
     {
         $agreement = $this->agreement('Ended', null, 15000);
         $agreement->forceFill(['status' => 'terminated', 'ends_on' => '2026-03-31'])->save();
@@ -242,9 +242,10 @@ final class DeferredBacklogParityTest extends TestCase
 
         $backlog = app(DeferredBacklogReader::class)->forAgreement($this->workspace, $agreement, CarbonImmutable::parse(self::THROUGH), ['2026-03', '2026-04']);
 
-        $this->assertSame('2026-03-31', $backlog->through);
-        $this->assertSame(60, $backlog->minutes);
-        $this->assertSame([60, 0], array_map(static fn ($month): int => $month->minutesAdded, $backlog->trend));
+        $this->assertSame(self::THROUGH, $backlog->through);
+        $this->assertSame(90, $backlog->minutes);
+        $this->assertSame([60, 30], array_map(static fn ($month): int => $month->minutesAdded, $backlog->trend));
+        $this->assertSame('2026-03-31', app(DeferredBacklogReader::class)->segmentEnd($this->workspace, $agreement, CarbonImmutable::parse(self::THROUGH))->toDateString());
     }
 
     public function test_an_entry_of_another_workspace_claiming_the_client_withholds_the_backlog(): void

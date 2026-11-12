@@ -6,6 +6,7 @@ use App\Models\ClientAgreement;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Support\Billing\DeferredBacklog;
+use App\Support\Billing\DeferredWorkDates;
 use App\Support\Concurrency\Locks;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,12 +18,13 @@ use LogicException;
  *
  * The persistence half of the read model: a fixed number of queries however
  * many agreements are read, then the calculation runs on what came back. The
- * outstanding set uses the termination collection's own predicates
+ * outstanding set uses the termination collection's eligibility predicates
  * ({@see DeferredBillingAllocator::collectForTermination()}) - the shared
  * `awaitingDeferredBilling` and `billableForInvoicing` scopes, the same
  * project-chain check over the whole client before any agreement narrows it,
- * and the agreement's project scope - so the backlog is the set termination
- * would bill today and nothing else (`DeferredBacklogParityTest`).
+ * and the agreement's project scope. Work after an agreement's end remains
+ * visible for an explicit buy-down, bounded by any successor's start. Retainer
+ * capacity and automatic termination collection still stop at the end.
  */
 final class DeferredBacklogReader
 {
@@ -91,7 +93,7 @@ final class DeferredBacklogReader
             $clientSegments = $segments[(int) $agreement->client_company_id] ?? new Collection;
             $backlogs[(int) $agreement->id] = DeferredBacklog::calculate(
                 $agreement,
-                $this->segmentThrough($agreement, $clientSegments, $through),
+                $this->dates($agreement, $clientSegments, $through)->settlementThrough,
                 ! isset($disagreeing[(int) $agreement->client_company_id]),
                 $outstanding->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
                 $moved->filter(static fn (ClientTimeEntry $entry): bool => $entry->isWithinAgreementScope($agreement))->values(),
@@ -104,14 +106,25 @@ final class DeferredBacklogReader
     }
 
     /**
-     * The last day one agreement's backlog runs to, for a caller that has to
-     * read something else - its ledger's re-carried balance - to the same day.
+     * The last day of retainer capacity and automatic termination collection.
+     * The ledger's re-carried balance must never extend beyond this day.
      */
     public function segmentEnd(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through): CarbonImmutable
     {
         $companyId = (int) $agreement->client_company_id;
 
-        return $this->segmentThrough($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through);
+        return $this->dates($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->capacityThrough;
+    }
+
+    /** Work through this day may be disclosed and explicitly settled, even after termination. */
+    public function settlementEnd(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through): CarbonImmutable
+    {
+        if ((int) $agreement->workspace_id !== (int) $workspace->id) {
+            throw new LogicException('Deferred settlement is read inside the agreement\'s own workspace.');
+        }
+        $companyId = (int) $agreement->client_company_id;
+
+        return $this->dates($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->settlementThrough;
     }
 
     /**
@@ -173,31 +186,17 @@ final class DeferredBacklogReader
     }
 
     /**
-     * The last day an agreement's backlog runs to.
-     *
-     * The workspace's today, the agreement's own end - where its capacity
-     * ledger stops - and, where a successor for the same project scope takes
-     * over, the day before it starts, exactly as invoice generation hands one segment to the next
-     * ({@see AgreementSelector::successorAgreementForGeneration()}); without
-     * the bound, both agreements would quote the same later hours, the
-     * outgoing one at a rate nobody bills any more.
+     * Settlement follows work ownership through a handover; capacity also
+     * stops at the agreement's own end. Without a successor, post-end work
+     * stays on the shelf for explicit settlement at the existing terms.
      *
      * @param  Collection<int, ClientAgreement>  $segments  the client's agreements, in generation order
      */
-    private function segmentThrough(ClientAgreement $agreement, Collection $segments, CarbonImmutable $through): CarbonImmutable
+    private function dates(ClientAgreement $agreement, Collection $segments, CarbonImmutable $through): DeferredWorkDates
     {
-        $bounds = [$through];
-        // The agreement's own end, where its ledger stops too.
-        $end = $agreement->termination_date;
-        if ($end instanceof CarbonImmutable) {
-            $bounds[] = $end->startOfDay();
-        }
         $successor = $this->agreements->successorAgreementForGeneration($segments, $agreement);
-        if ($successor instanceof ClientAgreement) {
-            $bounds[] = $successor->starts_on->startOfDay()->subDay();
-        }
 
-        return min($bounds);
+        return DeferredWorkDates::through($through, $agreement->termination_date, $successor?->starts_on);
     }
 
     /**

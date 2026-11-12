@@ -14,8 +14,8 @@ use RuntimeException;
  * The deferred work an agreement still has on the shelf, and what it costs.
  *
  * Computed without the database from what {@see DeferredBacklogReader} loaded:
- * the outstanding entries are exactly the set the termination invoice would
- * collect today, and the amount is that invoice's charge for them, priced by
+ * the outstanding entries use termination's eligibility and pricing, including
+ * post-end work available only for explicit settlement. The amount is priced by
  * {@see DeferredTerminationPricing} - the rule the invoice itself uses (#366).
  * The trend reads the same entries' history over the months the caller asks
  * for, normally the capacity ledger's.
@@ -48,7 +48,7 @@ final readonly class DeferredBacklog
      * dated after it has not taken anything off: both are left out, as the
      * capacity ledger leaves them out.
      *
-     * @param  iterable<ClientTimeEntry>  $outstanding  the termination collection set, in FIFO order
+     * @param  iterable<ClientTimeEntry>  $outstanding  the work available for settlement, in FIFO order
      * @param  iterable<ClientTimeEntry>  $history  deferred work of the agreement loaded withCapacityPlacement()
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
      * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance, which termination
@@ -211,7 +211,7 @@ final readonly class DeferredBacklog
         );
     }
 
-    /** Every hour termination would bill: the shelf and the re-carried balance. */
+    /** Every unsettled hour: the shelf and the re-carried capacity balance. */
     public function hours(): ?float
     {
         return $this->minutes === null ? null : self::hoursOf($this->minutes + ($this->carriedMinutes ?? 0));

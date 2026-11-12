@@ -1832,7 +1832,7 @@ final class ClientInvoicingService
     private function recordDeferredWorkSnapshot(ClientInvoice $invoice, ClientAgreement $agreement, ClientCompany $company, ?array $current = null): void
     {
         $workspace = $company->workspace ?? throw new RuntimeException('The client company has no workspace.');
-        $through = $this->deferredBacklogReader->segmentEnd($workspace, $agreement, $this->clock->today($workspace));
+        $through = $this->deferredBacklogReader->settlementEnd($workspace, $agreement, $this->clock->today($workspace));
         $entries = ClientTimeEntry::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_company_id', $invoice->client_company_id)

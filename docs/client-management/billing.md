@@ -226,8 +226,9 @@ outgoing final invoice spans its whole cycle past the successor's start, and a
 successor's opening invoice is dated over its predecessor's last period, but a
 late hour on the other agreement's days is that agreement's - it is neither put
 on this draft nor deferred into this pool. Flat-hourly time is not handed over. A disputed row stays held until
-its answer decides how it waits. Late work needs a later draft to land on, so an
-agreement with no further period leaves it unbilled. See
+its answer decides how it waits. Late ordinary work needs a later draft to land
+on. Deferred work after termination remains available for an explicit buy-down,
+even when no later retainer period remains. See
 [LateWork](../../app/Services/Billing/LateWork.php).
 
 ## Invoice Line Items
@@ -528,9 +529,17 @@ bills on the outgoing agreement's post-termination invoices, monthly and
 non-monthly alike (#689). Such a draft never sells a retainer, and a cycle
 with nothing to bill gets none; where there is work, it is an ordinary draft
 on the client's Invoices tab for an owner to review and issue
-(`SuccessorFirstCycleTest`). Deferred work ends with the agreement's segment,
-its termination included: an hour deferred after the end waits for a buy-down
-nothing can make.
+(`SuccessorFirstCycleTest`). Retainer capacity and automatic termination
+collection stop at the agreement's end. Deferred work dated after that end
+remains on the visible backlog and may be settled by an explicit buy-down at
+the agreement's hourly rate (or its flat-hourly snapshot). This applies to
+already-stranded work and later deferrals alike; no migration is required.
+The operator previews and creates a settlement draft, then issues it normally.
+No issued final invoice is rewritten and no new retainer capacity is sold.
+If a successor for the same project scope begins, the outgoing agreement's
+settlement backlog stops the day before that handover; later work belongs to
+the successor. This is the settlement decision for #703's termination case;
+quarterly first-cycle proration is a separate question.
 
 A draft generated before the successor was added, or before a backdated
 termination made room for it, still carries what it selected then. Issue
