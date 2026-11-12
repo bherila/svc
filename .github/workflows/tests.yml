@@ -508,6 +508,7 @@ jobs:
       DB_CONNECTION: sqlite
       DB_DATABASE: ':memory:'
       DB_EXPECT_DRIVER: sqlite
+      BILLING_HISTORY_SEEDS: 16
 
     steps:
       - name: Checkout code
@@ -593,6 +594,7 @@ jobs:
       DB_USERNAME: root
       DB_PASSWORD: testing
       DB_EXPECT_DRIVER: mariadb
+      BILLING_HISTORY_SEEDS: 16
 
     steps:
       - name: Checkout code
