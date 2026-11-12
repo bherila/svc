@@ -180,6 +180,12 @@ final class BillingHistorySequenceTest extends TestCase
         }
     }
 
+    /** #704: January billed only the retainer before a 1110-minute row arrived. */
+    public function test_late_work_after_an_empty_retainer_invoice_seed_6(): void
+    {
+        $this->test_a_generated_history_keeps_its_invariants('retainer with rollover, monthly', 6);
+    }
+
     // ---- the generator ----
 
     private function takeStep(int $step): void

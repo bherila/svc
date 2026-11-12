@@ -216,7 +216,11 @@ rolls it forward by how it is priced:
   With no capacity free it waits in the backlog and adds no overage to the draft.
 
 Only a charged cadence invoice of the same agreement makes a row late. A period
-that is drafted or voided still bills its own work. Ordinary late work stays
+that is drafted or voided still bills its own work. An issued invoice with no
+linked time still closes its period: work logged afterwards rolls forward by
+the same rules. Imported invoices are excluded by their recorded provenance in
+`external_import_items`, scoped through the import run's workspace, rather than
+by the absence of time links. Ordinary late work stays
 inside the agreement's handovers (`LateWork::withinSegment()`, #699): an
 outgoing final invoice spans its whole cycle past the successor's start, and a
 successor's opening invoice is dated over its predecessor's last period, but a

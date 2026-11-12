@@ -49,12 +49,15 @@ final class LateWork
             ->whereNotNull('service_period_start')
             ->whereNotNull('service_period_end')
             ->whereNotNull('issued_at')
-            // Imported history has no links to time, so an unlinked row in its
-            // period says nothing about whether that row was billed.
-            ->whereExists(fn ($linked) => $linked->selectRaw('1')
-                ->from('client_invoice_lines')
-                ->join('client_invoice_line_time_entries', 'client_invoice_line_time_entries.client_invoice_line_id', '=', 'client_invoice_lines.id')
-                ->whereColumn('client_invoice_lines.client_invoice_id', 'client_invoices.id'))
+            // A generated invoice can legitimately have no linked time. Only
+            // recorded import provenance excludes history, whose unlinked work
+            // may already have been billed in the predecessor system.
+            ->whereNotExists(fn ($imported) => $imported->select('external_import_items.id')
+                ->from('external_import_items')
+                ->join('external_import_runs', 'external_import_runs.id', '=', 'external_import_items.external_import_run_id')
+                ->whereColumn('external_import_runs.workspace_id', 'client_invoices.workspace_id')
+                ->where('external_import_items.target_type', 'invoice')
+                ->whereColumn('external_import_items.target_public_id', 'client_invoices.public_id'))
             ->get(['service_period_start', 'service_period_end', 'issued_at']);
 
         if ($charged->isEmpty()) {
