@@ -113,18 +113,18 @@ final class DeferredBacklogReader
     {
         $companyId = (int) $agreement->client_company_id;
 
-        return $this->dates($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->capacityThrough;
+        return $this->dates($agreement, $this->segments($workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->capacityThrough;
     }
 
     /** Work through this day may be disclosed and explicitly settled, even after termination. */
     public function settlementEnd(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through): CarbonImmutable
     {
-        if ((int) $agreement->workspace_id !== (int) $workspace->id) {
+        if ((int) $agreement->workspace_id !== $workspace->id) {
             throw new LogicException('Deferred settlement is read inside the agreement\'s own workspace.');
         }
-        $companyId = (int) $agreement->client_company_id;
+        $companyId = $agreement->client_company_id;
 
-        return $this->dates($agreement, $this->segments((int) $workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->settlementThrough;
+        return $this->dates($agreement, $this->segments($workspace->id, [$companyId])[$companyId] ?? new Collection, $through)->settlementThrough;
     }
 
     /**
