@@ -507,7 +507,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Manager-only trailing window of the computed agreement capacity ledger, and the agreement's deferred backlog: the outstanding deferred work the termination invoice would collect today, its amount at the hourly rate as that invoice would price it, and its monthly trend over the same months. */
+        /** @description Manager-only trailing window of the computed agreement capacity ledger, and the agreement's deferred backlog: outstanding deferred work available for explicit settlement, including post-end work until a successor takes over, priced by the termination rule, and its monthly trend over the same months. */
         get: operations['capacity_ledger.get'];
         put?: never;
         post?: never;
@@ -1985,7 +1985,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and what termination would charge for it. */
+        /** @description Always returns workspace_id; project, time, and invoice sections are omitted unless the token has their corresponding read scope. With billing:read, a workspace manager also receives deferred_backlog: the agreements with deferred work outstanding and its value at termination rates, including post-end work available for explicit settlement. */
         get: operations['operations.summary'];
         put?: never;
         post?: never;

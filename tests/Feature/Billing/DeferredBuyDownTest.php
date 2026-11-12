@@ -269,6 +269,99 @@ final class DeferredBuyDownTest extends TestCase
     }
 
     #[DataProvider('ledgerCadences')]
+    public function test_post_termination_work_is_settled_explicitly_without_rewriting_the_final_invoice(string $cadence, bool $interims): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-15 12:00:00'));
+        $this->agreement->update(['status' => 'terminated', 'ends_on' => '2026-05-31', 'billing_cadence' => $cadence, 'bill_overage_interim' => $interims]);
+        $this->entry(60, '2026-05-30');
+        $ordinary = $this->entry(60, '2026-06-01');
+        $final = app(ClientInvoicingService::class)->generateCadencePeriod($this->company, $this->agreement, Carbon::parse($cadence === 'monthly' ? '2026-06-01' : '2026-07-01'));
+        app(InvoiceLifecycleService::class)->issue($final, $this->workspace);
+        $this->assertFalse($ordinary->invoiceLines()->exists(), 'Automatic termination collection stops at the end.');
+        $this->assertSame([$ordinary->id], array_column($final->fresh()?->deferredWorkSnapshot()?->entries ?? [], 'id'), 'The final document discloses the work still awaiting explicit settlement.');
+        $issuedAmount = $final->fresh()?->total_amount;
+        $issuedLines = $final->lines()->orderBy('id')->get()->toArray();
+
+        $flat = $this->entry(60, '2026-06-12', [
+            'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 8000, 'subcontractor_cost_currency' => 'USD',
+        ]);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 2]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$ordinary->public_id, $flat->public_id], $preview->toArray()['entry_ids']);
+        $this->assertSame(18000, $preview->selection->total());
+        $settlement = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        $this->assertSame(InvoiceKind::DeferredBuyDown->value, $settlement->invoice_kind);
+        $this->assertSame('draft', $settlement->status);
+        $this->assertSame(18000, $settlement->total_amount);
+        app(InvoiceLifecycleService::class)->issue($settlement, $this->workspace);
+
+        $reader = app(DeferredBacklogReader::class);
+        $this->assertSame(0, $reader->forAgreement($this->workspace, $this->agreement, CarbonImmutable::parse('2026-06-15'))->minutes);
+        $this->assertSame('2026-05-31', $reader->segmentEnd($this->workspace, $this->agreement, CarbonImmutable::parse('2026-06-15'))->toDateString());
+        $this->assertSame($issuedAmount, $final->fresh()?->total_amount);
+        $this->assertSame($issuedLines, $final->lines()->orderBy('id')->get()->toArray());
+
+        // A new deferral after the first settlement still has a way off the shelf.
+        $later = $this->entry(30, '2026-06-15');
+        $next = $billing->preview($this->workspace, $this->agreement, DeferredBuyDownRequest::from(['hours' => 0.5]));
+        $this->assertSame([$later->public_id], $next->toArray()['entry_ids']);
+        $this->assertSame(5000, $next->selection->total());
+    }
+
+    public function test_a_successor_still_owns_work_after_its_start_when_buying_down_an_ended_agreement(): void
+    {
+        $this->agreement->update(['status' => 'terminated', 'ends_on' => '2026-05-31']);
+        $gap = $this->entry(60, '2026-06-01');
+        $successorsWork = $this->entry(60, '2026-06-10');
+        ClientAgreement::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'title' => 'Synthetic successor', 'status' => 'active', 'currency' => 'USD', 'starts_on' => '2026-06-10',
+            'billing_cadence' => 'monthly', 'retainer_minutes' => 600, 'retainer_amount' => 100000, 'hourly_rate_amount' => 20000,
+        ]);
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 2]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$gap->public_id], $preview->toArray()['entry_ids']);
+        $this->assertSame(10000, $preview->selection->total());
+        $settlement = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        app(InvoiceLifecycleService::class)->issue($settlement, $this->workspace);
+        $this->assertFalse($successorsWork->invoiceLines()->exists());
+    }
+
+    public function test_post_end_settlement_stays_in_its_workspace_client_and_project_scope(): void
+    {
+        $this->agreement->update(['status' => 'terminated', 'ends_on' => '2026-05-31', 'client_project_id' => $this->project->id]);
+        $own = $this->entry(60, '2026-06-01');
+        $otherProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'name' => 'Synthetic other project',
+        ]);
+        $otherProjectWork = $this->entry(60, '2026-06-01', ['client_project_id' => $otherProject->id]);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic other client', 'slug' => 'synthetic-other-client']);
+        $otherCompanyProject = ClientProject::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $otherCompany->id, 'name' => 'Synthetic other client project',
+        ]);
+        $otherCompanyWork = $this->entry(60, '2026-06-01', ['client_company_id' => $otherCompany->id, 'client_project_id' => $otherCompanyProject->id]);
+        $elsewhere = Workspace::query()->create(['name' => 'Synthetic elsewhere', 'slug' => 'synthetic-elsewhere']);
+        $foreignCompany = ClientCompany::query()->create(['workspace_id' => $elsewhere->id, 'name' => 'Synthetic foreign client', 'slug' => 'synthetic-foreign-client']);
+        $foreignProject = ClientProject::query()->create(['workspace_id' => $elsewhere->id, 'client_company_id' => $foreignCompany->id, 'name' => 'Synthetic foreign project']);
+        $foreignWork = $this->entry(60, '2026-06-01', [
+            'workspace_id' => $elsewhere->id, 'client_company_id' => $foreignCompany->id, 'client_project_id' => $foreignProject->id,
+        ]);
+
+        $billing = app(DeferredBuyDownAction::class);
+        $request = DeferredBuyDownRequest::from(['hours' => 4]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$own->public_id], $preview->toArray()['entry_ids']);
+        $this->assertSame(10000, $preview->selection->total());
+        $settlement = $billing->create($this->workspace, $this->agreement, $request, $preview->version);
+        app(InvoiceLifecycleService::class)->issue($settlement, $this->workspace);
+        foreach ([$otherProjectWork, $otherCompanyWork, $foreignWork] as $unrelated) {
+            $this->assertFalse($unrelated->invoiceLines()->exists());
+        }
+    }
+
+    #[DataProvider('ledgerCadences')]
     public function test_buying_twenty_hours_of_a_forty_hour_shelf_leaves_the_next_cadence_identical_to_work_that_never_existed(string $cadence, bool $interims): void
     {
         $this->agreement->update(['billing_cadence' => $cadence, 'bill_overage_interim' => $interims, 'rollover_months' => 0]);

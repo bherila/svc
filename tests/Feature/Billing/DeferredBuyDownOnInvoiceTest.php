@@ -130,14 +130,25 @@ final class DeferredBuyDownOnInvoiceTest extends TestCase
         $this->assertSame([$wanted->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
     }
 
-    public function test_the_snapshot_stops_at_termination_even_without_a_successor(): void
+    public function test_the_snapshot_lists_post_end_work_for_explicit_settlement_without_a_successor(): void
     {
         $this->ordinary(600, '2026-05-10');
         $wanted = $this->entry(120, '2026-04-01');
-        $this->entry(60, '2026-06-06');
+        $afterEnd = $this->entry(60, '2026-06-06');
         $this->agreement->update(['ends_on' => '2026-06-05']);
         $invoice = $this->cadenceDraft();
-        $this->assertSame([$wanted->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+        $this->assertSame([$wanted->id, $afterEnd->id], array_column($invoice->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+        $this->assertFalse($afterEnd->invoiceLines()->exists(), 'Disclosure does not charge post-end work automatically.');
+
+        $billing = app(DeferredBuyDownAction::class);
+        // The older two-hour entry does not fit; settle only the later hour.
+        $request = DeferredBuyDownRequest::from(['hours' => 1]);
+        $preview = $billing->preview($this->workspace, $this->agreement, $request);
+        $this->assertSame([$afterEnd->public_id], $preview->toArray()['entry_ids']);
+        $attached = $billing->create($this->workspace, $this->agreement, $request, $preview->version, $invoice);
+        $this->assertSame($invoice->id, $attached->id);
+        $this->assertSame([$wanted->id], array_column($attached->deferredWorkSnapshot()?->toArray()['entries'] ?? [], 'id'));
+        $this->assertTrue($afterEnd->invoiceLines()->where('client_invoice_id', $invoice->id)->exists());
     }
 
     public function test_cadence_document_hides_a_backlog_fully_applied_to_its_pool(): void

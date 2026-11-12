@@ -72,9 +72,9 @@ When generating a post-termination invoice (`isRetainerMonthPostTermination = tr
 
 ## Deferred backlog
 
-The backlog is what an agreement still has on the shelf: the outstanding
-deferred work and what the termination invoice would charge for it today. It
-is a read model and never changes anything.
+The backlog is what an agreement still has on the shelf: outstanding deferred
+work priced by the termination rule, including post-end work available for an
+explicit buy-down. It is a read model and never changes anything.
 
 | Piece | Role |
 | --- | --- |
@@ -82,8 +82,8 @@ is a read model and never changes anything.
 | `DeferredBacklog` | Database-free calculation over what was loaded: hours, entry count, oldest day worked, the agreement-rate and flat-hourly split, the amount, and the trend. |
 | `DeferredTerminationPricing` | The termination price, shared by `InvoiceLineComposer::addDeferredTerminationLine()` and the backlog. Flat-hourly grouping is `FlatHourlyPricing`, shared with the period's subcontractor lines. |
 
-**The same set as termination.** The outstanding entries use the termination
-collection's own predicates: `awaitingDeferredBilling()` (billable, deferred,
+**The same eligibility as termination.** The outstanding entries use the termination
+collection's eligibility predicates: `awaitingDeferredBilling()` (billable, deferred,
 linked to no line at all), `billableForInvoicing()`, the work date on or before
 the day read, and the agreement's project scope
 (`ClientTimeEntry::isWithinAgreementScope()`, the in-memory form of
@@ -100,10 +100,16 @@ than an error.
 **Where a segment ends.** Agreements for the same project scope hand over to
 each other as invoice generation walks them
 (`AgreementSelector::successorAgreementForGeneration()`). An agreement reads
-its backlog, and its re-carried balance, through the earliest of today, its own
-end (where its capacity ledger stops) and the day before a successor starts
-(`through` says which day), so a successor's later work is never quoted at the
-outgoing agreement's rate. There is no lower bound, because the allocator and
+its settlement backlog through the earlier of today and the day before a
+successor starts (`through` says which day), so a successor's later work is
+never quoted at the outgoing agreement's rate. Its capacity ledger, re-carried
+balance and automatic termination collection also stop at its own end.
+Without a successor, deferred work after termination stays visible and can be
+bought down explicitly at the existing terms, including work already stranded
+before this rule was added (#703). Creating a buy-down reserves the entries
+on a new draft; issuing remains a separate action. Termination does not
+automatically charge this later work or rewrite an issued invoice.
+There is no lower bound, because the allocator and
 the termination collection apply none: a successor quotes older unlinked work
 its own invoices could still collect. Until the outgoing final invoice links
 such work, both agreements show it, as either may bill it.

@@ -58,8 +58,8 @@ final class DeferredBacklogReadService
      * `through` falls in: deferred work an invoice applied beyond free
      * capacity, which termination bills on its own line
      * ({@see ClientInvoicingService::applyDeferredWork()}). Read to the
-     * backlog's own last day, so a successor's months never land on the
-     * agreement it replaced.
+     * agreement's capacity end, even when its settlement backlog includes
+     * later work, so a successor's months never land on the agreement it replaced.
      *
      * @param  array<int, MonthSummary>  $ledger
      */
@@ -76,8 +76,7 @@ final class DeferredBacklogReadService
     }
 
     /**
-     * The re-carried balance of one agreement's ledger, read to its backlog's
-     * last day.
+     * The re-carried balance of one agreement's ledger, read to its capacity end.
      *
      * @param  array<int, MonthSummary>  $ledger
      */

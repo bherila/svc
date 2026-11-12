@@ -21,7 +21,7 @@ final class DeferredBacklogCommand extends SvcCommand
         {--months=3 : Trailing calendar months of trend, 1 to 60}
         {--format=text : Output text or json}';
 
-    protected $description = 'Show the deferred work an agreement still has on the shelf and what termination would charge for it';
+    protected $description = 'Show the deferred work an agreement still has on the shelf and its value at termination rates, including post-end work available for explicit settlement';
 
     public function handle(DeferredBacklogReadService $backlogs): int
     {

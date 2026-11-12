@@ -71,8 +71,8 @@ use Throwable;
  * agreement at a period close or mid-period, and must rebuild the drafts it
  * makes stale in the same request (#699), so none issues as it was. Successor
  * agreements are left out: their handovers are scripted in
- * BillingHistoryInvariantTest. One known gap is allowed for, narrowly, where
- * it is cited: #703.
+ * BillingHistoryInvariantTest. Deferred work after termination is explicitly
+ * settled at close-out too: termination must leave no work unreachable (#703).
  *
  * A failure prints its seed and steps. Replay one with
  * `--filter 'hourly, monthly, seed 3'`; widen a run with BILLING_HISTORY_SEEDS.
@@ -240,7 +240,7 @@ final class BillingHistorySequenceTest extends TestCase
                 $operations['regenerate'] = fn (): string => $this->regenerate($this->pick($generated));
             }
         }
-        if ($this->deferredWithinTheSegment()->exists()) {
+        if ($this->deferredForSettlement()->exists()) {
             $operations['buy down'] = fn (): string => $this->buyDown(null);
             if ($drafts->isNotEmpty()) {
                 $operations['buy down onto a draft'] = fn (): string => $this->buyDown($this->pick($drafts));
@@ -498,7 +498,7 @@ final class BillingHistorySequenceTest extends TestCase
         $this->generateTheRest();
         $this->issueEverything();
 
-        $waiting = (int) $this->deferredWithinTheSegment()->sum('minutes');
+        $waiting = (int) $this->deferredForSettlement()->sum('minutes');
         if ($waiting > 0) {
             $billing = app(DeferredBuyDownAction::class);
             $agreement = $this->agreement->fresh() ?? $this->agreement;
@@ -661,13 +661,7 @@ final class BillingHistorySequenceTest extends TestCase
             ->sum('minutes');
         $leftOver = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
             ->unbilled()->where('is_billable', true)->whereNull('client_disputed_at')->get();
-        // #703: deferred work ends with the agreement's segment (#655), so an
-        // hour deferred after a termination waits for a buy-down nothing can
-        // make. Only such rows may be left over; any other is a lost hour.
-        $deferredAfterTheEnd = $leftOver->filter(fn (ClientTimeEntry $entry): bool => $this->endsOn !== null && $entry->is_deferred
-            && $entry->worked_on->toDateString() > $this->endsOn);
-        $this->assertSame([], array_values(array_diff($leftOver->modelKeys(), $deferredAfterTheEnd->modelKeys())), 'Closed out: these hours were never billed, and none of them was deferred after the end.');
-        $minutes -= (int) $deferredAfterTheEnd->sum(static fn (ClientTimeEntry $entry): int => (int) $entry->minutes);
+        $this->assertSame([], $leftOver->modelKeys(), 'Closed out: every billable hour must have been invoiced, including deferred work after termination.');
         $this->assertSame([], $this->invoices(InvoiceStatus::Draft->value)->modelKeys(), 'Closed out: these drafts never issued.');
         $hoursAtRate = (int) round($minutes * self::RATE / 60);
         $billed = (int) $this->invoices(InvoiceStatus::Issued->value)->sum(static fn (ClientInvoice $invoice): int => (int) $invoice->total_amount);
@@ -684,11 +678,11 @@ final class BillingHistorySequenceTest extends TestCase
 
     // ---- reads ----
 
-    /** @return EloquentBuilder<ClientTimeEntry> deferred work a buy-down can still take: none after the agreement's end */
-    private function deferredWithinTheSegment(): EloquentBuilder
+    /** @return EloquentBuilder<ClientTimeEntry> deferred work an explicit buy-down can settle, after termination too */
+    private function deferredForSettlement(): EloquentBuilder
     {
         return ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)
-            ->awaitingDeferredBilling()->when($this->endsOn !== null, fn ($query) => $query->whereDate('worked_on', '<=', $this->endsOn));
+            ->awaitingDeferredBilling();
     }
 
     private function isRegenerable(ClientInvoice $draft): bool
