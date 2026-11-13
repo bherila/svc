@@ -159,7 +159,7 @@ final class ClientApprovals
             }
 
             $stamp = [
-                'client_approved_at' => $this->clock->now($company->workspace),
+                'client_approved_at' => $this->clock->instant(),
                 'client_approved_by_user_id' => $viewer->id,
                 'client_approval_source' => $source->value,
                 'client_disputed_at' => null,
@@ -199,7 +199,7 @@ final class ClientApprovals
                 $this->refusalMessage(SelfApproval::EXPENSE_MESSAGE, $expenses->contains(fn (ClientExpense $row): bool => SelfApproval::refuses($row->created_by_user_id, $viewer->id))));
 
             $stamp = [
-                'client_disputed_at' => $this->clock->now($company->workspace),
+                'client_disputed_at' => $this->clock->instant(),
                 'client_disputed_by_user_id' => $viewer->id,
                 'client_dispute_note' => $note,
                 // The previous answer was to the previous dispute.

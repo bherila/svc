@@ -83,7 +83,7 @@ final class AgentMutationExecutor
                     'status' => 'completed',
                     'result_public_ids' => $ids,
                     'response_snapshot' => $responseSnapshot === null ? null : $responseSnapshot($ids),
-                    'completed_at' => $this->clock->now($workspace),
+                    'completed_at' => $this->clock->instant(),
                 ])->save();
                 $this->audit($user, $workspace, $clientId, $operation, $this->auditedIds($auditIds, $operation, $ids), 'success');
                 if ($additionalAuditOperation !== null) {

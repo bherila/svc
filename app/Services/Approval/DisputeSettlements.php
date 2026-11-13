@@ -229,7 +229,7 @@ final class DisputeSettlements
                 'client_dispute_note' => null,
                 'client_dispute_settlement' => $outcome->value,
                 'client_dispute_reply' => $reply,
-                'client_dispute_settled_at' => $this->clock->now($workspace),
+                'client_dispute_settled_at' => $this->clock->instant(),
                 'client_dispute_settled_by_user_id' => $actor->id,
                 'lock_version' => DB::raw('lock_version + 1'),
             ]);

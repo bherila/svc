@@ -228,7 +228,7 @@ final class StripePaymentMethodService
             ->where('client_company_id', $company->id)
             ->where('client_stripe_customer_id', $customer->id)
             ->where('is_default', true)
-            ->update(['is_default' => false, 'updated_at' => $this->clock->now($workspace)]);
+            ->update(['is_default' => false, 'updated_at' => $this->clock->instant()]);
         $next->forceFill(['is_default' => true])->save();
         $this->moveDefaultRevision($customer);
         $this->activities->record($workspace, $company, 'payment_method.default_changed', $next, [
@@ -333,7 +333,7 @@ final class StripePaymentMethodService
             ->where('client_company_id', $company->id)
             ->where('client_stripe_customer_id', $customer->id)
             ->where('is_default', true)
-            ->update(['is_default' => false, 'updated_at' => $this->clock->now($workspace)]);
+            ->update(['is_default' => false, 'updated_at' => $this->clock->instant()]);
         if ($next instanceof ClientStripePaymentMethod) {
             $next->forceFill(['is_default' => true])->save();
         }

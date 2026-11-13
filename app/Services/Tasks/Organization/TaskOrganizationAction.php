@@ -94,7 +94,7 @@ final class TaskOrganizationAction
                     abort_unless(AgentApiVersion::matches($list, $data['expected_version']), 409, 'The list changed. Read it again before saving.');
                     $attributes = match ($command->operation) {
                         'lists.update' => Arr::only($data, ['name', 'is_visible_to_client']),
-                        'lists.archive' => ['deleted_at' => $this->clock->now($workspace)],
+                        'lists.archive' => ['deleted_at' => $this->clock->instant()],
                         'lists.restore' => ['deleted_at' => null],
                     };
                     abort_if($command->operation === 'lists.update' && $list->deleted_at !== null, 409, 'Restore this list before editing it.');

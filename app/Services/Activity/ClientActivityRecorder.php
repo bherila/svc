@@ -92,7 +92,7 @@ final class ClientActivityRecorder
             $subjectPublicId,
             $occurrence ?? 'once',
         ]));
-        $now = $this->clock->now($workspace);
+        $now = $this->clock->instant();
 
         $inserted = DB::table('client_company_activity')->insertOrIgnore([
             'public_id' => (string) Str::uuid(),

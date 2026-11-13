@@ -68,7 +68,7 @@ final class SharedProjectReadService
                 ->whereIn('id', ClientProjectParticipation::query()->where('host_workspace_id', $workspace->id)->whereNotNull('active_marker')->select('client_project_id'))
                 ->orWhereIn('id', ClientProjectParticipationInvitation::query()->where('host_workspace_id', $workspace->id)
                     ->whereNull('accepted_at')->whereNull('declined_at')->whereNull('revoked_at')
-                    ->where('expires_at', '>', $this->clock->now($workspace))->select('client_project_id')));
+                    ->where('expires_at', '>', $this->clock->instant())->select('client_project_id')));
         if ($viewable !== null) {
             $hostedQuery->whereIn('id', $viewable);
         }
@@ -450,7 +450,7 @@ final class SharedProjectReadService
         return array_values(ClientProjectParticipationInvitation::query()
             ->where('host_workspace_id', $context->host->id)->where('client_project_id', $context->project->id)
             ->whereNull('accepted_at')->whereNull('declined_at')->whereNull('revoked_at')
-            ->where('expires_at', '>', $this->clock->now($context->host))
+            ->where('expires_at', '>', $this->clock->instant())
             ->orderBy('id')->limit(self::PARTICIPANTS)->get()
             ->map(fn (ClientProjectParticipationInvitation $invitation): array => [
                 'id' => $invitation->public_id,

@@ -244,7 +244,7 @@ final class TimeEntryMutationService
                 ->whereKey($entry->id)
                 ->where('workspace_id', $workspace->id)
                 ->where('lock_version', $entry->lock_version)
-                ->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => $this->clock->now($workspace)]);
+                ->update(['lock_version' => DB::raw('lock_version + 1'), 'deleted_at' => $this->clock->instant()]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
             if ($invoice instanceof ClientInvoice) {
@@ -389,7 +389,7 @@ final class TimeEntryMutationService
                 $entry->forceFill([
                     'status' => 'approved',
                     'approved_by_user_id' => $actor->id,
-                    'approved_at' => $this->clock->now($workspace),
+                    'approved_at' => $this->clock->instant(),
                     'billing_rate_amount' => $rate['amount'],
                     'billing_rate_source' => $rate['source'],
                     'currency' => $rate['currency'],

@@ -75,7 +75,7 @@ final class SubmissionService
                 return $refusal === null;
             });
 
-            $now = $this->clock->now($workspace);
+            $now = $this->clock->instant();
             $stamp = ['submitted_at' => $now, 'submitted_by_user_id' => $actor->id, 'lock_version' => DB::raw('lock_version + 1')];
             // Submitting again after a reviewer sent a row back is the author's
             // answer to that dispute, so the dispute is cleared with it.

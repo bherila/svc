@@ -114,7 +114,7 @@ final class AttachmentStorageService
             ->where('lifecycle_state', ClientAttachment::STATE_STAGED)
             ->tap(Locks::forUpdate())->firstOrFail();
         $attachment->forceFill(['staged_object_key' => null, 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
-            'available_at' => $this->clock->now($workspace)])->save();
+            'available_at' => $this->clock->instant()])->save();
 
         return $attachment;
     }
@@ -177,7 +177,7 @@ final class AttachmentStorageService
             $attachment->forceFill([
                 'staged_object_key' => null,
                 'lifecycle_state' => ClientAttachment::STATE_AVAILABLE,
-                'available_at' => $this->clock->now($workspace),
+                'available_at' => $this->clock->instant(),
             ])->save();
 
             return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
@@ -289,7 +289,7 @@ final class AttachmentStorageService
 
         $attachment->forceFill([
             'lifecycle_state' => ClientAttachment::STATE_DELETING,
-            'deleted_at' => $this->clock->now($attachment->workspace),
+            'deleted_at' => $this->clock->instant(),
         ])->save();
 
         return ClientAttachment::query()->where('workspace_id', $attachment->workspace_id)->whereKey($attachment->id)->firstOrFail();
@@ -365,7 +365,7 @@ final class AttachmentStorageService
                     $this->deleteIfPresent($disk, $attachment->object_key);
                     $attachment->forceFill([
                         'lifecycle_state' => ClientAttachment::STATE_DELETED,
-                        'deleted_at' => $attachment->deleted_at ?? $this->clock->now($attachment->workspace),
+                        'deleted_at' => $attachment->deleted_at ?? $this->clock->instant(),
                     ])->save();
                 }
             });

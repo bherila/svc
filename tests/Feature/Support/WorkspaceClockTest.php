@@ -26,4 +26,18 @@ class WorkspaceClockTest extends TestCase
             Date::setTestNow();
         }
     }
+
+    public function test_an_instant_is_the_same_moment_in_utc_whatever_the_application_zone(): void
+    {
+        Date::setTestNow(CarbonImmutable::parse('2026-11-16 01:00:00', 'Pacific/Auckland'));
+        config(['app.timezone' => 'Pacific/Auckland']);
+        try {
+            $instant = app(WorkspaceClock::class)->instant();
+
+            $this->assertSame('UTC', $instant->timezoneName);
+            $this->assertSame('2026-11-15 12:00:00', $instant->format('Y-m-d H:i:s'));
+        } finally {
+            Date::setTestNow();
+        }
+    }
 }

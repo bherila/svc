@@ -116,7 +116,7 @@ final class InvoiceDeliveryStatusService
 
             $delivery->forceFill([
                 'provider_status' => $type,
-                'provider_status_at' => $this->eventTime($event) ?? $this->clock->now($delivery->workspace),
+                'provider_status_at' => $this->eventTime($event) ?? $this->clock->instant(),
             ])->save();
 
             return InvoiceDeliveryStatusOutcome::Recorded;

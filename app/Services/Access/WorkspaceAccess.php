@@ -647,7 +647,7 @@ final class WorkspaceAccess
     {
         $this->deleteProjectLimits($workspace, $membership);
 
-        $now = $this->clock->now($workspace);
+        $now = $this->clock->instant();
         foreach ($projects as $project) {
             DB::table('client_portal_project_access')->insert([
                 'workspace_id' => $workspace->id,

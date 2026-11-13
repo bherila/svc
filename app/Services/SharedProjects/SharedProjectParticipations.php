@@ -68,7 +68,7 @@ final class SharedProjectParticipations
 
         return $this->locked($host, function (Workspace $locked) use ($actor, $projectPublicId, $address): ClientProjectParticipationInvitation {
             $context = $this->hostManager($actor, $locked, $projectPublicId);
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
 
             // A newer invitation to the same address replaces the pending one,
             // so there is exactly one live link per address and project.
@@ -102,7 +102,7 @@ final class SharedProjectParticipations
             $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($invitation->client_project_id)->firstOrFail();
             abort_unless($project->public_id === $projectPublicId, 404);
             $this->hostManager($actor, $locked, $project->public_id);
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             $this->requireOpen($invitation, $now);
 
             $invitation->forceFill(['revoked_at' => $now, 'resolved_by_user_id' => $actor->id])->save();
@@ -150,7 +150,7 @@ final class SharedProjectParticipations
 
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation, $participant): ClientProjectParticipation {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             abort_unless($current->state($now)->isOpen() && InviteeAddress::matches($current->email, $actor->email), 404);
             $this->requireOwnerOrAdmin($actor, $participant);
             $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($current->client_project_id)->firstOrFail();
@@ -191,7 +191,7 @@ final class SharedProjectParticipations
 
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation, $input): array {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             abort_unless($current->state($now)->isOpen() && InviteeAddress::matches($current->email, $actor->email), 404);
             $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($current->client_project_id)->firstOrFail();
 
@@ -225,7 +225,7 @@ final class SharedProjectParticipations
      */
     private function join(Workspace $locked, User $actor, ClientProjectParticipationInvitation $current, ClientProject $project, Workspace $participant): ClientProjectParticipation
     {
-        $now = $this->clock->now($locked);
+        $now = $this->clock->instant();
         $participation = new ClientProjectParticipation;
         $participation->forceFill([
             'host_workspace_id' => $locked->id,
@@ -272,7 +272,7 @@ final class SharedProjectParticipations
 
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation): ClientProjectParticipationInvitation {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             abort_unless($current->state($now)->isOpen(), 404);
             $current->forceFill(['declined_at' => $now, 'resolved_by_user_id' => $actor->id])->save();
             $this->audit->record(AccessMutationContext::user($actor), $locked, AccessAuditAction::SharedProjectInvitationDeclined, $actor, ['invitation' => $current->public_id], null);
@@ -292,7 +292,7 @@ final class SharedProjectParticipations
             $this->hostManager($actor, $locked, $project->public_id);
             abort_unless($participation->state()->grantsAccess(), 404);
 
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             $participation->forceFill(['revoked_at' => $now, 'revoked_by_user_id' => $actor->id, 'active_marker' => null])->save();
             $this->end($participation, $project);
             $this->recordEnd($actor, $participation, $project, AccessAuditAction::SharedProjectParticipantRevoked);
@@ -314,7 +314,7 @@ final class SharedProjectParticipations
             $participation = $this->access->activeParticipation($project, $participant);
             abort_if($participation === null, 404);
 
-            $now = $this->clock->now($locked);
+            $now = $this->clock->instant();
             $participation->forceFill(['left_at' => $now, 'left_by_user_id' => $actor->id, 'active_marker' => null])->save();
             $this->end($participation, $project);
             $this->recordEnd($actor, $participation, $project, AccessAuditAction::SharedProjectLeft);
