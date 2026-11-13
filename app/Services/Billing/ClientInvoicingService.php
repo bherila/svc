@@ -1549,6 +1549,12 @@ final class ClientInvoicingService
             );
             $firstNext = $nextSummaries[0] ?? null;
             $deferred = $this->deferredFigures($invoice);
+            // The ledger books deferred entries billed at the rate on
+            // termination as ordinary work, so the hours this draft charges
+            // for them are taken off the closing debt beside its own and the
+            // interim charges, as the monthly path overlays them as settled -
+            // otherwise work paid for here would read as still owed.
+            $deficitCarriedForward = round(max(0.0, (float) $finalCycleLedger['negative_hours'] - $overageHours - $interimBilledHours - $deferred['termination_at_rate']), 4);
             $this->recordHoursStatement($invoice, new InvoiceHoursStatement(
                 cadence: $agreement->effectiveBillingCadence()->value,
                 workStart: $periodStart->toDateString(),
@@ -1581,7 +1587,7 @@ final class ClientInvoicingService
                 interimBilledHours: round($interimBilledHours, 4),
                 rolledForwardHours: $firstNext?->opening->rolloverHours ?? 0.0,
                 expiringHours: $firstNext?->opening->expiredHours ?? 0.0,
-                deficitCarriedForwardHours: round(max(0.0, (float) $finalCycleLedger['negative_hours'] - $overageHours - $interimBilledHours), 4),
+                deficitCarriedForwardHours: $deficitCarriedForward,
                 deferredBacklogHours: $deferred['backlog'],
                 deferredBacklogEntries: $deferred['backlog_entries'],
                 recarriedRemainingHours: $lastWork->recarriedDeferredHours ?? 0.0,
@@ -1602,7 +1608,7 @@ final class ClientInvoicingService
                 // work was linked, as the statement is; the ledger measured
                 // before it read the pool that work drew on as unused (#353).
                 'unused_hours_balance' => $finalCycleLedger['unused_hours'],
-                'negative_hours_balance' => round(max(0.0, $finalCycleLedger['negative_hours'] - $overageHours - $interimBilledHours), 4),
+                'negative_hours_balance' => $deficitCarriedForward,
                 'starting_unused_hours' => $finalCycleLedger['starting_unused_hours'],
                 'starting_negative_hours' => $finalCycleLedger['starting_negative_hours'],
                 'hours_billed_at_rate' => $overageHours,
