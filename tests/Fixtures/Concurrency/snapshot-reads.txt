@@ -216,48 +216,48 @@ Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Servic
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\OverpaymentCreditService::totalConsumed client_invoices
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\TimeEntrySplitter::splitEntry client_time_entries
-Services\Billing\InvoiceFromTimeService::create > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries
-Services\Billing\InvoiceFromTimeService::regenerateDraftSelection > Services\Billing\InvoiceFromTimeService::regenerateDraftSelection client_invoices
-Services\Billing\InvoiceFromTimeService::regenerateDraftSelection > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries
+Services\Billing\InvoiceFromTimeService::create > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries  # a project-chain integrity refusal; no amount
+Services\Billing\InvoiceFromTimeService::regenerateDraftSelection > Services\Billing\InvoiceFromTimeService::regenerateDraftSelection client_invoices  # the locked draft re-read after this transaction rewrote its lines, to total them; the totals come from those lines
+Services\Billing\InvoiceFromTimeService::regenerateDraftSelection > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries  # a project-chain integrity refusal; no amount
 Services\Billing\InvoiceLifecycleService::applyPayment > Services\Activity\ClientActivityRecorder::subjectCompanyId client_invoices
 Services\Billing\InvoiceLifecycleService::applyPayment > Services\Billing\InvoiceLifecycleService::refreshStatus client_invoices
-Services\Billing\InvoiceLifecycleService::discardDraft > Services\Billing\InvoiceLifecycleService::discardDraft client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Accounting\InvoiceAccountingJournal::facts client_companies
-Services\Billing\InvoiceLifecycleService::issue > Services\Accounting\InvoiceAccountingJournal::facts client_invoice_lines
+Services\Billing\InvoiceLifecycleService::discardDraft > Services\Billing\InvoiceLifecycleService::discardDraft client_invoices  # the copy returned to the caller; nothing is written from it
+Services\Billing\InvoiceLifecycleService::issue > Services\Accounting\InvoiceAccountingJournal::facts client_companies  # the client's public id on the journal entry; no amount comes from it
+Services\Billing\InvoiceLifecycleService::issue > Services\Accounting\InvoiceAccountingJournal::facts client_invoice_lines  # the draft's own lines, which assertSnapshotHoldsTheLockedLines proved current
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\CapacityLedgerInputs::byMonth client_invoice_lines
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\CapacityLedgerInputs::byMonth client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoice_line_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::refreshDeferredWorkSnapshotAtIssue client_agreements
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::refreshDeferredWorkSnapshotAtIssue client_companies
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DeferredBacklogReader::segments client_agreements
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::agreementOf client_agreements
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InterimOverageGenerator::timeFingerprint client_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::registerIssued client_companies
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::responsibleAdministrator client_agreements
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::responsibleAdministrator client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceDocumentBuilder::build client_companies
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceDocumentBuilder::build client_invoice_lines
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoice_line_time_entries  # the Still deferred document list; every row it lists is compared with the row lockDeferredCandidates locked, and it writes no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoice_lines  # the same document list's allocation scope; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_invoices  # the same document list's allocation scope; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::recordDeferredWorkSnapshot client_time_entries  # the document list's rows, each compared with its locked row (BuyDownAttachSnapshotTest)
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::refreshDeferredWorkSnapshotAtIssue client_agreements  # finds the agreement the document list is scoped to; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\ClientInvoicingService::refreshDeferredWorkSnapshotAtIssue client_companies  # the project-chain integrity refusal before the document list; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DeferredBacklogReader::segments client_agreements  # dates the end of the document list; the charge's own segment check reads the agreements locked (lockHandoverSegments)
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::agreementOf client_agreements  # finds the agreement for the coarse earlier-draft refusal below; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoice_lines  # a refusal only; a draft sized against earlier catch-up records catch_up_basis, which issue checks with locking reads under the agreement lock (assertSizedAgainstCurrentCharges)
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoices  # the same coarse refusal; see catch_up_basis
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InterimOverageGenerator::timeFingerprint client_time_entries  # the deliberate comparison: refuses an interim claim whose ledger time differs from the locked fingerprint (InterimLedgerChanged)
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::registerIssued client_companies  # who is told the invoice was issued; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::responsibleAdministrator client_agreements  # who is told; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::responsibleAdministrator client_invoice_lines  # who is told; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceDocumentBuilder::build client_companies  # renders the document from the client and the draft's own lines; nothing is written from it
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceDocumentBuilder::build client_invoice_lines  # the draft's own lines, proved current; rendering only
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLedgerBuilder::buildAgreementLedgerThrough client_invoice_line_time_entries
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLedgerBuilder::buildAgreementLedgerThrough client_invoice_lines
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLedgerBuilder::buildAgreementLedgerThrough client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLedgerBuilder::buildAgreementLedgerThrough client_time_entries
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLedgerBuilder::buildAgreementLedgerThrough client_time_entries  # the interim claim's ledger time, fingerprinted against the locked rows first (InterimLedgerChanged)
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::assertSnapshotHoldsTheLockedLines client_invoice_lines  # the deliberate comparison: refuses when it disagrees with the locked read
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::capOverpaymentCreditAtIssue client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_companies
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoice_line_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoices
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_invoice_line_time_entries
-Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_invoice_lines
-Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_time_entries
-Services\Billing\InvoiceLifecycleService::void > Services\Billing\InvoiceLifecycleService::void client_invoices
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::capOverpaymentCreditAtIssue client_invoice_lines  # the draft's own credit line, proved current by assertSnapshotHoldsTheLockedLines; the pool it is capped to is guarded by lockForSpending's snapshot check
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_companies  # the copy returned to the caller; nothing is written from it
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoice_line_time_entries  # the same lines' time links; the status UPDATE acts on the current rows
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoice_lines  # the draft's own lines, proved current, whose time is marked invoiced by an UPDATE - a current read of each row
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_invoices  # the copy returned to the caller; nothing is written from it
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceLifecycleService::issue client_time_entries  # the same lines' time; the status UPDATE acts on the current rows
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries  # a project-chain integrity refusal; no amount
+Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_invoice_line_time_entries  # rewords the draft's lines from its time's client wording; text, no amount
+Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_invoice_lines  # the same rewording of the draft's own lines; text, no amount
+Services\Billing\InvoiceLifecycleService::issue > Support\Billing\InvoiceLineDetail::forInvoice client_time_entries  # the same rewording; text, no amount
+Services\Billing\InvoiceLifecycleService::void > Services\Billing\InvoiceLifecycleService::void client_invoices  # the copy returned to the caller; nothing is written from it
 Services\Billing\InvoiceLifecycleService::writePaymentCorrection > Services\Activity\ClientActivityRecorder::subjectCompanyId client_invoices
 Services\Billing\InvoiceLifecycleService::writeRefundedAmount > Services\Activity\ClientActivityRecorder::subjectCompanyId client_invoices
 Services\Billing\InvoiceLifecycleService::writeRefundedAmount > Services\Billing\InvoiceLifecycleService::loadOwningCompany client_companies

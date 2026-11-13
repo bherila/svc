@@ -7,6 +7,8 @@ use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Support\Billing\InvoiceDeferredWorkSnapshot;
 use App\Support\Billing\InvoiceKind;
+use App\Support\Concurrency\Locks;
+use DomainException;
 use Illuminate\Support\Collection;
 
 /**
@@ -28,6 +30,9 @@ use Illuminate\Support\Collection;
  *   in the draft's own period - the time an interim overage is drawn from.
  *
  * Reads here are ordinary: they decide what the document says, never a charge.
+ * At issue they are compared with the rows the issue locked
+ * (`InvoiceLifecycleService::lockDeferredCandidates()`), as the cadence
+ * statement is, so a caller's older snapshot cannot freeze a row as it was.
  */
 final class HeldWorkDisclosure
 {
@@ -40,8 +45,9 @@ final class HeldWorkDisclosure
      * selections just dropped, each kept only while a dispute still holds it.
      *
      * @param  list<int>  $droppedEntryIds
+     * @param  array<int, array<string, mixed>>|null  $current  at issue, the candidates read with row locks
      */
-    public function adHoc(ClientInvoice $invoice, array $droppedEntryIds = []): void
+    public function adHoc(ClientInvoice $invoice, array $droppedEntryIds = [], ?array $current = null): void
     {
         $ids = array_values(array_unique([...$this->disclosedIds($invoice), ...$droppedEntryIds]));
         $held = $ids === [] ? new Collection : ClientTimeEntry::query()
@@ -53,11 +59,16 @@ final class HeldWorkDisclosure
             ->orderBy('id')
             ->get();
 
+        $this->assertCurrent($held, $current);
         $this->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries([], $held));
     }
 
-    /** Rewrite an interim draft's disclosure from the held work in its period. */
-    public function interim(ClientInvoice $invoice, ClientAgreement $agreement): void
+    /**
+     * Rewrite an interim draft's disclosure from the held work in its period.
+     *
+     * @param  array<int, array<string, mixed>>|null  $current  at issue, the candidates read with row locks
+     */
+    public function interim(ClientInvoice $invoice, ClientAgreement $agreement, ?array $current = null): void
     {
         $start = $invoice->service_period_start?->toDateString();
         $end = $invoice->service_period_end?->toDateString();
@@ -71,6 +82,7 @@ final class HeldWorkDisclosure
             ->orderBy('id')
             ->get();
 
+        $this->assertCurrent($held, $current);
         $this->write($invoice, InvoiceDeferredWorkSnapshot::fromEntries([], $held));
     }
 
@@ -79,12 +91,14 @@ final class HeldWorkDisclosure
      * issue, so the document freezes what is held then, and after a settlement
      * that left an ad-hoc draft's lines alone. Cadence invoices have their own
      * statement and a buy-down or terminal invoice lists none.
+     *
+     * @param  array<int, array<string, mixed>>|null  $current  at issue, the candidates read with row locks
      */
-    public function refresh(ClientInvoice $invoice): void
+    public function refresh(ClientInvoice $invoice, ?array $current = null): void
     {
         match (InvoiceKind::from($invoice->invoiceKindValue())) {
-            InvoiceKind::AdHoc => $this->adHoc($invoice),
-            InvoiceKind::InterimOverage => $this->refreshInterim($invoice),
+            InvoiceKind::AdHoc => $this->adHoc($invoice, current: $current),
+            InvoiceKind::InterimOverage => $this->refreshInterim($invoice, $current),
             InvoiceKind::CadencePeriod, InvoiceKind::Terminal, InvoiceKind::DeferredBuyDown => null,
         };
     }
@@ -103,6 +117,51 @@ final class HeldWorkDisclosure
         );
     }
 
+    /**
+     * The time a draft's held-work list may name at issue, read with row
+     * locks: an ad-hoc draft's listed selections, or every held row of the
+     * company an interim draft could list. Null for a kind that lists none.
+     *
+     * @return array<int, array<string, mixed>>|null each candidate's columns by id
+     */
+    public function lockCandidates(ClientInvoice $draft): ?array
+    {
+        // The stored kind, not `invoiceKindValue()`: a legacy or unrecognised
+        // kind is a cadence draft there, and this lists nothing for either.
+        $query = match (InvoiceKind::tryFrom((string) $draft->invoice_kind)) {
+            InvoiceKind::AdHoc => ClientTimeEntry::query()->whereIn('id', $this->disclosedIds($draft)),
+            InvoiceKind::InterimOverage => ClientTimeEntry::query()->heldThatWouldOtherwiseBill(),
+            InvoiceKind::CadencePeriod, InvoiceKind::Terminal, InvoiceKind::DeferredBuyDown, null => null,
+        };
+
+        return $query?->where('workspace_id', $draft->workspace_id)
+            ->where('client_company_id', $draft->client_company_id)
+            ->orderBy('id')
+            ->tap(Locks::forUpdate())
+            ->get()
+            ->mapWithKeys(fn (ClientTimeEntry $entry): array => [$entry->id => $entry->getAttributes()])
+            ->all();
+    }
+
+    /**
+     * Every row the list names must be the row as it is now, or the issued
+     * document would print work since withdrawn as it was.
+     *
+     * @param  Collection<int, ClientTimeEntry>  $held
+     * @param  array<int, array<string, mixed>>|null  $current
+     */
+    private function assertCurrent(Collection $held, ?array $current): void
+    {
+        if ($current === null) {
+            return;
+        }
+        foreach ($held as $entry) {
+            if (($current[$entry->id] ?? null) !== $entry->getAttributes()) {
+                throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+            }
+        }
+    }
+
     /** Nothing held and nothing listed is nothing to write. */
     private function write(ClientInvoice $invoice, ?InvoiceDeferredWorkSnapshot $snapshot): void
     {
@@ -112,7 +171,8 @@ final class HeldWorkDisclosure
         $this->statements->write($invoice, $snapshot);
     }
 
-    private function refreshInterim(ClientInvoice $invoice): void
+    /** @param array<int, array<string, mixed>>|null $current */
+    private function refreshInterim(ClientInvoice $invoice, ?array $current): void
     {
         $agreement = $invoice->client_agreement_id === null ? null : ClientAgreement::query()
             ->where('workspace_id', $invoice->workspace_id)
@@ -120,7 +180,7 @@ final class HeldWorkDisclosure
             ->whereKey($invoice->client_agreement_id)
             ->first();
         if ($agreement instanceof ClientAgreement) {
-            $this->interim($invoice, $agreement);
+            $this->interim($invoice, $agreement, $current);
         }
     }
 }

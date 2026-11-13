@@ -11,9 +11,11 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Approval\DisputedDraftRebuilder;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\HeldWorkBasisRecorder;
+use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
@@ -154,6 +156,39 @@ final class BuyDownAttachSnapshotTest extends TestCase
             app(InvoiceLifecycleService::class)->issue($x->fresh(), $workspace);
             $this->assertSame('issued', $x->fresh()->status);
             $this->assertNotContains($c->id, $listed(), 'The issued statement no longer lists the withdrawn hour.');
+        });
+    }
+
+    /**
+     * The same disclosure on an ad-hoc draft (#661): it lists the selection a
+     * dispute took off it, frozen at issue from ordinary reads. The client's
+     * wording withdrawn after the caller's snapshot would be printed as it
+     * was; the issue refuses instead, and a fresh one freezes the row without it.
+     */
+    public function test_an_ad_hoc_issue_from_a_snapshot_older_than_its_held_selection_is_refused(): void
+    {
+        $this->inProbe('ad_hoc_held', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x, ClientTimeEntry $a, User $owner): void {
+            $company = ClientCompany::query()->whereKey($agreement->client_company_id)->sole();
+            $project = ClientProject::query()->where('client_company_id', $company->id)->sole();
+            $held = $this->hours($workspace, $company, $project, $owner, '2026-03-20', 60);
+            $kept = $this->hours($workspace, $company, $project, $owner, '2026-03-21', 60);
+            $adHoc = app(InvoiceFromTimeService::class)->create($workspace, $company, ['invoice_number' => 'SYNTH-ADHOC-SNAPSHOT', 'currency' => 'USD'], [$held->public_id, $kept->public_id]);
+            $this->stampDispute($held);
+            app(DisputedDraftRebuilder::class)->withdraw($workspace->id, [$held->id], []);
+            $listed = fn (): array => array_column((array) ($adHoc->fresh()->deferred_work_statement['entries'] ?? []), 'description', 'id');
+            $this->assertSame([$held->id => 'Synthetic client text'], $listed());
+
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $adHoc, function () use ($held): void {
+                ClientTimeEntry::query()->whereKey($held->id)->update(['is_visible_to_client' => false, 'lock_version' => DB::raw('lock_version + 1')]);
+            }, 'issue');
+
+            $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame('This invoice changed after it was loaded. Reload it and issue it again.', $outcome['message']);
+            $this->assertSame('draft', $adHoc->fresh()?->status);
+
+            app(InvoiceLifecycleService::class)->issue($adHoc->fresh(), $workspace);
+            $this->assertSame('issued', $adHoc->fresh()->status);
+            $this->assertSame([$held->id => null], $listed(), 'Frozen as it is now: no client wording.');
         });
     }
 
