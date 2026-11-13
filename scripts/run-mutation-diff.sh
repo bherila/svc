@@ -92,7 +92,17 @@ echo "mutants_seconds=$((SECONDS - mutants_started))" >>"$diagnostics/run.txt"
 gate_status=0
 php scripts/mutation-gate.php "$summary" || gate_status=$?
 
+# The baseline is the Unit suite alone, so a changed line only a Feature test
+# reaches yields no mutant (#661). Name those methods as not measured rather
+# than let "0 mutants" read as a result. Advisory: it fails only when the
+# coverage it reads is missing.
+coverage_status=0
+php scripts/mutation-coverage.php "$mutation_scope_base" "$diagnostics/baseline/coverage-xml" || coverage_status=$?
+
 if [ "$gate_status" -ne 0 ]; then
     exit "$gate_status"
+fi
+if [ "$coverage_status" -ne 0 ]; then
+    exit "$coverage_status"
 fi
 exit "$infection_status"

@@ -32,6 +32,15 @@ skipped at workflow detection time. Their feature tests, static rules, and
 normal CI remain authoritative; this lane asks the narrower question, “do the
 fast focused tests discriminate this changed PHP behavior?”
 
+Zero mutants alone cannot say which of the two happened: nothing to mutate, or
+nothing the Unit suite reaches. So after the run, `scripts/mutation-coverage.php`
+reads the baseline coverage map and lists, under **Not measured** in the job
+summary (with a warning annotation), every changed method no Unit test executes
+and every changed file the Unit suite never loads (#661). It is advisory, like
+the score. For a listed change, either extract the decision into a class a plain
+unit test covers - as `HeldWorkBasis` and `LateAnswer` are - or verify the
+Feature test by reverting the change it guards.
+
 Laravel-backed Unit tests should declare the classes whose behavior they assert
 with PHPUnit's `CoversClass` attributes, including deliberately tested domain
 collaborators. Otherwise application startup can attribute an unrelated API
