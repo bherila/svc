@@ -106,7 +106,7 @@ after(() => {
 });
 
 for (const { rule, invalid, location } of compilerCases) {
-    test(`${rule} retains coverage, severity and source location`, () => {
+    void test(`${rule} retains coverage, severity and source location`, () => {
         const filename = `${rule}.invalid.tsx`;
         const oldDiagnostics = compilerDiagnostics(previous, filename);
         const newDiagnostics = compilerDiagnostics(current, filename);
@@ -161,14 +161,14 @@ for (const { rule, invalid, location } of compilerCases) {
         );
     });
 
-    test(`${rule} accepts its valid control`, () => {
+    void test(`${rule} accepts its valid control`, () => {
         const filename = `${rule}.valid.tsx`;
         assert.deepEqual(compilerDiagnostics(previous, filename), []);
         assert.deepEqual(compilerDiagnostics(current, filename), []);
     });
 }
 
-test('JS configuration and gating validation remain enabled', () => {
+void test('JS configuration and gating validation remain enabled', () => {
     assert.equal(config.rules['react-hooks-js/config'], 'error');
     assert.equal(config.rules['react-hooks-js/gating'], 'error');
     assert.ok(
