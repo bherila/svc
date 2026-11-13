@@ -498,13 +498,18 @@ issue refuses: a deferred hour withdrawn after the caller's snapshot would
 otherwise be printed as it was.
 
 `LockOrderConformanceTest` records, on the MariaDB lane, every ordinary read
-of a table its transaction has already locked, keyed `opener > reader table`
-(`tests/Concerns/RecordsSnapshotReads.php`), and requires the set to equal
-`tests/Fixtures/Concurrency/snapshot-reads.txt`. The entries there predate
-the check and are not reviewed one by one; a new one fails until it is made a
-locking read, refused, or pinned with the reason it cannot change money.
+of a table its transaction has already locked, keyed `opener > reader table
+#shape` - the shape a hash of the statement with its values taken out - in
+`tests/Concerns/RecordsSnapshotReads.php`, and requires the set to equal
+`tests/Fixtures/Concurrency/snapshot-reads.txt`. A second, different read in
+a method already listed is therefore a new entry. Many entries predate the
+check and are unreviewed; those with a `# reason` were reviewed, issue's among
+them (#661). A new one fails until it is made a locking read, refused, or
+pinned with the reason it cannot change money.
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
-regressions, run from a worker whose snapshot predates the state it acts on.
+regressions, run from a worker whose snapshot predates the state it acts on;
+`tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
+races against approval, ad-hoc rebuilds and hand edits.
 
 ## Adding a lock
 
