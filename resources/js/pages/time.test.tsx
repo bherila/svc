@@ -517,6 +517,41 @@ describe('time sheet controls', () => {
         );
     });
 
+    it('offers a project approver only the write-off the server sent', async () => {
+        const user = userEvent.setup();
+        render(
+            <TimeSheet
+                {...props({
+                    timeEntry: entry({
+                        status: 'approved',
+                        can_edit: false,
+                        can_approve: false,
+                        client_review: clientReviewFixture({
+                            state: 'disputed',
+                            held: true,
+                        }),
+                        settle_dispute: {
+                            url: '/workspaces/workspace-1/time-entries/entry-1/dispute/settle',
+                            outcomes: ['written_off'],
+                        },
+                    }),
+                })}
+            />,
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Disputed (1)' }));
+        await user.click(
+            screen.getByRole('button', { name: 'Respond to dispute' }),
+        );
+
+        expect(screen.getByRole('button', { name: 'Write off' })).toBeVisible();
+        expect(
+            screen.queryByRole('button', { name: 'Send answer' }),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByText(/Answering puts it back/)).toBeNull();
+        expect(screen.getByText(/never billed/)).toBeVisible();
+    });
+
     it('offers no response to a dispute the server gave no way to settle', () => {
         render(
             <TimeSheet

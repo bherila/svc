@@ -855,20 +855,37 @@ class TimeSheetController extends Controller
                 && $editableInvoice
                 ? route('agent-api.v1.time-entries.unapprove', [$workspace, $entry->public_id], absolute: false)
                 : null,
-            // A client's open dispute, and how this viewer may settle it
-            // (docs/ux-overhaul.md 7b″), on the terms DisputeSettlements
-            // enforces: the author or a manager answers; whoever may approve
-            // the project's time may also write off what no issued invoice
-            // charges yet.
-            'settle_dispute' => $entry->client_disputed_at !== null
-                && ($entry->user_id === $userId || $isManager)
-                ? [
-                    'url' => route('agent-api.v1.time-entries.settle_dispute', [$workspace, $entry->public_id], absolute: false),
-                    'outcomes' => ($permissions[$entry->client_project_id]['approve'] ?? false) && $editableInvoice
-                        ? [DisputeSettlement::Answered->value, DisputeSettlement::WrittenOff->value]
-                        : [DisputeSettlement::Answered->value],
-                ]
-                : null,
+            'settle_dispute' => $this->settlement($workspace, $entry, $userId, $isManager, $permissions, $editableInvoice),
+        ];
+    }
+
+    /**
+     * A client's open dispute, and how this viewer may settle it
+     * (docs/ux-overhaul.md 7b″), on the terms DisputeSettlements enforces.
+     * Each outcome stands on its own: the author or a workspace owner or admin
+     * answers; whoever may approve the project's time - a project manager who
+     * is neither included - writes off what no issued invoice charges yet.
+     *
+     * @param  array<int, array{log: bool, approve: bool}>  $permissions
+     * @return array{url: string, outcomes: non-empty-list<string>}|null
+     */
+    private function settlement(Workspace $workspace, ClientTimeEntry $entry, int $userId, bool $isManager, array $permissions, bool $uncharged): ?array
+    {
+        if ($entry->client_disputed_at === null) {
+            return null;
+        }
+
+        $outcomes = [];
+        if ($entry->user_id === $userId || $isManager) {
+            $outcomes[] = DisputeSettlement::Answered->value;
+        }
+        if ($uncharged && ($permissions[$entry->client_project_id]['approve'] ?? false)) {
+            $outcomes[] = DisputeSettlement::WrittenOff->value;
+        }
+
+        return $outcomes === [] ? null : [
+            'url' => route('agent-api.v1.time-entries.settle_dispute', [$workspace, $entry->public_id], absolute: false),
+            'outcomes' => $outcomes,
         ];
     }
 }
