@@ -378,19 +378,22 @@ final class PackageRequestWorkflow
     }
 
     /**
-     * Make this address's lock key if it is new, then lock it (#667). The
-     * insert of a key another submission is making waits for that one to
-     * commit, and the lock waits for any that holds it.
+     * Make this address's lock key if it is new, then lock it (#667). An
+     * upsert, not an insert that ignores a duplicate: InnoDB locks a duplicate
+     * key an upsert meets exclusively, where an ignored insert takes a shared
+     * lock that two submissions would each hold while waiting to upgrade it,
+     * and one would die as a deadlock (#715). So the second submission waits
+     * at the upsert for the first to commit, whether the key is new or not.
      */
     private function lockAddress(Workspace $workspace, string $emailHash): void
     {
         $now = $this->clock->instant();
-        DB::table('service_package_request_addresses')->insertOrIgnore([
+        DB::table('service_package_request_addresses')->upsert([[
             'workspace_id' => $workspace->id,
             'email_hash' => $emailHash,
             'created_at' => $now,
             'updated_at' => $now,
-        ]);
+        ]], ['workspace_id', 'email_hash'], ['updated_at']);
         DB::table('service_package_request_addresses')
             ->where('workspace_id', $workspace->id)
             ->where('email_hash', $emailHash)

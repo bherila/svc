@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * One public submission in its own MariaDB session, for
- * PackageRequestAddressConcurrencyTest. With `hold`, it stops once it holds the
- * address's lock until the test writes "release".
+ * PackageRequestAddressConcurrencyTest. With `hold`, it stops once it has made or
+ * met the address's key until the test writes "release".
  */
 require dirname(__DIR__, 3).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 3).'/bootstrap/app.php';
@@ -31,7 +31,9 @@ DB::connection()->beforeExecuting(function (string $sql): void {
     }
 });
 DB::listen(function ($query) use ($input): void {
-    if ($input['hold'] && str_contains($query->sql, 'service_package_request_addresses') && str_contains(strtolower($query->sql), 'for update')) {
+    // Held right after making or meeting the key, before locking it again:
+    // where two submissions holding shared locks would deadlock (#715).
+    if ($input['hold'] && str_contains($query->sql, 'service_package_request_addresses') && str_starts_with(strtolower(ltrim($query->sql)), 'insert')) {
         echo "locked\n";
         flush();
         if (trim((string) fgets(STDIN)) !== 'release') {
