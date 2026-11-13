@@ -59,6 +59,10 @@ enum LockResource: string
     // project, agreement and access its approval writes (and before
     // PortalInvitations' workspace lock).
     case ServicePackageRequest = 'service_package_requests';
+    // One address's requests in a workspace (#667): a public submission locks
+    // it before counting the address's open requests; erasing a request,
+    // already under that request's lock, deletes it.
+    case ServicePackageRequestAddress = 'service_package_request_addresses';
     case ServicePackageEnrollment = 'service_package_enrollments';
     // A move to a new version (MIG-1 to MIG-5): its subscribers are locked
     // after their enrollments - automatic invoicing asks under the

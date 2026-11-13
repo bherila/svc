@@ -46,6 +46,7 @@ use App\Services\Packages\PackageMigrationApplier;
 use App\Services\Packages\PackageMigrationPlanner;
 use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\PackageRecurringInvoices;
+use App\Services\Packages\PackageRequestWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Services\WorkspaceProjectMutationAction;
 use App\Services\WorkspaceTaskMutationAction;
@@ -476,6 +477,11 @@ final class LockOrderConformanceTest extends TestCase
         ];
         $reviewed = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-reviewed', ...$terms]));
         $automatic = $packages->publish($this->user, $this->workspace, $packages->create($this->user, $this->workspace, ['link_name' => 'locks-automatic', ...$terms, 'activation_mode' => 'automatic']));
+        // A public request (the address's lock key, #667), declined, then
+        // erased under the request's lock, which deletes that key.
+        $requests = app(PackageRequestWorkflow::class);
+        $request = $requests->submit($this->workspace, $reviewed, ['company_name' => 'Locks Synthetic Visitor', 'contact_name' => 'Locks Visitor', 'email' => 'locks.visitor@example.com'], null, null);
+        $requests->erase($this->user, $this->workspace, $requests->decline($this->user, $this->workspace, $request));
         $contact = User::factory()->create();
         ClientCompanyMembership::query()->create(['client_company_id' => $this->company->id, 'user_id' => $contact->id, 'role' => 'member', 'access_scope' => 'company']);
         $enrollments = app(PackageEnrollmentWorkflow::class);

@@ -3428,6 +3428,18 @@ CREATE INDEX "svpke_ws_current_version_idx" on "service_package_enrollments"(
   "workspace_id",
   "current_version_id"
 );
+CREATE TABLE "service_package_request_addresses"(
+  "id" integer primary key autoincrement not null,
+  "workspace_id" integer not null,
+  "email_hash" varchar not null,
+  "created_at" datetime,
+  "updated_at" datetime,
+  foreign key("workspace_id") references "workspaces"("id") on delete cascade
+);
+CREATE UNIQUE INDEX "svpkra_ws_email_unique" on "service_package_request_addresses"(
+  "workspace_id",
+  "email_hash"
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -3568,3 +3580,4 @@ INSERT INTO migrations VALUES(136,'2026_11_14_090000_add_signup_payment_to_servi
 INSERT INTO migrations VALUES(137,'2026_11_15_090000_add_automatic_invoicing_to_service_package_enrollments',1);
 INSERT INTO migrations VALUES(138,'2026_11_16_090000_add_cancellation_to_client_agreements',1);
 INSERT INTO migrations VALUES(139,'2026_11_17_090000_create_service_package_migrations',1);
+INSERT INTO migrations VALUES(140,'2026_11_18_090000_create_service_package_request_addresses',1);

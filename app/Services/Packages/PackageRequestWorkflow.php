@@ -99,6 +99,9 @@ final class PackageRequestWorkflow
         $emailHash = self::emailHash($workspace, $email);
 
         return DB::transaction(function () use ($workspace, $package, $version, $questions, $data, $email, $emailHash, $requester, $fingerprint): ServicePackageRequest {
+            // One submission per address at a time, so the count below and the
+            // insert after it cannot interleave with another's (#667).
+            $this->lockAddress($workspace, $emailHash);
             $open = ServicePackageRequest::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('email_hash', $emailHash)
@@ -259,6 +262,13 @@ final class PackageRequestWorkflow
                 return $locked;
             }
 
+            // The address's lock key is a hash of the address: it goes too. It
+            // holds nothing, and the next submission from the address makes it
+            // again.
+            DB::table('service_package_request_addresses')
+                ->where('workspace_id', $workspace->id)
+                ->where('email_hash', $locked->email_hash)
+                ->delete();
             $locked->forceFill([
                 'company_name' => null,
                 'contact_name' => null,
@@ -365,6 +375,27 @@ final class PackageRequestWorkflow
         } elseif ($scope !== PortalAccessScope::Company->value) {
             $this->workspaceAccess->changePortalScope($context, $company, $user, PortalAccessScope::Company);
         }
+    }
+
+    /**
+     * Make this address's lock key if it is new, then lock it (#667). The
+     * insert of a key another submission is making waits for that one to
+     * commit, and the lock waits for any that holds it.
+     */
+    private function lockAddress(Workspace $workspace, string $emailHash): void
+    {
+        $now = $this->clock->instant();
+        DB::table('service_package_request_addresses')->insertOrIgnore([
+            'workspace_id' => $workspace->id,
+            'email_hash' => $emailHash,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('service_package_request_addresses')
+            ->where('workspace_id', $workspace->id)
+            ->where('email_hash', $emailHash)
+            ->tap(Locks::forUpdate())
+            ->first(['id']);
     }
 
     private function locked(Workspace $workspace, ServicePackageRequest $request): ServicePackageRequest
