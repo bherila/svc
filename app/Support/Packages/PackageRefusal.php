@@ -14,6 +14,7 @@ enum PackageRefusal: string
     case LinkNameTaken = 'package_link_name_taken';
     case NotPublished = 'package_not_published';
     case RequestRefused = 'package_request_refused';
+    case FormChanged = 'package_form_changed';
     case RequestNotOpen = 'package_request_not_open';
     case RequestNotClosed = 'package_request_not_closed';
     case PackageNotOffered = 'package_not_offered';
@@ -52,6 +53,9 @@ enum PackageRefusal: string
             // Deliberately the same sentence for every reason a public request
             // is turned away (PUB-5): a bot learns nothing from it.
             self::RequestRefused => 'We could not send this request. Please try again later.',
+            // A new version was published while the visitor filled the form:
+            // its questions may differ from the ones on their screen.
+            self::FormChanged => 'This service was updated while you were filling in the form. Reload the page to see the current form, then send your request again.',
             self::RequestNotOpen => 'This request has already been decided.',
             self::RequestNotClosed => 'Only a decided request can be deleted.',
             self::PackageNotOffered => 'This package is not published, so it cannot be offered. Publish it again first.',

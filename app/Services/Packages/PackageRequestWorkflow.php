@@ -71,14 +71,25 @@ final class PackageRequestWorkflow
     /**
      * Record a visitor's request for a published package (PUB-4).
      *
+     * The answers are checked against the questions of the version the form
+     * showed (`$shownVersion`, its public id), which is recorded as the
+     * version read. A form shown on a version no longer published is refused
+     * with a sentence asking the visitor to reload, before any field is
+     * checked: a question added since would otherwise fail on a field they
+     * cannot see, and one removed would refuse an answer they gave.
+     *
      * @param  array<string, mixed>  $input
+     * @param  string|null  $shownVersion  null for a form that named no version
      */
-    public function submit(Workspace $workspace, ServicePackage $package, array $input, ?User $requester, ?string $fingerprint): ServicePackageRequest
+    public function submit(Workspace $workspace, ServicePackage $package, array $input, ?User $requester, ?string $fingerprint, ?string $shownVersion = null): ServicePackageRequest
     {
         if ($package->workspace_id !== $workspace->id || $package->packageStatus() !== PackageStatus::Published || $package->published_version_id === null) {
             throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
         }
         $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($package->published_version_id)->firstOrFail();
+        if ($shownVersion !== null && $shownVersion !== $version->public_id) {
+            throw ServicePackageRefused::because(PackageRefusal::FormChanged);
+        }
         $questions = PackageTerms::fromVersion($version)->intakeQuestions;
         if (is_string($input['email'] ?? null)) {
             $input['email'] = trim($input['email']);

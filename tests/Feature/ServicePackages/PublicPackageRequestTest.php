@@ -3,7 +3,11 @@
 namespace Tests\Feature\ServicePackages;
 
 use App\Http\Controllers\Packages\PublicPackageController;
+use App\Models\ServicePackage;
 use App\Models\ServicePackageRequest;
+use App\Models\User;
+use App\Models\Workspace;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\Packages\PackageRefusal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -22,13 +26,20 @@ final class PublicPackageRequestTest extends TestCase
 
     private string $page;
 
+    private Workspace $workspace;
+
+    private User $owner;
+
+    private ServicePackage $package;
+
     protected function setUp(): void
     {
         parent::setUp();
         config(['svc.service_packages.enabled' => true]);
         Mail::fake();
         [$workspace, $owner] = $this->boundPackageWorkspace();
-        $this->publishedPackage($workspace, $owner);
+        $this->package = $this->publishedPackage($workspace, $owner);
+        [$this->workspace, $this->owner] = [$workspace, $owner];
         $token = $workspace->refresh()->package_catalog_token;
         $this->page = "/s/{$token}/web-hosting";
         $this->url = "/s/{$token}/web-hosting/requests";
@@ -50,13 +61,13 @@ final class PublicPackageRequestTest extends TestCase
         ];
     }
 
-    private function formToken(): string
+    private function formToken(string $firstQuestion = 'website_address'): string
     {
         $token = null;
-        $this->get($this->page)->assertOk()->assertInertia(function (AssertableInertia $page) use (&$token) {
+        $this->get($this->page)->assertOk()->assertInertia(function (AssertableInertia $page) use (&$token, $firstQuestion) {
             $page->where('request.submit_url', $this->url)
                 ->where('request.honeypot_field', PublicPackageController::HONEYPOT)
-                ->where('request.questions.0.key', 'website_address')
+                ->where('request.questions.0.key', $firstQuestion)
                 ->where('request.prefill', null);
             $token = $page->toArray()['props']['request']['form_token'];
         });
@@ -115,6 +126,34 @@ final class PublicPackageRequestTest extends TestCase
         }
         $this->postJson($this->url, $this->form($token, ['email' => 'one.more@example.com']))->assertStatus(422)->assertExactJson($generic);
         $this->assertSame(PublicPackageController::PER_ADDRESS_PER_MINUTE, ServicePackageRequest::query()->count());
+    }
+
+    /**
+     * A version published while the visitor fills the form: a question added
+     * since, or one removed, is never put to them as a field error they cannot
+     * act on. They are asked to reload; on the reloaded form the request is
+     * recorded against the version it showed.
+     */
+    #[Requirement('PUB-4', 'EDGE-7')]
+    public function test_a_form_shown_before_a_new_version_was_published_is_asked_to_reload(): void
+    {
+        $token = $this->formToken();
+        $shown = (int) $this->package->published_version_id;
+        app(ServicePackageWorkflow::class)->update($this->owner, $this->workspace, $this->package->refresh(), ['intake_questions' => [
+            ['label' => 'Expected monthly visitors', 'kind' => 'short_text', 'required' => true],
+        ]]);
+        app(ServicePackageWorkflow::class)->publish($this->owner, $this->workspace, $this->package->refresh());
+        $this->assertNotSame($shown, (int) $this->package->refresh()->published_version_id);
+        $this->travel(10)->seconds();
+
+        $this->postJson($this->url, $this->form($token))->assertStatus(422)
+            ->assertExactJson(['message' => PackageRefusal::FormChanged->message(), 'code' => PackageRefusal::FormChanged->value]);
+        $this->assertSame(0, ServicePackageRequest::query()->count());
+
+        $reloaded = $this->formToken('expected_monthly_visitors');
+        $this->travel(10)->seconds();
+        $this->postJson($this->url, $this->form($reloaded, ['answers' => ['expected_monthly_visitors' => 'About 2,000']]))->assertCreated();
+        $this->assertSame((int) $this->package->published_version_id, (int) ServicePackageRequest::query()->sole()->service_package_version_id);
     }
 
     public function test_a_field_a_person_can_fix_gets_an_ordinary_validation_error(): void
