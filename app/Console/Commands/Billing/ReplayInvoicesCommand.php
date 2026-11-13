@@ -1052,6 +1052,22 @@ final class ReplayInvoicesCommand extends TextReportCommand
             ->pluck('client_time_entry_id');
 
         if ($entryIds->isNotEmpty()) {
+            // A row disputed after an invoice charged it is not held: the
+            // charged allocation is the evidence `scopeNotHeldForDispute()`
+            // reads, and the charge stands. Demoting that invoice and deleting
+            // its pivots below would erase the evidence, so the regenerated
+            // run would read the row as held, leave it off and report the
+            // missing hour as a divergence. Say what the evidence said, inside
+            // this rolled-back sandbox, before it goes: the row's open dispute
+            // does not hold it. A row held before any charge has no charged
+            // allocation, is not selected here, and stays out.
+            ClientTimeEntry::query()
+                ->whereIn('id', $entryIds)
+                ->where('workspace_id', $workspaceId)
+                ->whereNotNull('client_disputed_at')
+                ->notHeldForDispute()
+                ->update(['client_disputed_at' => null]);
+
             // Invoiced time becomes approved again, or the regenerated run would
             // treat it as already billed and produce empty invoices.
             ClientTimeEntry::query()
