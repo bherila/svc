@@ -3,6 +3,26 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect } from '@playwright/test';
 import { uiConsistencyRisks } from '../../resources/js/test/ui-consistency.ts';
 
+/**
+ * An axe scan of the page, run in the page itself.
+ *
+ * AxeBuilder's default mode runs `axe.runPartial` in each frame and then
+ * opens a new blank page to run `axe.finishRun`, on every scan: about 300ms a
+ * scan, most of the layout harness's time. Legacy mode runs `axe.run` in the
+ * page and reaches same-origin iframes through axe's own frame messaging; it
+ * skips only cross-origin frames, and the app renders no iframe at all. On a
+ * page with known violations at the top level, in a dialog and inside an
+ * iframe, both modes report the same rules on the same nodes.
+ *
+ * The harness reads only violations, so the scan asks axe for nodes of
+ * those alone; passes and incomplete results keep a single example node.
+ */
+export function axeScan(page) {
+    return new AxeBuilder({ page })
+        .setLegacyMode()
+        .options({ resultTypes: ['violations'] });
+}
+
 async function settle(page) {
     await page.evaluate(() => document.fonts.ready);
     await page.evaluate(
@@ -50,7 +70,7 @@ export async function accessibilityFindings(page, where) {
         );
     }
 
-    const { violations } = await new AxeBuilder({ page }).analyze();
+    const { violations } = await axeScan(page).analyze();
 
     for (const violation of violations) {
         // axe's `region` rule counts an open menu's popup as content outside a

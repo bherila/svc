@@ -52,14 +52,19 @@ class PhpunitShardTest extends TestCase
     }
 
     /**
-     * @return list<array{files: list<string>, tests: int}>
+     * @return list<array{files: list<string>, tests: int, weight: int}>
      */
-    private function plan(int $total, ?string $listing = null): array
+    private function plan(int $total, ?string $listing = null, ?string $times = null): array
     {
-        $process = $this->shard(['--plan', (string) $total, ...($listing === null ? [] : ['--listing='.$listing])]);
+        $process = $this->shard([
+            '--plan',
+            (string) $total,
+            ...($listing === null ? [] : ['--listing='.$listing]),
+            ...($times === null ? [] : ['--times='.$times]),
+        ]);
         $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
 
-        /** @var list<array{files: list<string>, tests: int}> $plan */
+        /** @var list<array{files: list<string>, tests: int, weight: int}> $plan */
         $plan = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
         return $plan;
@@ -78,6 +83,17 @@ class PhpunitShardTest extends TestCase
         }
         $path = $this->scratch.'/listing-'.count($files).'.xml';
         file_put_contents($path, $xml.'</tests></testSuite>');
+
+        return $path;
+    }
+
+    /**
+     * @param  array<string, int|float|string>  $seconds  path => seconds
+     */
+    private function times(array $seconds): string
+    {
+        $path = $this->scratch.'/times-'.count($seconds).'.json';
+        file_put_contents($path, json_encode($seconds, JSON_THROW_ON_ERROR));
 
         return $path;
     }
@@ -125,8 +141,10 @@ class PhpunitShardTest extends TestCase
         $files['tests/Feature/HeavyTest.php'] = 30;
         $listing = $this->listing($files);
 
-        $plan = $this->plan(4, $listing);
-        $this->assertSame($plan, $this->plan(4, $listing), 'The same tree must always give the same shards.');
+        // With no recorded times the shards balance on test count alone.
+        $noTimes = $this->scratch.'/no-times.json';
+        $plan = $this->plan(4, $listing, $noTimes);
+        $this->assertSame($plan, $this->plan(4, $listing, $noTimes), 'The same tree must always give the same shards.');
 
         $loads = array_column($plan, 'tests');
         $this->assertSame(array_sum($files), array_sum($loads));
@@ -138,6 +156,71 @@ class PhpunitShardTest extends TestCase
         $expected = array_keys($files);
         sort($expected);
         $this->assertSame($expected, $assigned);
+    }
+
+    public function test_measured_time_outweighs_test_count(): void
+    {
+        // One slow file of a single test, and eight quick files of fifty tests each.
+        $files = ['tests/Feature/SlowTest.php' => 1];
+        $seconds = ['tests/Feature/SlowTest.php' => 400];
+        foreach (range(1, 8) as $i) {
+            $files[sprintf('tests/Unit/Quick%dTest.php', $i)] = 50;
+            $seconds[sprintf('tests/Unit/Quick%dTest.php', $i)] = 50;
+        }
+        $listing = $this->listing($files);
+        $times = $this->times($seconds);
+
+        $plan = $this->plan(4, $listing, $times);
+        $this->assertSame($plan, $this->plan(4, $listing, $times), 'The same tree and times must always give the same shards.');
+
+        // By count the single test would be packed in with quick files; by time it fills a shard.
+        $slow = array_values(array_filter($plan, fn (array $shard): bool => in_array('tests/Feature/SlowTest.php', $shard['files'], true)));
+        $this->assertCount(1, $slow);
+        $this->assertSame(['tests/Feature/SlowTest.php'], $slow[0]['files']);
+        $this->assertSame(400_000, $slow[0]['weight']);
+        $this->assertSame(800_000, array_sum(array_column($plan, 'weight')));
+    }
+
+    public function test_a_file_with_no_recorded_time_weighs_its_tests_at_the_measured_rate(): void
+    {
+        // Two seconds a test, measured; the new file's ten tests weigh twenty seconds.
+        $listing = $this->listing(['tests/Unit/MeasuredTest.php' => 5, 'tests/Unit/NewTest.php' => 10]);
+        $times = $this->times(['tests/Unit/MeasuredTest.php' => 10, 'tests/Unit/DeletedTest.php' => 999]);
+
+        $plan = $this->plan(2, $listing, $times);
+        $weights = [];
+        foreach ($plan as $shard) {
+            foreach ($shard['files'] as $file) {
+                $weights[$file] = $shard['weight'];
+            }
+        }
+
+        // A file the times name but PHPUnit no longer lists is ignored.
+        ksort($weights);
+        $this->assertSame(['tests/Unit/MeasuredTest.php' => 10_000, 'tests/Unit/NewTest.php' => 20_000], $weights);
+    }
+
+    public function test_a_shard_lists_its_heaviest_file_first(): void
+    {
+        // ParaTest starts files in the listed order, so the longest must not wait behind the rest.
+        $listing = $this->listing(['tests/Unit/ATest.php' => 9, 'tests/Unit/BTest.php' => 1, 'tests/Unit/CTest.php' => 1]);
+        $times = $this->times(['tests/Unit/ATest.php' => 1, 'tests/Unit/BTest.php' => 300, 'tests/Unit/CTest.php' => 20]);
+
+        $this->assertSame(['tests/Unit/BTest.php', 'tests/Unit/CTest.php', 'tests/Unit/ATest.php'], $this->plan(1, $listing, $times)[0]['files']);
+    }
+
+    public function test_unreadable_times_fail_closed(): void
+    {
+        $listing = $this->listing(['tests/Unit/ATest.php' => 1, 'tests/Unit/BTest.php' => 1]);
+
+        foreach (['not json', '["tests/Unit/ATest.php"]', '{"tests/Unit/ATest.php": "fast"}', '{"tests/Unit/ATest.php": -1}'] as $contents) {
+            $times = $this->scratch.'/bad-times.json';
+            file_put_contents($times, $contents);
+
+            $process = $this->shard(['--plan', '2', '--listing='.$listing, '--times='.$times]);
+            $this->assertSame(1, $process->getExitCode(), $contents);
+            $this->assertStringContainsString('test times', $process->getErrorOutput(), $contents);
+        }
     }
 
     public function test_a_shard_config_is_phpunit_xml_with_only_its_file_list_replaced(): void

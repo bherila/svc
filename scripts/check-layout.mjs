@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { chromium, expect } from '@playwright/test';
 import { uiConsistencyRisks } from '../resources/js/test/ui-consistency.ts';
+import { axeScan } from './layout/a11y.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -322,6 +323,10 @@ try {
             : route.abort();
     });
     const page = await context.newPage();
+
+    if (process.env.SVC_LAYOUT_PROFILE) {
+        profileHarness(page);
+    }
 
     // A stand-in for Stripe.js, which the sandbox cannot load: the saved
     // payment method form mounts a long unbroken placeholder, and confirming
@@ -2012,7 +2017,7 @@ try {
                 );
             }
 
-            const axe = await new AxeBuilder({ page })
+            const axe = await axeScan(page)
                 .include('[role="dialog"]')
                 .analyze();
             const serious = axe.violations
@@ -2462,7 +2467,7 @@ try {
         // risk (a text button without an icon) is reported without failing.
         const uiRisks = await uiConsistencyRisks(page);
         const uiErrors = uiRisks.filter((risk) => risk.severity === 'error');
-        const axeResult = await new AxeBuilder({ page }).analyze();
+        const axeResult = await axeScan(page).analyze();
         const axeFindings = axeResult.violations.map(
             (violation) =>
                 `${violation.id} (${violation.impact}, ${violation.nodes.length} nodes: ${violation.nodes
@@ -5404,4 +5409,58 @@ try {
         console.error(failures.join('\n'));
         process.exitCode = 1;
     }
+}
+
+// `SVC_LAYOUT_PROFILE=1` prints where a run spends its time, by browser call,
+// when the process exits. Measure with it before changing what a run does.
+function profileHarness(page) {
+    const totals = {};
+    const started = performance.now();
+    const timed = (name, call) =>
+        async function (...args) {
+            const start = performance.now();
+
+            try {
+                return await call.apply(this, args);
+            } finally {
+                const entry = (totals[name] ??= { calls: 0, ms: 0 });
+                entry.calls++;
+                entry.ms += performance.now() - start;
+            }
+        };
+
+    for (const method of [
+        'goto',
+        'reload',
+        'evaluate',
+        'screenshot',
+        'waitForLoadState',
+        'waitForFunction',
+        'emulateMedia',
+        'setViewportSize',
+    ]) {
+        page[method] = timed(`page.${method}`, page[method].bind(page));
+    }
+
+    const { value: analyze } = Object.getOwnPropertyDescriptor(
+        AxeBuilder.prototype,
+        'analyze',
+    );
+    AxeBuilder.prototype.analyze = timed('axe.analyze', function () {
+        return analyze.call(this);
+    });
+
+    process.on('exit', () => {
+        console.error(
+            `PROFILE wall=${((performance.now() - started) / 1000).toFixed(1)}s`,
+        );
+
+        for (const [name, { calls, ms }] of Object.entries(totals).sort(
+            (a, b) => b[1].ms - a[1].ms,
+        )) {
+            console.error(
+                `PROFILE ${name} calls=${calls} total=${(ms / 1000).toFixed(1)}s avg=${(ms / calls).toFixed(0)}ms`,
+            );
+        }
+    });
 }

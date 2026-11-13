@@ -3,16 +3,21 @@
 /**
  * Split the PHPUnit suite into N deterministic shards, one per CI job and database lane.
  *
- *   php scripts/ci/phpunit-shard.php <shard> <total> <output-config> [--listing=<file>]
- *   php scripts/ci/phpunit-shard.php --plan <total> [--listing=<file>]
+ *   php scripts/ci/phpunit-shard.php <shard> <total> <output-config> [--listing=<file>] [--times=<file>]
+ *   php scripts/ci/phpunit-shard.php --plan <total> [--listing=<file>] [--times=<file>]
  *
  * The file list comes from PHPUnit itself (`--list-tests-xml` under phpunit.xml), so a shard
  * can never invent a test file or miss one PHPUnit would run. Every listed file is assigned to exactly
  * one shard; the script verifies that partition before it writes anything and exits non-zero
  * if it does not hold.
  *
- * Shards are balanced greedily by test count (data-provider rows included), heaviest file
- * first, ties broken by path, so the assignment depends only on the tree. The output is a copy
+ * Shards are balanced greedily on each file's measured time, heaviest file first, ties broken
+ * by path, so the assignment depends only on the tree and the committed times. The times are
+ * per-file seconds from the MariaDB lane (tests/Fixtures/ci-test-times.json, rebuilt by
+ * scripts/ci/test-times.php from the lane's uploaded JUnit logs). A file with no recorded time
+ * weighs its test count (data-provider rows included) times the recorded seconds per test, and
+ * with no times at all the shards balance on test count alone. Stale times only unbalance the
+ * shards; they can never drop or duplicate a file. The output is a copy
  * of phpunit.xml whose test suites are replaced by an explicit file list; everything else --
  * environment and its override semantics -- is carried over unchanged. Paths are made absolute
  * so the generated configuration can safely live in the runner temporary directory.
@@ -82,13 +87,50 @@ function shard_listing(string $root, ?string $listingFile): array
 }
 
 /**
+ * Each file's weight in milliseconds of measured time, or its test count when nothing is measured.
+ *
  * @param  array<string, int>  $counts
+ * @return array<string, int>
+ */
+function shard_weights(array $counts, string $timesFile): array
+{
+    $times = [];
+    if (is_file($timesFile)) {
+        $decoded = json_decode((string) file_get_contents($timesFile), true);
+        if (! is_array($decoded)) {
+            shard_fail("unreadable test times {$timesFile}");
+        }
+        foreach ($decoded as $file => $seconds) {
+            if (! is_string($file) || ! is_int($seconds) && ! is_float($seconds) || $seconds < 0) {
+                shard_fail("test times {$timesFile} must map each file to its seconds");
+            }
+            $times[$file] = (int) round($seconds * 1000);
+        }
+    }
+
+    $known = array_intersect_key($times, $counts);
+    if ($known === []) {
+        return $counts;
+    }
+    $knownTests = array_sum(array_intersect_key($counts, $known));
+    $perTest = max(1, intdiv(array_sum($known), max(1, $knownTests)));
+
+    $weights = [];
+    foreach ($counts as $file => $tests) {
+        $weights[$file] = max(1, $known[$file] ?? $tests * $perTest);
+    }
+
+    return $weights;
+}
+
+/**
+ * @param  array<string, int>  $weights  path => weight
  * @return list<list<string>>
  */
-function shard_partition(array $counts, int $total): array
+function shard_partition(array $weights, int $total): array
 {
-    $files = array_keys($counts);
-    usort($files, fn (string $a, string $b): int => [$counts[$b], $a] <=> [$counts[$a], $b]);
+    $files = array_keys($weights);
+    usort($files, fn (string $a, string $b): int => [$weights[$b], $a] <=> [$weights[$a], $b]);
 
     $shards = array_fill(0, $total, []);
     $loads = array_fill(0, $total, 0);
@@ -96,11 +138,14 @@ function shard_partition(array $counts, int $total): array
     foreach ($files as $file) {
         $lightest = array_keys($loads, min($loads), true)[0];
         $shards[$lightest][] = $file;
-        $loads[$lightest] += $counts[$file];
+        $loads[$lightest] += $weights[$file];
     }
 
+    // Heaviest first: ParaTest hands files to its workers in the order the configuration lists
+    // them, so the longest file starts at once while the other workers share the rest, rather
+    // than starting last and running on alone.
     foreach ($shards as $index => $shard) {
-        sort($shard, SORT_STRING);
+        usort($shard, fn (string $a, string $b): int => [$weights[$b], $a] <=> [$weights[$a], $b]);
         $shards[$index] = $shard;
     }
 
@@ -120,9 +165,14 @@ function shard_partition(array $counts, int $total): array
 
 $arguments = array_slice($argv, 1);
 $listingFile = null;
+$timesFile = $root.'/tests/Fixtures/ci-test-times.json';
 foreach ($arguments as $index => $argument) {
     if (str_starts_with($argument, '--listing=')) {
         $listingFile = substr($argument, strlen('--listing='));
+        unset($arguments[$index]);
+    }
+    if (str_starts_with($argument, '--times=')) {
+        $timesFile = substr($argument, strlen('--times='));
         unset($arguments[$index]);
     }
 }
@@ -134,9 +184,14 @@ if (($arguments[0] ?? null) === '--plan') {
         shard_fail('usage: --plan <total>');
     }
     $counts = shard_listing($root, $listingFile);
+    $weights = shard_weights($counts, $timesFile);
     $plan = [];
-    foreach (shard_partition($counts, $total) as $shard) {
-        $plan[] = ['files' => $shard, 'tests' => array_sum(array_map(fn (string $file): int => $counts[$file], $shard))];
+    foreach (shard_partition($weights, $total) as $shard) {
+        $plan[] = [
+            'files' => $shard,
+            'tests' => array_sum(array_map(fn (string $file): int => $counts[$file], $shard)),
+            'weight' => array_sum(array_map(fn (string $file): int => $weights[$file], $shard)),
+        ];
     }
     echo json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n";
     exit(0);
@@ -152,7 +207,7 @@ if (! ctype_digit($arguments[0]) || ! ctype_digit($arguments[1]) || $total < 1 |
 }
 
 $counts = shard_listing($root, $listingFile);
-$files = shard_partition($counts, $total)[$shard - 1];
+$files = shard_partition(shard_weights($counts, $timesFile), $total)[$shard - 1];
 
 $config = new DOMDocument;
 $config->preserveWhiteSpace = true;
