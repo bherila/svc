@@ -206,6 +206,8 @@ Services\Billing\DeferredBuyDownAction::create > Services\Billing\DeferredBuyDow
 Services\Billing\DeferredBuyDownAction::create > Services\Billing\DeferredBuyDownAction::create client_invoice_lines  # the same eager load, through the lines
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\AllocationService::merge client_time_entries
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\CapacityLedgerInputs::byMonth client_invoices
+Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\HeldWorkDisclosure::interim client_invoices  # the interim draft's held-work document list; no amount
+Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\HeldWorkDisclosure::interim client_time_entries  # the interim draft's held-work document list; no amount
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice client_invoices
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice client_time_entries
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice workspaces
@@ -236,6 +238,11 @@ Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DeferredBackl
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::agreementOf client_agreements  # finds the agreement for the coarse earlier-draft refusal below; no amount
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoice_lines  # a refusal only; a draft sized against earlier catch-up records catch_up_basis, which issue checks with locking reads under the agreement lock (assertSizedAgainstCurrentCharges)
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\DraftCatchUpDependencies::assertIssuable client_invoices  # the same coarse refusal; see catch_up_basis
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\HeldWorkDisclosure::interim client_invoice_line_time_entries  # the held-work document list's charged-allocation scope; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\HeldWorkDisclosure::interim client_invoice_lines  # the same list's charged-allocation scope; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\HeldWorkDisclosure::interim client_invoices  # the same list's charged-allocation scope; no amount
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\HeldWorkDisclosure::interim client_time_entries  # the held-work document list; every row it lists is compared with the row lockCandidates locked
+Services\Billing\InvoiceLifecycleService::issue > Services\Billing\HeldWorkDisclosure::refreshInterim client_agreements  # finds the agreement the held-work list is scoped to; no amount
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InterimOverageGenerator::timeFingerprint client_time_entries  # the deliberate comparison: refuses an interim claim whose ledger time differs from the locked fingerprint (InterimLedgerChanged)
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::registerIssued client_companies  # who is told the invoice was issued; no amount
 Services\Billing\InvoiceLifecycleService::issue > Services\Billing\InvoiceAdministratorNotificationService::responsibleAdministrator client_agreements  # who is told; no amount

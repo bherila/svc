@@ -128,14 +128,19 @@ final class HeldWorkDisclosure
     {
         // The stored kind, not `invoiceKindValue()`: a legacy or unrecognised
         // kind is a cadence draft there, and this lists nothing for either.
-        $query = match (InvoiceKind::tryFrom((string) $draft->invoice_kind)) {
-            InvoiceKind::AdHoc => ClientTimeEntry::query()->whereIn('id', $this->disclosedIds($draft)),
-            InvoiceKind::InterimOverage => ClientTimeEntry::query()->heldThatWouldOtherwiseBill(),
+        $scope = match (InvoiceKind::tryFrom((string) $draft->invoice_kind)) {
+            InvoiceKind::AdHoc => fn ($query) => $query->whereIn('id', $this->disclosedIds($draft)),
+            InvoiceKind::InterimOverage => fn ($query) => $query->heldThatWouldOtherwiseBill(),
             InvoiceKind::CadencePeriod, InvoiceKind::Terminal, InvoiceKind::DeferredBuyDown, null => null,
         };
+        if ($scope === null) {
+            return null;
+        }
 
-        return $query?->where('workspace_id', $draft->workspace_id)
+        return ClientTimeEntry::query()
+            ->where('workspace_id', $draft->workspace_id)
             ->where('client_company_id', $draft->client_company_id)
+            ->where($scope)
             ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->get()
