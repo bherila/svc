@@ -139,9 +139,55 @@ describe('package requests', () => {
             {
                 expected_version: 'b'.repeat(64),
                 confirm: true,
+                expected_offer_version: 'version-2',
                 company_name: 'Lakeside Bakery',
             },
         ]);
+        expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    });
+
+    it('[EDGE-7] shows newer offered terms before approval and approves exactly those', async () => {
+        const user = userEvent.setup();
+        vi.mocked(apiRequest).mockResolvedValue(OK);
+        render(
+            <PackageRequests
+                {...requestsProps({
+                    requests: [
+                        requestRow({
+                            offered_version: {
+                                id: 'version-3',
+                                number: 3,
+                                name: 'Synthetic Hosting Plus',
+                                currency: 'USD',
+                                billing_cadence: 'monthly',
+                                cycle_amount: 6500,
+                                setup_fee_amount: 15000,
+                                newer_than_read: true,
+                            },
+                        }),
+                    ],
+                })}
+            />,
+        );
+
+        expect(screen.getByRole('note')).toHaveTextContent(
+            'The visitor read an earlier version. The offer will use version 3, Synthetic Hosting Plus: $65.00 per month · setup $150.00.',
+        );
+        await user.click(
+            screen.getByRole('button', { name: /Approve and invite/ }),
+        );
+        const dialog = await screen.findByRole('alertdialog');
+        expect(dialog).toHaveTextContent(
+            'The offer uses version 3, newer than the one the visitor read.',
+        );
+        await user.click(
+            within(dialog).getByRole('button', { name: 'Approve and invite' }),
+        );
+
+        await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(apiRequest).mock.calls[0][2]).toMatchObject({
+            expected_offer_version: 'version-3',
+        });
     });
 
     it('[ADM-1] pre-selects the suggested client and sends its id', async () => {
@@ -177,6 +223,7 @@ describe('package requests', () => {
         expect(vi.mocked(apiRequest).mock.calls[0][2]).toEqual({
             expected_version: 'b'.repeat(64),
             confirm: true,
+            expected_offer_version: 'version-2',
             client_id: 'client-1',
         });
     });

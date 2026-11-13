@@ -24,6 +24,8 @@ import { apiRequest } from '@/lib/api';
 import { formatTimestamp } from '@/lib/datetime';
 import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
+import { formatMoney } from '@/lib/money';
+import { priceLine } from '@/lib/packages';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { cn } from '@/lib/utils';
 import type { PackageRequestRow, PackageRequestsProps } from '@/types/packages';
@@ -115,7 +117,45 @@ function ApprovalSummary({
                     published terms
                 </li>
             </ul>
+            <NewerTerms offered={request.offered_version} />
         </div>
+    );
+}
+
+/**
+ * The visitor read an older version than the one an approval offers now
+ * (EDGE-7): what is offered instead, so the owner approves knowing it.
+ */
+function NewerTerms({
+    offered,
+}: {
+    offered: PackageRequestRow['offered_version'];
+}) {
+    if (offered === null || !offered.newer_than_read) {
+        return null;
+    }
+
+    return (
+        <p role="note" className="text-sm font-medium wrap-anywhere">
+            The visitor read an earlier version. The offer will use version{' '}
+            {offered.number},{' '}
+            <span className="font-medium">{offered.name}</span>:{' '}
+            {[
+                offered.cycle_amount > 0
+                    ? priceLine(
+                          offered.cycle_amount,
+                          offered.currency,
+                          offered.billing_cadence,
+                      )
+                    : 'priced as described on its page',
+                offered.setup_fee_amount === null
+                    ? null
+                    : `setup ${formatMoney(offered.setup_fee_amount, offered.currency)}`,
+            ]
+                .filter((part) => part !== null)
+                .join(' · ')}
+            .
+        </p>
     );
 }
 
@@ -296,9 +336,11 @@ function Panel({
                     open={approving}
                     onOpenChange={setApproving}
                     title={`Approve ${untrusted.company_name}?`}
-                    description="This creates the client and project, offers the package and emails the invitation. Choose an existing client to attach the request to it instead of creating one."
+                    description={`This creates the client and project, offers the package and emails the invitation.${request.offered_version?.newer_than_read ? ` The offer uses version ${request.offered_version.number}, newer than the one the visitor read.` : ''} Choose an existing client to attach the request to it instead of creating one.`}
                     confirmLabel="Approve and invite"
                     run={decide(urls.approve, {
+                        // Exactly the terms shown above (EDGE-7).
+                        expected_offer_version: request.offered_version?.id,
                         client_id: clientId === '' ? undefined : clientId,
                         company_name:
                             clientId === '' && companyName.trim() !== ''

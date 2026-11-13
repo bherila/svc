@@ -142,15 +142,16 @@ final class PackageRequestWorkflow
      *
      * @param  string|null  $clientPublicId  attach to this existing client instead of creating one
      * @param  string|null  $companyName  the new client's name, when the visitor's needs correcting; ignored when attaching
+     * @param  string|null  $expectedOfferVersion  the public id of the version the approver was shown as offered; refused as stale once a newer one is published
      */
-    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null, ?string $companyName = null): ServicePackageEnrollment
+    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null, ?string $companyName = null, ?string $expectedOfferVersion = null): ServicePackageEnrollment
     {
         $this->requireManager($actor, $workspace);
         $companyName = self::nullableText($companyName);
         Validator::make(['company_name' => $companyName], ['company_name' => self::COMPANY_NAME_RULES])->validate();
         $existingAccount = null;
 
-        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, &$existingAccount): ServicePackageEnrollment {
+        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, $expectedOfferVersion, &$existingAccount): ServicePackageEnrollment {
             // Current reads, not the snapshot an enclosing transaction may
             // already hold (the agent API's receipt reads open one before this
             // runs), in registry order (Codex P1 on #666): the package under a
@@ -168,6 +169,8 @@ final class PackageRequestWorkflow
             if ($version === null) {
                 throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
             }
+            // The approver signs off the terms they were shown (EDGE-7).
+            abort_unless($expectedOfferVersion === null || $expectedOfferVersion === $version->public_id, 409, 'A newer version of the package was published. Read the request again to see the terms it will be offered on.');
 
             $email = (string) $locked->email;
             $existingAccount = $this->accountFor($email);
