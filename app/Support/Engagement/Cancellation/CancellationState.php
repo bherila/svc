@@ -53,7 +53,9 @@ final readonly class CancellationState
             return [];
         }
 
-        return $this->terms->offer($this->today, $waiveNotice, null, new CancellationDates)?->offeredDateStrings() ?? [];
+        $dates = /** @infection-ignore-all Equivalent: offer() is null only for an agreement that does not bill in periods, which schedulable() has already refused, so `?->` and `->` never differ here. */ $this->terms->offer($this->today, $waiveNotice, null, new CancellationDates)?->offeredDateStrings();
+
+        return $dates ?? [];
     }
 
     /** The earliest end with notice, or null when none can be offered now. */

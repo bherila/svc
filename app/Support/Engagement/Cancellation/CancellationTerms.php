@@ -33,10 +33,15 @@ final readonly class CancellationTerms
 
     public static function of(ClientAgreement $agreement): self
     {
+        // Defaults read on their own, so the casts below can be marked
+        // equivalent without hiding the defaults' own mutants (#673).
+        $noticeDays = $agreement->notice_days ?? 0;
+        $mode = $agreement->cancellation_mode ?? '';
+
         return new self(
-            noticeDays: (int) ($agreement->notice_days ?? 0),
+            noticeDays: /** @infection-ignore-all Equivalent: the model's integer cast returns an int for every stored value and the default is 0, so the cast changes nothing. */ (int) $noticeDays,
             minimumTermMonths: $agreement->minimum_term_months === null ? null : /** @infection-ignore-all Equivalent: the model's integer cast already returns an int for every non-null value, and the int parameter would coerce one in this non-strict file. */ (int) $agreement->minimum_term_months,
-            mode: CancellationMode::tryFrom((string) ($agreement->cancellation_mode ?? '')) ?? CancellationMode::None,
+            mode: CancellationMode::tryFrom(/** @infection-ignore-all Equivalent: the column is a string and the default is '', so the cast changes nothing. */ (string) $mode) ?? CancellationMode::None,
             cadence: $agreement->billsOnARecurringCadence() ? $agreement->effectiveBillingCadence() : null,
             startsOn: $agreement->starts_on,
             endsOn: $agreement->ends_on,
