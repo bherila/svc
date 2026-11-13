@@ -233,7 +233,7 @@ final class WorkspaceExpenses
 
         return $this->move($expense, ExpenseStatus::Approved, fn (): array => [
             'approved_by_user_id' => $approver->id,
-            'approved_at' => $this->clock->now($this->workspace),
+            'approved_at' => $this->clock->instant(),
         ], $expectedVersion);
     }
 

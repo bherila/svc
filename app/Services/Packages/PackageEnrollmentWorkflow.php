@@ -331,9 +331,11 @@ final class PackageEnrollmentWorkflow
             if (! $status->mayLapse()) {
                 return LapseOutcome::NotDue;
             }
-            $version = $this->offers->version($workspace, $locked->carriedVersionId());
+            // The window the portal and the API show (EnrollmentVersions::lapseWindow()).
+            $package = ServicePackage::query()->where('workspace_id', $workspace->id)->whereKey($locked->service_package_id)->firstOrFail();
+            $window = $this->offers->version($workspace, EnrollmentVersions::lapseWindow($package, $locked));
             $today = $this->clock->today($workspace);
-            if (! EnrollmentLapse::hasLapsed($status, $locked->offered_at, $locked->accepted_at, (int) $version->payment_lapse_days, $today->tzName, $today)) {
+            if (! EnrollmentLapse::hasLapsed($status, $locked->offered_at, $locked->accepted_at, (int) $window->payment_lapse_days, $today->tzName, $today)) {
                 return LapseOutcome::NotDue;
             }
 

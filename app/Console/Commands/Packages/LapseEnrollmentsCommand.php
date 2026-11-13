@@ -4,12 +4,14 @@ namespace App\Console\Commands\Packages;
 
 use App\Console\Commands\MutationCommand;
 use App\Http\Middleware\EnsureServicePackagesEnabled;
+use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageVersion;
 use App\Models\Workspace;
 use App\Services\Packages\PackageEnrollmentWorkflow;
 use App\Support\Packages\EnrollmentLapse;
 use App\Support\Packages\EnrollmentStatus;
+use App\Support\Packages\EnrollmentVersions;
 use App\Support\Packages\LapseOutcome;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\Eloquent\Collection;
@@ -54,7 +56,7 @@ final class LapseEnrollmentsCommand extends MutationCommand
                 ->where('id', '>', $after)
                 ->orderBy('id')
                 ->limit($page)
-                ->get(['id', 'public_id', 'workspace_id', 'status', 'service_package_version_id', 'accepted_version_id', 'offered_at', 'accepted_at']);
+                ->get(['id', 'public_id', 'workspace_id', 'service_package_id', 'status', 'service_package_version_id', 'accepted_version_id', 'current_version_id', 'offered_at', 'accepted_at']);
             $after = (int) ($open->last()->id ?? $after);
             foreach ($this->due($open, $clock) as [$workspace, $enrollment]) {
                 try {
@@ -86,15 +88,28 @@ final class LapseEnrollmentsCommand extends MutationCommand
             return [];
         }
         $workspaces = Workspace::query()->whereIn('id', $open->pluck('workspace_id')->unique()->all())->get()->keyBy('id');
+        $packages = ServicePackage::query()
+            ->whereIn('id', $open->pluck('service_package_id')->unique()->all())
+            ->get(['id', 'workspace_id', 'status', 'published_version_id'])
+            ->keyBy('id');
+        // The lapse window is the shown version's, as the portal and the API
+        // show it (EnrollmentVersions::lapseWindow()).
+        $windows = [];
+        foreach ($open as $enrollment) {
+            $package = $packages->get($enrollment->service_package_id);
+            if ($package instanceof ServicePackage && (int) $package->workspace_id === (int) $enrollment->workspace_id) {
+                $windows[$enrollment->id] = EnrollmentVersions::lapseWindow($package, $enrollment);
+            }
+        }
         $versions = ServicePackageVersion::query()
-            ->whereIn('id', $open->map(static fn (ServicePackageEnrollment $enrollment): int => $enrollment->carriedVersionId())->unique()->all())
+            ->whereIn('id', array_values(array_unique($windows)))
             ->get(['id', 'workspace_id', 'payment_lapse_days'])
             ->keyBy('id');
 
         $due = [];
         foreach ($open as $enrollment) {
             $workspace = $workspaces->get($enrollment->workspace_id);
-            $version = $versions->get($enrollment->carriedVersionId());
+            $version = isset($windows[$enrollment->id]) ? $versions->get($windows[$enrollment->id]) : null;
             if (! $workspace instanceof Workspace || ! $version instanceof ServicePackageVersion || (int) $version->workspace_id !== (int) $workspace->id) {
                 continue;
             }

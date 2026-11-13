@@ -110,7 +110,7 @@ final class ReviewerGrants
                 'reviewer_workspace_id' => $grantee->workspaceId,
                 'reviewer_label' => $label,
                 'granted_by_user_id' => $actor->id,
-                'granted_at' => $this->clock->now($locked),
+                'granted_at' => $this->clock->instant(),
                 'active_marker' => 1,
             ])->save();
 
@@ -130,7 +130,7 @@ final class ReviewerGrants
             $grant = ReviewerGrant::query()->where('granter_workspace_id', $locked->id)->where('public_id', $grantPublicId)->first();
             abort_if($grant === null || ! $grant->state()->reaches(), 404);
 
-            $grant->forceFill(['revoked_at' => $this->clock->now($locked), 'revoked_by_user_id' => $actor->id, 'active_marker' => null])->save();
+            $grant->forceFill(['revoked_at' => $this->clock->instant(), 'revoked_by_user_id' => $actor->id, 'active_marker' => null])->save();
             $company = ClientCompany::query()->where('workspace_id', $locked->id)->whereKey($grant->client_company_id)->first();
             $this->audit->record(AccessMutationContext::user($actor), $locked, AccessAuditAction::ReviewerRevoked, null,
                 ['grant' => $grant->public_id, 'kind' => $grant->grantee_kind], null, $company?->public_id);

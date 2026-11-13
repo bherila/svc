@@ -505,7 +505,11 @@ Slice 3b (payment at sign-up) settled these:
 - **Lapsing (ACC-6)** is `svc:packages:lapse-enrollments`, hourly, behind the
   feature flag. An offer not accepted lapses `payment_lapse_days` after it was
   made, an unpaid acceptance that many days after it was signed, on that day
-  in the workspace's timezone. A lapsed offer cannot be accepted. Each run
+  in the workspace's timezone. The days are those of the version the
+  enrollment is shown on: until acceptance, the version acceptance would sign
+  (EDGE-7), so a version published while an offer is open moves its lapse
+  date, and the portal, the API and the run agree on it. A lapsed offer
+  cannot be accepted. Each run
   walks every open enrollment in pages by id (no elapsed-time filter: a
   one-day offer made late in the evening is due at the workspace's next
   midnight) and locks only those due on the workspace's calendar. Each is

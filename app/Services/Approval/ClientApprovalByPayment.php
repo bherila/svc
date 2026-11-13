@@ -62,7 +62,7 @@ final class ClientApprovalByPayment
             return ['time' => 0, 'expenses' => 0];
         }
 
-        $now = $this->clock->now($invoice->workspace);
+        $now = $this->clock->instant();
         $lineIds = $invoice->lines()->where('workspace_id', $workspaceId)->pluck('id');
         if ($lineIds->isEmpty()) {
             return ['time' => 0, 'expenses' => 0];

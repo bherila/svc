@@ -302,7 +302,7 @@ final class InvoiceLifecycleService
             $this->releaseAllocations($locked);
             $locked->forceFill([
                 'status' => 'void',
-                'voided_at' => $this->clock->now($workspace),
+                'voided_at' => $this->clock->instant(),
                 'void_reason' => $reason,
                 'balance_amount' => 0,
             ])->save();
@@ -1218,7 +1218,7 @@ final class InvoiceLifecycleService
             $this->accounting->reverse($locked, 'void', (string) $locked->document_revision);
             $locked->forceFill([
                 'status' => 'void',
-                'voided_at' => $this->clock->now($locked->workspace),
+                'voided_at' => $this->clock->instant(),
                 'void_reason' => $reason,
                 'balance_amount' => 0,
                 'automatic_delivery_status' => $locked->automatic_delivery_status === null ? null : 'cancelled',

@@ -17,6 +17,7 @@ use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\OverpaymentCreditService;
 use App\Services\Billing\StripePaymentIntentService;
+use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
@@ -25,6 +26,7 @@ use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\Concerns\CallsInvoiceApi;
@@ -159,6 +161,39 @@ class BillingWorkflowTest extends TestCase
         $this->expectException(ModelNotFoundException::class);
         $service->issue($invoice, $otherWorkspace);
         $this->assertSame($otherCompany->workspace_id, $otherWorkspace->id);
+    }
+
+    /**
+     * An event is stored as its instant in UTC, whatever the workspace's zone
+     * (#669). In Auckland at 01:00 on the 16th it is 12:00 on the 15th in UTC;
+     * a workspace-local value would be stored as 01:00 on the 16th and read
+     * back thirteen hours late.
+     */
+    public function test_agreement_and_invoice_events_are_stored_as_utc_instants_in_a_workspace_far_from_utc(): void
+    {
+        [$owner, $workspace, $company] = $this->tenant();
+        $workspace->forceFill(['timezone' => 'Pacific/Auckland'])->save();
+        $this->travelTo(CarbonImmutable::parse('2026-11-15 12:00:00', 'UTC'));
+        $stamp = '2026-11-15 12:00:00';
+
+        $agreement = $this->agreementFor($workspace->refresh(), $company, 'Auckland');
+        $agreement->forceFill(['status' => 'draft'])->save();
+        app(AgreementWorkflow::class)->activate($agreement->refresh());
+        app(AgreementWorkflow::class)->sign($agreement->refresh(), $owner, 'Morgan Synthetic', 'Owner');
+        $this->assertSame(
+            ['activated_at' => $stamp, 'signed_at' => $stamp],
+            (array) DB::table('client_agreements')->where('id', $agreement->id)->first(['activated_at', 'signed_at']),
+        );
+        $this->assertSame('2026-11-15T12:00:00+00:00', $agreement->refresh()->signed_at?->toIso8601String());
+
+        $service = app(InvoiceLifecycleService::class);
+        $invoice = $service->createDraft($workspace, $company, $this->invoiceData(), [$this->line()]);
+        $service->issue($invoice, $workspace);
+        $service->void($invoice->refresh(), $workspace, 'Synthetic void');
+        $this->assertSame($stamp, DB::table('client_invoices')->where('id', $invoice->id)->value('voided_at'));
+
+        $activity = DB::table('client_company_activity')->where('workspace_id', $workspace->id)->pluck('created_at')->unique()->values()->all();
+        $this->assertSame([$stamp], $activity, 'activity rows are stamped with the same instant');
     }
 
     public function test_void_invoice_rejects_new_payments(): void

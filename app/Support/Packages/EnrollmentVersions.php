@@ -33,4 +33,15 @@ final class EnrollmentVersions
             ?? ($enrollment->enrollmentStatus() === EnrollmentStatus::Offered ? self::toAccept($package, $enrollment) : null)
             ?? $enrollment->service_package_version_id;
     }
+
+    /**
+     * The version whose `payment_lapse_days` fixes the day an open enrollment
+     * lapses (ACC-6): the version it is shown on, so the day the portal and
+     * the API show is the day the lapse run applies. Until acceptance that is
+     * the version acceptance would sign (EDGE-7), not the one first offered.
+     */
+    public static function lapseWindow(ServicePackage $package, ServicePackageEnrollment $enrollment): int
+    {
+        return self::shown($package, $enrollment);
+    }
 }

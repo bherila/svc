@@ -41,6 +41,7 @@ final class PackageEnrollmentPresenter
         $invoice = self::signupInvoice($enrollment);
         // The terms in force: a move's version (MIG-3), else the one signed, else the offer.
         $carried = $current ?? $accepted ?? $offered;
+        $deadline = self::lapseWindow($package, $enrollment, [$current, $accepted, $offered, $package->publishedVersion]);
 
         return [
             'id' => $enrollment->public_id,
@@ -59,7 +60,7 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'lapsed_at' => $enrollment->lapsed_at?->toIso8601String(),
-            'payment' => self::payment($enrollment, $carried, $clientAutopay, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
+            'payment' => self::payment($enrollment, $carried, $deadline, $clientAutopay, (new WorkspaceClock)->now($workspace)->tzName, $invoice === null ? null
                 : $base.route('clients.invoice', ['workspace' => $workspace, 'clientCompany' => $company, 'clientInvoice' => $invoice], false)),
             'invoicing' => self::invoicing($workspace, $enrollment, $company, $agreement, $carried),
             // The scheduled move to a new version it is part of, if any (MIG-1, MIG-3).
@@ -122,11 +123,12 @@ final class PackageEnrollmentPresenter
      * secret (API-4).
      *
      * @param  ServicePackageVersion  $carried  the version whose terms apply, components loaded
+     * @param  ServicePackageVersion  $deadline  the version whose lapse window applies ({@see EnrollmentVersions::lapseWindow()})
      * @param  ClientAutopay|null  $clientAutopay  where the company's autopay stands on the client's own consent, if it does
      * @param  string|null  $invoiceUrl  the sign-up invoice's page for this reader, finished
      * @return array{state: string, waiting_for: list<string>, signup_invoice: array<string, mixed>|null, requires_autopay: bool, autopay_limit_amount: int|null, pay_before_activation: bool, lapses_on: string|null}
      */
-    public static function payment(ServicePackageEnrollment $enrollment, ServicePackageVersion $carried, ?ClientAutopay $clientAutopay, string $timezone, ?string $invoiceUrl): array
+    public static function payment(ServicePackageEnrollment $enrollment, ServicePackageVersion $carried, ServicePackageVersion $deadline, ?ClientAutopay $clientAutopay, string $timezone, ?string $invoiceUrl): array
     {
         $terms = PackageTerms::fromVersion($carried);
         $invoice = self::signupInvoice($enrollment);
@@ -150,7 +152,7 @@ final class PackageEnrollmentPresenter
             'requires_autopay' => $terms->requireAutopay,
             'autopay_limit_amount' => $terms->requireAutopay ? $terms->autopayLimitAmount : null,
             'pay_before_activation' => $terms->payBeforeActivation,
-            'lapses_on' => EnrollmentLapse::lapsesOn($status, $enrollment->offered_at, $enrollment->accepted_at, $terms->paymentLapseDays, $timezone)?->toDateString(),
+            'lapses_on' => EnrollmentLapse::lapsesOn($status, $enrollment->offered_at, $enrollment->accepted_at, (int) $deadline->payment_lapse_days, $timezone)?->toDateString(),
         ];
     }
 
@@ -188,7 +190,7 @@ final class PackageEnrollmentPresenter
             'acceptance' => self::acceptance($enrollment),
             'activated_at' => $enrollment->activated_at?->toIso8601String(),
             'agreement_url' => $agreementUrl,
-            'payment' => self::payment($enrollment, $terms, $clientAutopay, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
+            'payment' => self::payment($enrollment, $terms, $terms, $clientAutopay, $timezone, $invoice === null || ! $invoice->is_visible_to_client ? null
                 : $base.route('portal.invoice', [$company, $invoice], false)),
             // When the next billing period, and so its invoice, begins; not how
             // that invoice is made, which is the operator's setting.
@@ -274,6 +276,23 @@ final class PackageEnrollmentPresenter
         }
 
         return $invoice;
+    }
+
+    /**
+     * The version among those loaded that {@see EnrollmentVersions::lapseWindow()} names.
+     *
+     * @param  list<ServicePackageVersion|null>  $loaded
+     */
+    private static function lapseWindow(ServicePackage $package, ServicePackageEnrollment $enrollment, array $loaded): ServicePackageVersion
+    {
+        $id = EnrollmentVersions::lapseWindow($package, $enrollment);
+        foreach ($loaded as $version) {
+            if ($version instanceof ServicePackageVersion && (int) $version->id === $id) {
+                return $version;
+            }
+        }
+
+        throw new LogicException('An enrollment was presented without the version its lapse window comes from loaded.');
     }
 
     /** @return array{ClientCompany, ClientProject, ClientAgreement, ServicePackage, ServicePackageVersion, ServicePackageVersion|null, ServicePackageVersion|null} */

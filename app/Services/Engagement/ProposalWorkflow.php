@@ -81,7 +81,7 @@ class ProposalWorkflow
 
             $locked->forceFill([
                 'status' => 'sent',
-                'sent_at' => $this->clock->now($locked->workspace),
+                'sent_at' => $this->clock->instant(),
                 'is_visible_to_client' => true,
             ])->save();
 
@@ -127,7 +127,7 @@ class ProposalWorkflow
             $acceptedAt = $this->clock->now($locked->workspace);
             $locked->forceFill([
                 'status' => 'accepted',
-                'accepted_at' => $acceptedAt,
+                'accepted_at' => $acceptedAt->utc(),
                 'accepted_by_user_id' => $acceptingUser?->id,
                 'acceptance_signer_name' => $signerName,
                 'acceptance_signer_title' => $signerTitle,
@@ -148,8 +148,8 @@ class ProposalWorkflow
                         'is_visible_to_client' => $locked->is_visible_to_client,
                         'currency' => $locked->currency,
                         'billing_cadence' => $this->agreementCadence($locked),
-                        'activated_at' => $acceptedAt,
-                        'signed_at' => $acceptedAt,
+                        'activated_at' => $acceptedAt->utc(),
+                        'signed_at' => $acceptedAt->utc(),
                         'signed_by_user_id' => $acceptingUser?->id,
                         'signer_name' => $signerName,
                         'signer_title' => $signerTitle,

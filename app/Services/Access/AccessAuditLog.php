@@ -42,7 +42,7 @@ final class AccessAuditLog
             'after_state' => $after,
             'operation_id' => $context->operationId,
             'request_id' => $context->requestId,
-            'created_at' => $this->clock->now($workspace),
+            'created_at' => $this->clock->instant(),
         ]);
     }
 }

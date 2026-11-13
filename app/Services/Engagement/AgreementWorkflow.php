@@ -252,7 +252,7 @@ class AgreementWorkflow
             $previousStatus = $locked->status;
             $locked->forceFill([
                 'status' => 'active',
-                'activated_at' => $locked->activated_at ?? $this->clock->now($locked->workspace),
+                'activated_at' => $locked->activated_at ?? $this->clock->instant(),
             ])->save();
             $this->activities->record(
                 $locked->workspace,
@@ -394,7 +394,7 @@ class AgreementWorkflow
             }
 
             $locked->forceFill([
-                'signed_at' => $this->clock->now($locked->workspace),
+                'signed_at' => $this->clock->instant(),
                 'signed_by_user_id' => $signingUser?->id,
                 'signer_name' => $signerName,
                 'signer_title' => $signerTitle,
