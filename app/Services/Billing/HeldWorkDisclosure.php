@@ -70,14 +70,14 @@ final class HeldWorkDisclosure
      */
     public function interim(ClientInvoice $invoice, ClientAgreement $agreement, ?array $current = null): void
     {
-        $start = $invoice->service_period_start?->toDateString();
-        $end = $invoice->service_period_end?->toDateString();
+        $start = $invoice->service_period_start;
+        $end = $invoice->service_period_end;
         $held = $start === null || $end === null ? new Collection : ClientTimeEntry::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_company_id', $invoice->client_company_id)
             ->heldThatWouldOtherwiseBill()
             ->forAgreementScope($agreement)
-            ->whereBetween('worked_on', [$start, $end])
+            ->whereBetween('worked_on', [$start->toDateString(), $end->toDateString()])
             ->orderBy('worked_on')
             ->orderBy('id')
             ->get();
