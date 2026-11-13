@@ -26,6 +26,7 @@ use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\StripePaymentIntentService;
 use App\Services\Engagement\AgreementWorkflow;
+use App\Services\Packages\ClientServiceReadService;
 use App\Services\Packages\PackageAgreementActivations;
 use App\Services\Packages\PackageEnrollmentReadService;
 use App\Services\Packages\PackageEnrollmentWorkflow;
@@ -459,6 +460,46 @@ final class PackageSignupPaymentTest extends TestCase
         } catch (ServicePackageRefused $refused) {
             $this->assertSame(PackageRefusal::OfferNotOpen->value, $refused->refusalCode());
         }
+    }
+
+    /** @return array<string, array{int, int, string}> */
+    public static function lapseWindowsPublishedWhileOpen(): array
+    {
+        return [
+            'a longer window published' => [1, 14, '2026-11-29'],
+            'a shorter window published' => [14, 1, '2026-11-16'],
+        ];
+    }
+
+    /**
+     * An open offer lapses on the day the portal and the API show, which is
+     * the window of the version acceptance would sign (EDGE-7), even when a
+     * version with another `payment_lapse_days` is published while it is open.
+     */
+    #[Requirement('ACC-6', 'EDGE-7')]
+    #[DataProvider('lapseWindowsPublishedWhileOpen')]
+    public function test_an_open_offer_lapses_on_the_day_it_shows_after_a_new_lapse_window_is_published(int $offeredDays, int $publishedDays, string $lapsesOn): void
+    {
+        [$workspace, $owner, $package, $company, $contact] = $this->world(['payment_lapse_days' => $offeredDays]);
+        $offer = app(PackageEnrollmentWorkflow::class)->addFromPortal($contact, $company, $package);
+        app(ServicePackageWorkflow::class)->update($owner, $workspace, $package->refresh(), ['payment_lapse_days' => $publishedDays]);
+        app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package->refresh());
+        $this->assertNotSame($offer->service_package_version_id, $package->refresh()->published_version_id);
+
+        $portal = app(ClientServiceReadService::class)->reviewForPortal($contact, $company, $offer->public_id);
+        $this->assertSame($lapsesOn, $portal['service']['payment']['lapses_on'], 'the portal');
+        $manager = app(PackageEnrollmentReadService::class)->get($owner, $workspace, $offer->public_id);
+        $this->assertSame($lapsesOn, $manager['payment']['lapses_on'], 'the owner\'s API view');
+
+        $dayBefore = CarbonImmutable::parse($lapsesOn.' 23:00:00', 'UTC')->subDay();
+        $this->travelTo($dayBefore);
+        $this->assertSame([], $this->lapseRun()['outcomes'], 'not before the day shown');
+        $this->assertSame(LapseOutcome::NotDue, app(PackageEnrollmentWorkflow::class)->lapse($workspace, $offer));
+        $this->assertSame('offered', $offer->refresh()->status);
+
+        $this->travelTo(CarbonImmutable::parse($lapsesOn.' 00:30:00', 'UTC'));
+        $this->assertSame([[$offer->public_id, LapseOutcome::Lapsed->value]], array_map(static fn (array $row): array => [$row['enrollment_id'], $row['outcome']], $this->lapseRun()['outcomes']));
+        $this->assertSame('lapsed', $offer->refresh()->status);
     }
 
     #[Requirement('ACC-6', 'X-1')]

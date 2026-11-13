@@ -86,7 +86,9 @@ final class PackageEnrollmentReadService
             ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)]);
 
         return $query->with([
-            'clientCompany' => $scoped, 'project' => $scoped, 'package' => $scoped,
+            'clientCompany' => $scoped, 'project' => $scoped,
+            // With the version an open offer would be accepted on, whose lapse window it shows (EDGE-7).
+            'package' => static fn ($package) => $package->where('workspace_id', $workspace->id)->with(['publishedVersion' => $scoped]),
             // With its pending cancellation request and scheduled end (CAN-4, EDGE-9).
             'agreement' => static fn ($agreement) => $agreement->where('workspace_id', $workspace->id)->with(CancellationRecords::openRelations($workspace->id)),
             'version' => $withComponents, 'acceptedVersion' => $withComponents, 'currentVersion' => $withComponents, 'packageRequest' => $scoped,
