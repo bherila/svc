@@ -904,6 +904,7 @@ final class BillingHistoryInvariantTest extends TestCase
             }
             yield "{$cadence}, backdated, terminated before any draft" => [$cadence, '2026-08-15', false, false, true];
             yield "{$cadence}, backdated to a period close, terminated before any draft, with a successor" => [$cadence, '2026-09-30', true, false, true];
+            yield "{$cadence}, backdated mid-period, terminated before any draft, with a successor" => [$cadence, '2026-08-15', true, false, true];
             yield "{$cadence}, backdated, recurring items and no retainer" => [$cadence, '2026-09-30', false, true, false];
         }
     }
@@ -918,6 +919,12 @@ final class BillingHistoryInvariantTest extends TestCase
      * date comes - nor any recurring item's incidence after it. Each cycle up
      * to the end is still sold once, and the final reconciliation leaves none
      * of the agreement's deferred work waiting.
+     *
+     * Issue #699: the termination itself rebuilds the drafts it makes stale,
+     * in the request; a successor sells its first cycle - October or Q4 2026
+     * after a handover on 30 September - and every cycle after it once, and
+     * its walk is never refused by the outgoing agreement's emptied drafts
+     * past the end, which nobody has to discard.
      */
     #[DataProvider('terminationAfterDraftWorlds')]
     public function test_a_termination_after_its_drafts_refreshes_every_draft_past_the_end(string $cadence, string $end, bool $successor, bool $draftedFirst, bool $retainer): void
@@ -935,15 +942,40 @@ final class BillingHistoryInvariantTest extends TestCase
         $sells = fn (ClientInvoice $draft): bool => $draft->lines()->whereIn('type', [InvoiceLineType::Retainer->value, InvoiceLineType::RecurringItem->value])
             ->whereDate('line_date', '>', $end)->exists();
         ClientTimeEntry::query()->whereKey($this->hours($workspace, $company, $project, $owner, '2026-07-07', 120)->id)->update(['is_deferred' => true]);
-        $this->hours($workspace, $company, $project, $owner, '2026-08-10', 900);
+        $arrears = $this->hours($workspace, $company, $project, $owner, '2026-08-10', 900);
 
         if ($draftedFirst) {
             app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
             $this->assertInvariants($company, 'generated while open');
             $this->assertTrue($this->drafts($company)->contains($sells), 'A draft sells a cycle or an incidence past the end before the termination.');
+
+            // A termination whose rebuild never ran - written by hand here -
+            // leaves such a draft as it was: it is refused at issue rather
+            // than charged as it stands.
+            $this->inSavepoint(function () use ($agreement, $end, $company, $workspace, $sells): void {
+                ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($agreement->id)
+                    ->update(['status' => 'terminated', 'ends_on' => $end, 'terminated_at' => now()]);
+                foreach ($this->drafts($company)->filter($sells) as $draft) {
+                    $issued = $this->inSavepoint(function () use ($draft, $workspace): bool {
+                        try {
+                            app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $workspace);
+
+                            return true;
+                        } catch (DomainException) {
+                            return false;
+                        }
+                    });
+                    $this->assertFalse($issued, "Draft {$draft->invoice_number} sells a cycle after the end on {$end} and issued as it was.");
+                }
+            });
         }
 
         app(AgreementWorkflow::class)->terminate($agreement->fresh() ?? $agreement, $end);
+        // #699: the termination rebuilt every draft it made stale, in the
+        // request: none sells past the end, and none regeneration would change
+        // is left to issue.
+        $this->assertSame([], $this->drafts($company)->filter($sells)->pluck('invoice_number')->all(), 'The termination left a draft selling past the end.');
+        $this->assertInvariants($company, 'terminated');
         $next = null;
         $handedOver = null;
         if ($successor) {
@@ -951,37 +983,20 @@ final class BillingHistoryInvariantTest extends TestCase
             $handedOver = $this->hours($workspace, $company, $project, $owner, Carbon::parse($end)->addDays(20)->toDateString(), 60);
         }
         $invoicesBefore = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)->pluck('id')->all();
-        // Before any walk: a draft that still sells a cycle or an incidence
-        // past the end is refused at issue rather than charged as it stands.
-        foreach ($this->drafts($company) as $draft) {
-            if ($sells($draft)) {
-                $issued = $this->inSavepoint(function () use ($draft, $workspace): bool {
-                    try {
-                        app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $workspace);
-
-                        return true;
-                    } catch (DomainException) {
-                        return false;
-                    }
-                });
-                $this->assertFalse($issued, "Draft {$draft->invoice_number} sells a cycle after the end on {$end} and issued as it was.");
-            }
-        }
-        app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+        $refusals = $this->refusals(app(ClientInvoicingService::class)->generateAllInvoices($company->refresh()));
+        $this->assertSame([], $refusals, 'The walk after the termination refused a period.');
         $this->assertInvariants($company, 'generated after the termination');
         if ($next instanceof ClientAgreement) {
             // Past the successor's cap the walk refreshes what is there and
             // writes nothing new.
             $this->assertSame([], ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $agreement->id)
                 ->whereNotIn('id', $invoicesBefore)->whereDate('service_period_start', '>', $end)->pluck('invoice_number')->all(), 'The outgoing agreement opened a period of work past its end.');
-            // Its refreshed drafts for work after the end still hold their
-            // periods against the successor's, and the successor's walk says
-            // so; the operator discards them, as that message asks, and
-            // nothing is lost.
+            // Its refreshed drafts for work after the end are left empty, and
+            // stand in nobody's way: the successor's walk above was refused
+            // nothing, and no operator discards them (#699).
             foreach ($this->drafts($company) as $draft) {
                 if ((int) $draft->client_agreement_id === $agreement->id && $draft->service_period_start?->toDateString() > $end) {
                     $this->assertSame(0, (int) $draft->total_amount, "The outgoing draft {$draft->invoice_number} past the end charges nothing.");
-                    app(InvoiceLifecycleService::class)->discardDraft($draft, $workspace, 'Synthetic: past the end');
                 }
             }
         }
@@ -989,7 +1004,7 @@ final class BillingHistoryInvariantTest extends TestCase
         foreach (['2027-01-02', '2027-04-02'] as $day) {
             Carbon::setTestNow($day.' 12:00:00');
             CarbonImmutable::setTestNow($day.' 12:00:00');
-            app(ClientInvoicingService::class)->generateAllInvoices($company->refresh());
+            $this->assertSame([], $this->refusals(app(ClientInvoicingService::class)->generateAllInvoices($company->refresh())), 'The walk on '.$day.' refused a period.');
             $this->assertInvariants($company, 'generated on '.$day);
             $this->issueEveryDraft($company, $workspace);
             $this->assertInvariants($company, 'issued on '.$day);
@@ -1003,8 +1018,13 @@ final class BillingHistoryInvariantTest extends TestCase
             ->map(fn ($date): string => Carbon::parse((string) $date)->toDateString())->all();
         $this->assertSame(array_values(array_unique($sold)), $sold, 'No cycle is sold twice.');
         if ($retainer) {
-            $this->assertNotSame([], $sold);
+            // The outgoing agreement settles its own final period: every cycle
+            // it opened up to the end is sold, once, the one the end falls in
+            // included, and nothing after it.
+            $this->assertSame($this->cyclesFrom($cadence, '2026-01-01', $end), $sold, 'The outgoing agreement sells each of its cycles to the end, once.');
         }
+        // Charged by the outgoing agreement alone; once, by the invariants.
+        $this->assertSame([$agreement->id], array_values(array_unique(array_column($this->chargesOf($arrears), 0))), 'Its last period\'s work in arrears is its own.');
         $this->assertSame([], array_values(array_filter($sold, fn (string $cycle): bool => $cycle > $end)), 'No retainer cycle after the end is sold.');
         $this->assertSame([], $this->drafts($company)->filter(fn (ClientInvoice $draft): bool => (int) $draft->client_agreement_id === $agreement->id
             && $draft->service_period_start?->toDateString() > $end && (int) $draft->total_amount !== 0)->map(fn (ClientInvoice $draft): string => (string) $draft->invoice_number)->values()->all(),
@@ -1016,7 +1036,50 @@ final class BillingHistoryInvariantTest extends TestCase
             $this->assertSame([$next->id], array_column($this->chargesOf($handedOver), 0), 'Work after the handover is the successor\'s, once.');
             $this->assertTrue(ClientInvoice::query()->where('workspace_id', $workspace->id)->where('client_agreement_id', $next->id)
                 ->where('status', '!=', InvoiceStatus::Void->value)->exists(), 'The successor bills its own cycles.');
+            // #699: the successor sells its first cycle - the month or the
+            // cycle its start falls in - and each cycle after it, once, with
+            // none skipped through the last walk.
+            $successorSold = DB::table('client_invoice_lines as line')
+                ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+                ->where('invoice.workspace_id', $workspace->id)->where('invoice.client_agreement_id', $next->id)
+                ->where('invoice.status', '!=', InvoiceStatus::Void->value)->where('line.type', InvoiceLineType::Retainer->value)
+                ->orderBy('invoice.cycle_start')->pluck('invoice.cycle_start')
+                ->map(fn ($date): string => Carbon::parse((string) $date)->toDateString())->all();
+            $starts = $next->starts_on->toDateString();
+            $first = $cadence === 'monthly' ? Carbon::parse($starts)->startOfMonth()->toDateString() : $starts;
+            $this->assertSame($this->cyclesFrom($cadence, $first, '2027-04-02'), array_slice($successorSold, 0, count($this->cyclesFrom($cadence, $first, '2027-04-02'))), 'The successor sells its first cycle and each one after it to the last walk, once.');
+            $this->assertSame(array_values(array_unique($successorSold)), $successorSold, 'The successor sells no cycle twice.');
         }
+    }
+
+    /**
+     * The start of each cycle from `$first` - monthly, or every three months
+     * from it - up to the one `$through` falls in.
+     *
+     * @return list<string>
+     */
+    private function cyclesFrom(string $cadence, string $first, string $through): array
+    {
+        $cycles = [];
+        for ($cursor = CarbonImmutable::parse($first); $cursor->toDateString() <= $through; $cursor = $cursor->addMonthsNoOverflow($cadence === 'monthly' ? 1 : 3)) {
+            $cycles[] = $cursor->toDateString();
+        }
+
+        return $cycles;
+    }
+
+    /**
+     * The periods a walk refused, by period and message.
+     *
+     * @param  array{skipped: list<array<string, mixed>>}  $results
+     * @return list<string>
+     */
+    private function refusals(array $results): array
+    {
+        return array_values(array_map(
+            fn (array $row): string => $row['period'].': '.$row['error'],
+            array_filter($results['skipped'], fn (array $row): bool => isset($row['error'])),
+        ));
     }
 
     // ---- the invariants ----

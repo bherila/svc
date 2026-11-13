@@ -3,24 +3,29 @@
 namespace App\Support\Billing;
 
 /**
- * How the first (and last) partial billing cycle is handled when an agreement
- * starts (or ends) mid-cycle.
+ * How a partial opening calendar month is handled.
+ *
+ * Longer cadence dates stay anchored on the agreement's start under every
+ * setting. Legacy monthly accrual still reads this setting for the opening
+ * calendar-month grant; native period overrides describe one whole cycle pool.
+ * Choosing a setting does not convert an agreement between those models.
  */
 enum FirstCycleProration: string
 {
-    /** Retainer hours and fee are prorated to the fraction of the cycle covered. */
+    /** Opening calendar-month hours and fee follow the covered part of the month. */
     case ProrateHours = 'prorate_hours';
 
     /**
-     * The first cycle is treated as a full cycle even though only part of the
-     * period is covered (client agreed to pay the full fee).
+     * A partial opening calendar-month grant is treated as a whole month's
+     * hours and fee. This still affects monthly-accrual terms billed quarterly;
+     * it does not change the longer cadence's start-date grid.
      */
     case FullPeriod = 'full_period';
 
     /**
-     * The days from the agreement start to the next cycle boundary are billed
-     * as a short "alignment" stub using monthly-cadence semantics, then full
-     * cadence cycles begin at the next calendar boundary.
+     * Retained for stored agreements. The opening calendar-month grant follows
+     * ordinary monthly proration; this value inserts no extra alignment period
+     * and does not realign a longer cadence to a calendar-quarter boundary.
      */
     case AlignNextCycle = 'align_next_cycle';
 }

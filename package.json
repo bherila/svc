@@ -20,6 +20,7 @@
     "skills:install": "bash scripts/install-skills.sh",
     "lint": "oxlint --type-aware --fix",
     "lint:check": "oxlint --type-aware",
+    "lint:test": "node --test tools/oxlint/*.test.mjs",
     "scan-sensitive": "node scripts/scan-sensitive.mjs",
     "scan-sensitive:test": "node scripts/test-sensitive-scan.mjs",
     "test": "vitest run",

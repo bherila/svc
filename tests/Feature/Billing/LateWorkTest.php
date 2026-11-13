@@ -7,6 +7,8 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
+use App\Models\ExternalImportItem;
+use App\Models\ExternalImportRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
@@ -259,14 +261,56 @@ final class LateWorkTest extends TestCase
         $this->assertSame([$draft->id], $this->invoicesCarrying($approvedLater));
     }
 
-    /** Imported history links no time, so its unlinked rows must not be billed again. */
-    public function test_a_charged_invoice_with_no_linked_time_makes_nothing_late(): void
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('retainerCadences')]
+    public function test_work_logged_after_an_empty_period_was_issued_is_billed_once(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $invoice = $this->generate($agreement, $first);
+        $this->assertSame(0, DB::table('client_invoice_line_time_entries')
+            ->join('client_invoice_lines', 'client_invoice_lines.id', '=', 'client_invoice_line_time_entries.client_invoice_line_id')
+            ->where('client_invoice_lines.client_invoice_id', $invoice->id)->count());
+        $this->issue($invoice);
+
+        $late = $this->hours('2026-01-06', 180);
+        $flat = $this->hours('2026-01-15', 60, [
+            'subcontractor_billing_mode' => 'flat_hourly', 'subcontractor_cost_amount' => 8000, 'subcontractor_cost_currency' => 'USD',
+        ]);
+        $this->hours($nextWork, 60);
+        $draft = $this->generate($agreement, $next);
+
+        $this->assertTrue((bool) $late->fresh()?->is_deferred);
+        $this->assertFalse((bool) $flat->fresh()?->is_deferred);
+        $this->assertSame([$draft->id], $this->invoicesCarrying($late));
+        $this->assertSame([$draft->id], $this->invoicesCarrying($flat));
+        $amount = (int) $draft->total_amount;
+        $this->assertGreaterThan($this->retainerCharge($terms), $amount, 'The flat-hourly row is charged separately.');
+
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($draft);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame($amount, (int) $rebuilt->total_amount);
+        $this->assertSame([$draft->id], $this->invoicesCarrying($late));
+        $this->assertSame([$draft->id], $this->invoicesCarrying($flat));
+    }
+
+    /** Imported history's unlinked rows must not be billed again. */
+    public function test_an_invoice_recorded_in_the_import_ledger_makes_nothing_late(): void
     {
         $agreement = $this->agreement(self::HOURLY);
-        ClientInvoice::query()->create([
+        $invoice = ClientInvoice::query()->create([
             'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'client_agreement_id' => $agreement->id,
             'invoice_number' => 'HIST-JAN', 'status' => 'paid', 'invoice_kind' => 'cadence_period', 'service_period_start' => '2026-01-01',
             'service_period_end' => '2026-01-31', 'issued_at' => '2026-02-01 09:00:00', 'currency' => 'USD',
+        ]);
+        $run = ExternalImportRun::query()->create([
+            'workspace_id' => $this->workspace->id, 'source_connection' => 'synthetic-retired',
+            'source_identity_hash' => hash('sha256', 'synthetic-retired'), 'mode' => 'apply', 'status' => 'completed',
+        ]);
+        ExternalImportItem::query()->create([
+            'external_import_run_id' => $run->id, 'source_connection' => $run->source_connection,
+            'source_identity_hash' => $run->source_identity_hash, 'source_table' => 'client_invoices', 'source_key' => 'synthetic-invoice',
+            'target_type' => 'invoice', 'target_public_id' => $invoice->public_id,
+            'source_fingerprint' => hash('sha256', 'synthetic-invoice'), 'status' => 'imported',
         ]);
         $imported = $this->hours('2026-01-15', 30);
         $work = ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->unbilled();

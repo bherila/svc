@@ -159,27 +159,53 @@ final class BuyDownAttachSnapshotTest extends TestCase
 
     /**
      * Codex's stale handover: the caller's snapshot predates a backdated
-     * termination of the agreement and the successor that takes over. The
-     * draft still charges February's work at the outgoing rate; the issue's
-     * handover check reads the agreements with row locks, sees the successor,
-     * and refuses.
+     * termination of the agreement and the successor that takes over. A
+     * termination rebuilds the agreement's drafts after it commits (#699), so
+     * the draft the caller loaded has changed, and the issue is refused as
+     * stale before anything sells February at the outgoing rate.
      */
     public function test_an_issue_from_a_snapshot_older_than_a_successor_is_refused(): void
     {
         $this->inProbe('handover', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x): void {
             $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($workspace, $agreement): void {
                 app(AgreementWorkflow::class)->terminate($agreement->fresh(), '2026-02-05');
-                ClientAgreement::query()->create([
-                    'workspace_id' => $workspace->id, 'client_company_id' => $agreement->client_company_id, 'title' => 'Synthetic successor',
-                    'status' => 'active', 'starts_on' => '2026-02-06', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 5000,
-                    'retainer_minutes' => 0, 'retainer_amount' => 0, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
-                ]);
+                $this->successor($workspace, $agreement);
+            }, 'issue');
+
+            $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame(\DomainException::class, $outcome['class']);
+            $this->assertStringContainsString('changed after it was loaded', $outcome['message']);
+            $this->assertSame('draft', $x->fresh()->status);
+        });
+    }
+
+    /**
+     * The same stale handover written without the workflow, so nothing
+     * rebuilds the draft and its version is unchanged: the issue's handover
+     * check still reads the agreements with row locks, sees the successor,
+     * and refuses.
+     */
+    public function test_an_issue_whose_draft_was_not_rebuilt_is_refused_by_the_handover_check(): void
+    {
+        $this->inProbe('handover_unrebuilt', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x): void {
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($workspace, $agreement): void {
+                ClientAgreement::query()->whereKey($agreement->id)->update(['ends_on' => '2026-02-05']);
+                $this->successor($workspace, $agreement);
             }, 'issue');
 
             $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
             $this->assertSame(WorkOutsideAgreementSegment::class, $outcome['class']);
             $this->assertSame('draft', $x->fresh()->status);
         });
+    }
+
+    private function successor(Workspace $workspace, ClientAgreement $agreement): void
+    {
+        ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $agreement->client_company_id, 'title' => 'Synthetic successor',
+            'status' => 'active', 'starts_on' => '2026-02-06', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 5000,
+            'retainer_minutes' => 0, 'retainer_amount' => 0, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+        ]);
     }
 
     /** @param callable(Workspace, ClientAgreement, ClientInvoice, ClientTimeEntry, User): void $test */

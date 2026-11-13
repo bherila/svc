@@ -48,6 +48,48 @@ combines kind and schedule ownership to decide whether issuance requires a
 complete service period. This includes handling legacy null and unsupported
 kind values; it is not just a list of enum cases.
 
+### Opening Retainer Cycles
+
+Monthly cycles use calendar months. A mid-month opening month follows
+`first_cycle_proration`: `prorate_hours` prorates the opening hours and fee,
+while `full_period` grants and charges the whole opening month. The legacy
+`align_next_cycle` value uses the existing monthly proration path.
+
+Quarterly, semi-annual and annual cycles start on the agreement's own start
+date under every first-cycle setting. Those dates do not determine whether
+the agreement sells calendar-month grants or a pool for the whole period:
+
+- **Monthly accrual:** when `period_retainer_minutes` and
+  `period_retainer_amount` are absent, the monthly ledger remains authoritative.
+  `first_cycle_proration` still governs its opening calendar-month grant, and
+  the cadence invoice aggregates the calendar-month rows assigned to it.
+  A quarterly agreement starting on 16 January with 10 hours and $300 per
+  calendar month has an opening invoice of 35.161 hours (displayed as 35:10)
+  and $1,054.83 under `prorate_hours` or `align_next_cycle`: the January grant
+  of 16/31 of a month, rounded by the monthly calculation, plus February,
+  March and April's grants. Under `full_period`, January's grant is whole,
+  so the opening invoice is 40 hours and $1,200. The following invoice is
+  30 hours and $900. Capacity still accrues and expires by calendar month;
+  billing quarterly does not make unused January capacity available in a
+  later month unless the agreement's rollover terms allow it.
+- **Native period terms:** a period override states what one whole cycle
+  includes. For 30 hours and $900 per quarter, the opening and following
+  cycles each sell 30 hours and $900 under all three settings. These hours
+  form one cycle pool. Longer-cadence service packages write native period
+  terms; standalone agreements can carry those overrides too.
+
+Both examples have the same opening dates, 16 January through 15 April,
+followed by 16 April through 15 July. The larger opening invoice under monthly
+accrual is a grouping of calendar-month entitlements, not an extra dated
+alignment period. `align_next_cycle` does not realign a longer cadence to a
+calendar-quarter boundary. No agreement is converted between the two retainer
+models, and monthly accrual and rollover arithmetic remain unchanged.
+
+An agreement end can shorten its final cycle. Native period terms prorate
+that cycle, while monthly terms retain their calendar-month coverage rules.
+An interim ledger read does not shorten the native period pool the client
+bought.
+
 ### Rollover Hours
 
 [RolloverCalculator](../../app/Services/Billing/RolloverCalculator.php) maintains
@@ -216,9 +258,19 @@ rolls it forward by how it is priced:
   With no capacity free it waits in the backlog and adds no overage to the draft.
 
 Only a charged cadence invoice of the same agreement makes a row late. A period
-that is drafted or voided still bills its own work. A disputed row stays held until
-its answer decides how it waits. Late work needs a later draft to land on, so an
-agreement with no further period leaves it unbilled. See
+that is drafted or voided still bills its own work. An issued invoice with no
+linked time still closes its period: work logged afterwards rolls forward by
+the same rules. Imported invoices are excluded by their recorded provenance in
+`external_import_items`, scoped through the import run's workspace, rather than
+by the absence of time links. Ordinary late work stays
+inside the agreement's handovers (`LateWork::withinSegment()`, #699): an
+outgoing final invoice spans its whole cycle past the successor's start, and a
+successor's opening invoice is dated over its predecessor's last period, but a
+late hour on the other agreement's days is that agreement's - it is neither put
+on this draft nor deferred into this pool. Flat-hourly time is not handed over. A disputed row stays held until
+its answer decides how it waits. Late ordinary work needs a later draft to land
+on. Deferred work after termination remains available for an explicit buy-down,
+even when no later retainer period remains. See
 [LateWork](../../app/Services/Billing/LateWork.php).
 
 ## Invoice Line Items
@@ -494,9 +546,42 @@ before its own (`DeferredBacklogReader::handedOverAfter()` and `tookOverOn()`,
 applied in `ClientInvoicingService::unbilledEntriesBetween()`). The overlapping
 invoice guard compares the two agreements' invoices by the days each can bill,
 so the successor's first period is not refused by the outgoing final invoice.
+
+That holds at a period close too (#699). Each cadence invoice reconciles one
+work period and sells the next cycle in advance, so a successor starting on
+1 October dates its first invoice over September - the outgoing agreement's
+last work period - to sell October, or Q4 on a quarterly agreement. That
+opening period bills no ordinary work, only the successor's first cycle, so
+the guard does not hold it against the outgoing final invoice; measured by its
+dates, the successor's first cycle was never sold. Any other period lying
+wholly before an agreement took over still refuses on its dates.
+
+The outgoing agreement's drafts for work periods after its handover - written
+while it was open and emptied by the next walk after a backdated termination -
+do not block the successor either. The guard sets aside another agreement's
+invoice dated wholly after that agreement's handover only when it carries no
+line and totals zero; one that charges anything there is history nobody can
+explain and still refuses. Such a draft is left in place rather than voided:
+a discard would waive its cycle for good, and if the history is corrected - the
+successor's start moved, say - the draft is regenerated and bills what is then
+the outgoing agreement's again. An operator may still discard it.
+
 A termination with no successor hands nothing over: work logged after it still
-bills on the outgoing agreement's post-termination invoices. Deferred work ends
-with the agreement's segment, its termination included.
+bills on the outgoing agreement's post-termination invoices, monthly and
+non-monthly alike (#689). Such a draft never sells a retainer, and a cycle
+with nothing to bill gets none; where there is work, it is an ordinary draft
+on the client's Invoices tab for an owner to review and issue
+(`SuccessorFirstCycleTest`). Retainer capacity and automatic termination
+collection stop at the agreement's end. Deferred work dated after that end
+remains on the visible backlog and may be settled by an explicit buy-down at
+the agreement's hourly rate (or its flat-hourly snapshot). This applies to
+already-stranded work and later deferrals alike; no migration is required.
+The operator previews and creates a settlement draft, then issues it normally.
+No issued final invoice is rewritten and no new retainer capacity is sold.
+If a successor for the same project scope begins, the outgoing agreement's
+settlement backlog stops the day before that handover; later work belongs to
+the successor. This is the settlement decision for #703's termination case;
+quarterly first-cycle proration is a separate question.
 
 A draft generated before the successor was added, or before a backdated
 termination made room for it, still carries what it selected then. Issue
@@ -511,9 +596,14 @@ termination dated before that cycle, backdated or not, leaves it selling past
 the end (#670). Generation walks every cadence, with or without a successor,
 to the horizon it would reach if the agreement had none, and regenerates such
 a draft so it sells nothing after the end; a cycle past a successor's cap with
-no invoice is not opened. Until it is regenerated, issue refuses a draft
-selling a retainer cycle or an item incidence dated after its agreement's
-`ends_on`. Pinned by
+no invoice is not opened. A termination now regenerates every one of its
+agreement's drafts itself, in the request, once the end has committed
+(`ClientInvoicingService::regenerateAgreementDrafts()`, under the generators'
+own locks): the cycle the end falls in is prorated, the final reconciliation
+collects the deferred work, and no draft sells past the end (#699). A rebuild
+that is refused is reported and left. Until it is regenerated, issue refuses a
+draft selling a retainer cycle or an item incidence dated after its
+agreement's `ends_on`. Pinned by
 `BillingHistoryInvariantTest::test_a_termination_after_its_drafts_refreshes_every_draft_past_the_end`.
 
 ## Payment Handling
