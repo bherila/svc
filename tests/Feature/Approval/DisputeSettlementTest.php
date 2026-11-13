@@ -125,10 +125,10 @@ final class DisputeSettlementTest extends TestCase
         return $user;
     }
 
-    private function dispute(User $contact, string $kind, string $id): void
+    private function dispute(User $contact, string $kind, string $id, string $note = 'Synthetic question'): void
     {
         $this->actingAs($contact)->from('/portal/x')
-            ->post('/portal/'.$this->company->public_id.'/approvals/dispute', ['kind' => $kind, 'id' => $id, 'note' => 'Synthetic question'])
+            ->post('/portal/'.$this->company->public_id.'/approvals/dispute', ['kind' => $kind, 'id' => $id, 'note' => $note])
             ->assertSessionHasNoErrors();
     }
 
@@ -392,6 +392,34 @@ final class DisputeSettlementTest extends TestCase
             ->map(fn (string $payload): string => json_decode($payload, true)['reply'])->all();
         $this->assertSame(['First reply', 'Second reply', 'Expense reply', 'Another reply'], $events);
         $this->assertSame('Another reply', $first->fresh()->client_dispute_reply);
+    }
+
+    /** @return iterable<string, array{DisputeSettlement, string}> */
+    public static function longestTexts(): iterable
+    {
+        // A CJK character is three UTF-8 bytes but six as a `\uXXXX` escape; a
+        // control character is JSON's worst case, a six-byte escape either way.
+        foreach (DisputeSettlement::cases() as $outcome) {
+            yield $outcome->value.', CJK' => [$outcome, '合'];
+            yield $outcome->value.', control characters' => [$outcome, "\u{1}"];
+        }
+    }
+
+    #[DataProvider('longestTexts')]
+    public function test_the_longest_note_and_reply_a_client_and_provider_may_write_are_recorded_whole(DisputeSettlement $outcome, string $character): void
+    {
+        $entry = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $note = str_repeat($character, 1000);
+        $reply = str_repeat($character, DisputeSettlements::REPLY_MAX);
+        $this->dispute($this->contact(), 'time', $entry->public_id, $note);
+        $this->assertSame($note, $entry->fresh()->client_dispute_note);
+
+        $settled = $this->settleTime($entry, $outcome, reply: $reply);
+
+        $this->assertSame($outcome->value, $settled->client_dispute_settlement);
+        $this->assertSame($reply, $settled->client_dispute_reply);
+        $payload = json_decode((string) DB::table('client_company_activity')->where('action', 'dispute.'.$outcome->value)->value('payload'), true);
+        $this->assertSame([$note, $reply], [$payload['dispute_note'], $payload['reply']]);
     }
 
     public function test_a_written_off_hour_cannot_be_made_billable_again_and_never_bills_if_it_is(): void

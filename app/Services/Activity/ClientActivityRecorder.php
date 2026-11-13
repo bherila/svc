@@ -23,6 +23,22 @@ use Illuminate\Support\Str;
 
 final class ClientActivityRecorder
 {
+    /**
+     * Payloads are stored, and measured, as UTF-8 rather than `\uXXXX`
+     * escapes, so the cap counts the bytes a reader's text actually takes:
+     * escaping a CJK character costs six bytes instead of three.
+     */
+    private const int JSON_FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE;
+
+    /**
+     * Sized to the largest payload a caller is allowed to send: a dispute
+     * settlement records the client's note and the reply, each up to 1,000
+     * characters. Even when every character encodes at JSON's worst case (a
+     * six-byte control-character escape), the two fields come to 12,000 bytes,
+     * leaving room for the keys and identifiers around them.
+     */
+    private const int PAYLOAD_MAX_BYTES = 16_384;
+
     public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
 
     /**
@@ -104,7 +120,7 @@ final class ClientActivityRecorder
             'external_subject_id' => null,
             'subject_public_id' => $subjectPublicId,
             'deduplication_key' => $deduplicationKey,
-            'payload' => $payload === [] ? null : json_encode($payload, JSON_THROW_ON_ERROR),
+            'payload' => $payload === [] ? null : json_encode($payload, self::JSON_FLAGS),
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -172,8 +188,8 @@ final class ClientActivityRecorder
         };
         $inspect($payload);
 
-        if (strlen(json_encode($payload, JSON_THROW_ON_ERROR)) > 10000) {
-            throw new DomainException('Client activity payloads may contain at most 10,000 bytes.');
+        if (strlen(json_encode($payload, self::JSON_FLAGS)) > self::PAYLOAD_MAX_BYTES) {
+            throw new DomainException('Client activity payloads may contain at most '.number_format(self::PAYLOAD_MAX_BYTES).' bytes.');
         }
     }
 }
