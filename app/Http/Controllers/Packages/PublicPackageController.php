@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Packages;
 use App\Exceptions\ServicePackageRefused;
 use App\Http\Controllers\Controller;
 use App\Models\ServicePackage;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Queries\Packages\PublicPackageCatalog;
 use App\Services\Packages\PackageRequestWorkflow;
@@ -74,7 +75,7 @@ final class PublicPackageController extends Controller
             'sign_in_url' => route('login', absolute: false),
             'request' => [
                 'submit_url' => route('packages.public.request', ['token' => $token, 'linkName' => $linkName], absolute: false),
-                'form_token' => self::formToken($package),
+                'form_token' => self::formToken($package, PublicPackageCatalog::versionOf($package)),
                 'honeypot_field' => self::HONEYPOT,
                 'questions' => array_map(static fn (IntakeQuestion $question): array => $question->toArray() + ['max_length' => $question->kind->maxLength()], $terms->intakeQuestions),
                 // A signed-in visitor's own name and address, to start from.
@@ -97,8 +98,9 @@ final class PublicPackageController extends Controller
         $package = $this->catalog->package($workspace, (string) $request->route('linkName')) ?? abort(404);
         $address = 'ip:'.($request->ip() ?? 'unknown');
 
+        $note = $this->acceptedFormToken($package, $request->input('form_token'));
         $refused = $this->filledHoneypot($request)
-            || ! $this->formTokenAccepts($package, $request->input('form_token'))
+            || $note === null
             || ! $this->withinRate("package-requests|{$address}", self::PER_ADDRESS_PER_MINUTE, 60)
             || ! $this->withinRate("package-requests|package:{$package->id}", self::PER_PACKAGE_PER_HOUR, 3600);
         if ($refused) {
@@ -112,33 +114,46 @@ final class PublicPackageController extends Controller
             $request->only(['company_name', 'contact_name', 'email', 'phone', 'answers']),
             $viewer instanceof User ? $viewer : null,
             hash_hmac('sha256', $workspace->id.'|'.$address, (string) config('app.key')),
+            $note['v'] ?? null,
         );
 
         return response()->json(['status' => 'sent'], 201);
     }
 
-    /** An encrypted note of which form this is and when it was rendered. */
-    public static function formToken(ServicePackage $package): string
+    /**
+     * An encrypted note of which form this is, the version whose questions it
+     * shows, and when it was rendered.
+     */
+    public static function formToken(ServicePackage $package, ServicePackageVersion $version): string
     {
-        return Crypt::encryptString(json_encode(['p' => $package->public_id, 't' => now()->getTimestamp()], JSON_THROW_ON_ERROR));
+        return Crypt::encryptString(json_encode(['p' => $package->public_id, 'v' => $version->public_id, 't' => now()->getTimestamp()], JSON_THROW_ON_ERROR));
     }
 
-    private function formTokenAccepts(ServicePackage $package, mixed $token): bool
+    /**
+     * The form token's note when it is this package's and was filled in the
+     * allowed time, else null. `v` is the version the form showed, or null
+     * for a token rendered before forms named one.
+     *
+     * @return array{v: string|null}|null
+     */
+    private function acceptedFormToken(ServicePackage $package, mixed $token): ?array
     {
         if (! is_string($token) || $token === '') {
-            return false;
+            return null;
         }
         try {
             $note = json_decode(Crypt::decryptString($token), true, 4, JSON_THROW_ON_ERROR);
         } catch (DecryptException|\JsonException) {
-            return false;
+            return null;
         }
         if (! is_array($note) || ($note['p'] ?? null) !== $package->public_id || ! is_int($note['t'] ?? null)) {
-            return false;
+            return null;
         }
         $age = now()->getTimestamp() - $note['t'];
 
-        return $age >= self::MIN_FILL_SECONDS && $age <= self::MAX_FORM_AGE_SECONDS;
+        return $age >= self::MIN_FILL_SECONDS && $age <= self::MAX_FORM_AGE_SECONDS
+            ? ['v' => is_string($note['v'] ?? null) ? $note['v'] : null]
+            : null;
     }
 
     private function filledHoneypot(Request $request): bool

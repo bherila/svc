@@ -11,9 +11,11 @@ use App\Models\ClientProject;
 use App\Models\ServicePackage;
 use App\Models\ServicePackageEnrollment;
 use App\Models\ServicePackageRequest;
+use App\Models\ServicePackageVersion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Packages\PackageRequestWorkflow;
+use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
 use BWH\Auth\Testing\FakeApplicationInvitations;
@@ -145,7 +147,7 @@ final class AgentPackageRequestApiTest extends TestCase
             }
             $this->assertSame(AgentApiResponseSchemaCatalog::forOperation($name), $tools[$name]['outputSchema'], $name);
         }
-        $this->assertSame(['expected_version', 'confirm', 'client_id', 'company_name'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.approve')['properties']));
+        $this->assertSame(['expected_version', 'confirm', 'client_id', 'company_name', 'expected_offer_version'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.approve')['properties']));
         $this->assertSame(['expected_version', 'confirm', 'reason'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.decline')['properties']));
         $this->assertSame(['expected_version', 'confirm'], array_keys(AgentApiResponseSchemaCatalog::requestForOperation('package_requests.erase')['properties']));
 
@@ -329,6 +331,46 @@ final class AgentPackageRequestApiTest extends TestCase
             ->assertOk()->assertJsonPath('data.client.id', $known->public_id)->assertJsonPath('enrollment.client', ['id' => $known->public_id, 'name' => 'Known Synthetic Client'])
             ->assertJsonPath('data.suggested_client', null);
         $this->assertSame(1, ClientCompany::query()->where('workspace_id', $workspace->id)->count());
+    }
+
+    /**
+     * EDGE-7: a version published after the visitor submitted is what an
+     * approval offers. The request shows it, newer than the one read, with
+     * its terms; an approval bound to an older offered version is refused as
+     * stale, and one bound to the current version offers exactly it.
+     */
+    #[Requirement('EDGE-7', 'ADM-1')]
+    public function test_a_version_published_after_submission_is_shown_and_an_approval_binds_to_it(): void
+    {
+        [$workspace, $owner, $package] = $this->world();
+        $request = $this->packageRequest($workspace, $package);
+        $this->actingAsMcp($owner, self::SCOPES);
+        $before = $this->getJson($this->url($workspace, $request->public_id))->assertOk()->json('data');
+        $this->assertFalse($before['offered_version']['newer_than_read']);
+        $this->schema('package_requests.get', ['data' => $before]);
+
+        app(ServicePackageWorkflow::class)->update($owner, $workspace, $package->refresh(), ['name' => 'Web hosting · Plus', 'components' => [
+            ['kind' => 'recurring', 'description' => 'Managed hosting', 'cadence' => 'monthly', 'amount' => 6500],
+        ]]);
+        $published = app(ServicePackageWorkflow::class)->publish($owner, $workspace, $package->refresh())->published_version_id;
+        $offered = ServicePackageVersion::query()->whereKey($published)->sole();
+
+        $read = $this->getJson($this->url($workspace, $request->public_id))->assertOk()->json('data');
+        $this->assertSame([
+            'id' => $offered->public_id, 'number' => (int) $offered->number, 'name' => 'Web hosting · Plus', 'currency' => 'USD',
+            'billing_cadence' => 'monthly', 'cycle_amount' => 6500, 'setup_fee_amount' => null, 'newer_than_read' => true,
+        ], $read['offered_version']);
+        $this->assertNotSame($offered->public_id, $before['offered_version']['id']);
+        $this->schema('package_requests.get', ['data' => $read]);
+
+        $this->postJson($this->url($workspace, $request->public_id).'/approve', ['expected_version' => $read['version'], 'confirm' => true, 'expected_offer_version' => $before['offered_version']['id']], ['Idempotency-Key' => 'synthetic-offer-stale'])
+            ->assertConflict();
+        $this->assertSame('new', $request->refresh()->status);
+        $this->assertSame(0, ServicePackageEnrollment::query()->count());
+
+        $this->postJson($this->url($workspace, $request->public_id).'/approve', ['expected_version' => $read['version'], 'confirm' => true, 'expected_offer_version' => $offered->public_id], ['Idempotency-Key' => 'synthetic-offer-current'])
+            ->assertOk()->assertJsonPath('data.offered_version', null);
+        $this->assertSame($offered->id, (int) ServicePackageEnrollment::query()->sole()->service_package_version_id);
     }
 
     public function test_a_stale_version_is_refused_with_409_and_changes_nothing(): void

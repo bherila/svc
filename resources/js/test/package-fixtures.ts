@@ -165,6 +165,16 @@ export function requestRow(
         client: null,
         suggested_client: null,
         erased_at: null,
+        offered_version: {
+            id: 'version-2',
+            number: 2,
+            name: 'Synthetic Hosting',
+            currency: 'USD',
+            billing_cadence: 'monthly',
+            cycle_amount: 4500,
+            setup_fee_amount: null,
+            newer_than_read: false,
+        },
         untrusted: {
             company_name: 'Lakeside Bakery',
             contact_name: 'Morgan Ortiz',

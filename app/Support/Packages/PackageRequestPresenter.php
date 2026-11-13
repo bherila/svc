@@ -21,8 +21,12 @@ use App\Support\AgentApi\AgentApiVersion;
  */
 final class PackageRequestPresenter
 {
-    /** @return array<string, mixed> */
-    public static function request(ServicePackageRequest $request, ServicePackage $package, ServicePackageVersion $version, ?ClientCompany $client, ?ClientCompany $suggested): array
+    /**
+     * @param  ServicePackageVersion  $version  the version the visitor read, components loaded
+     * @param  ServicePackageVersion|null  $offered  the version an approval would offer now (EDGE-7), components loaded; null when the package is not published
+     * @return array<string, mixed>
+     */
+    public static function request(ServicePackageRequest $request, ServicePackage $package, ServicePackageVersion $version, ?ClientCompany $client, ?ClientCompany $suggested, ?ServicePackageVersion $offered = null): array
     {
         $questions = PackageTerms::fromVersion($version)->intakeQuestions;
         $answers = $request->answers ?? [];
@@ -37,6 +41,7 @@ final class PackageRequestPresenter
             'client' => $client === null ? null : ['id' => $client->public_id, 'name' => $client->name],
             'suggested_client' => $suggested === null ? null : ['id' => $suggested->public_id, 'name' => $suggested->name],
             'erased_at' => $request->erased_at?->toIso8601String(),
+            'offered_version' => $request->requestStatus()->isClosed() || $offered === null ? null : self::offeredVersion($offered, (int) $offered->id !== (int) $version->id),
             'untrusted' => $request->erased_at !== null ? null : [
                 'company_name' => $request->company_name,
                 'contact_name' => $request->contact_name,
@@ -49,6 +54,30 @@ final class PackageRequestPresenter
                 ], $questions),
             ],
             'version' => AgentApiVersion::for($request),
+        ];
+    }
+
+    /**
+     * The version an approval would offer now, which may be newer than the
+     * one the visitor read (EDGE-7): its terms at the headline, so the owner
+     * sees what changed before approving, and its id, which an approval sends
+     * back as `expected_offer_version` to sign off exactly these terms.
+     *
+     * @return array{id: string, number: int, name: string, currency: string, billing_cadence: string, cycle_amount: int, setup_fee_amount: int|null, newer_than_read: bool}
+     */
+    private static function offeredVersion(ServicePackageVersion $offered, bool $newerThanRead): array
+    {
+        $terms = PackageTerms::fromVersion($offered);
+
+        return [
+            'id' => $offered->public_id,
+            'number' => (int) $offered->number,
+            'name' => $terms->name,
+            'currency' => $terms->currency,
+            'billing_cadence' => $terms->billingCadence->value,
+            'cycle_amount' => PublicPackagePresenter::cycleAmount($terms),
+            'setup_fee_amount' => $terms->setupFeeTotal() > 0 ? $terms->setupFeeTotal() : null,
+            'newer_than_read' => $newerThanRead,
         ];
     }
 

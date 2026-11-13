@@ -372,7 +372,13 @@ requirement.
 - **EDGE-7 A new version is published before the client accepts.** Approval
   and acceptance always offer the currently published version. When it
   differs from the version the visitor requested, the review panel and the
-  acceptance page show what changed.
+  acceptance page show what changed. A request carries `offered_version`, the
+  version an approval would offer now, with its headline price and
+  `newer_than_read`; an approval may send its id as `expected_offer_version`
+  and is refused as stale (409) once a newer version is published. A public
+  form names the version whose questions it showed; submitted after a newer
+  one is published, it is refused with `package_form_changed`, asking the
+  visitor to reload, rather than with field errors they cannot see.
 - **EDGE-8 A package is retired with offers still open.** Offers already made
   can still be accepted until their lapse date. Retiring stops only new
   requests and portal additions (this refines PKG-6).

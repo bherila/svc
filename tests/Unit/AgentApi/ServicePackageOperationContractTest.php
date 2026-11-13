@@ -327,7 +327,7 @@ final class ServicePackageOperationContractTest extends TestCase
 
         // Visitor text has one place in the shape (API-3), and there is no invitation in it (ADM-5).
         $presented = ServicePackageOperations::schema('ServicePackageRequest');
-        $this->assertSame(['id', 'status', 'package', 'submitted_at', 'decided_at', 'decline_reason', 'client', 'suggested_client', 'erased_at', 'untrusted', 'version'], $presented['required']);
+        $this->assertSame(['id', 'status', 'package', 'submitted_at', 'decided_at', 'decline_reason', 'client', 'suggested_client', 'erased_at', 'offered_version', 'untrusted', 'version'], $presented['required']);
         $this->assertSame(['company_name', 'contact_name', 'email', 'phone', 'answers'], $presented['properties']['untrusted']['oneOf'][0]['required']);
         $this->assertSame(['id', 'status', 'client', 'project_id', 'agreement_id'], ServicePackageOperations::schema('ServicePackageEnrollmentSummary')['required']);
         $this->assertSame(['data', 'enrollment'], ServicePackageOperations::schema('ServicePackageRequestApprovalResponse')['required']);

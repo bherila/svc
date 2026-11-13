@@ -213,6 +213,18 @@ export type PackageRequestUntrusted = {
     answers: PackageRequestAnswer[];
 };
 
+export type PackageRequestOfferedVersion = {
+    id: string;
+    number: number;
+    name: string;
+    currency: string;
+    billing_cadence: string;
+    cycle_amount: number;
+    setup_fee_amount: number | null;
+    /** Newer than the version the visitor read, so its terms are shown. */
+    newer_than_read: boolean;
+};
+
 export type PackageRequestRow = {
     id: string;
     status: string;
@@ -228,6 +240,12 @@ export type PackageRequestRow = {
     client: { id: string; name: string } | null;
     suggested_client: { id: string; name: string } | null;
     erased_at: string | null;
+    /**
+     * The version an approval would offer now (EDGE-7): null once decided or
+     * while the package is not published. Its id is sent back as
+     * expected_offer_version.
+     */
+    offered_version: PackageRequestOfferedVersion | null;
     /** Null once the request was erased. */
     untrusted: PackageRequestUntrusted | null;
     /** Opaque; sent back as expected_version. */

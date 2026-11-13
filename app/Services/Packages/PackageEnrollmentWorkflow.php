@@ -326,13 +326,21 @@ final class PackageEnrollmentWorkflow
         return DB::transaction(function () use ($workspace, $enrollment): LapseOutcome {
             // Voiding takes it; first, as every invoice writer does.
             BillingMaintenance::share($workspace->id);
+            // The package under a shared lock before the enrollment's, as
+            // accept() takes them: a publish in flight is waited out and one
+            // that follows waits for this decision, so the window read here is
+            // the one the portal shows until the lapse commits (#713).
+            $package = ServicePackage::query()
+                ->where('workspace_id', $workspace->id)
+                ->whereKey($enrollment->service_package_id)
+                ->tap(Locks::forShare())
+                ->firstOrFail();
             $locked = $this->locked($workspace, $enrollment);
             $status = $locked->enrollmentStatus();
             if (! $status->mayLapse()) {
                 return LapseOutcome::NotDue;
             }
             // The window the portal and the API show (EnrollmentVersions::lapseWindow()).
-            $package = ServicePackage::query()->where('workspace_id', $workspace->id)->whereKey($locked->service_package_id)->firstOrFail();
             $window = $this->offers->version($workspace, EnrollmentVersions::lapseWindow($package, $locked));
             $today = $this->clock->today($workspace);
             if (! EnrollmentLapse::hasLapsed($status, $locked->offered_at, $locked->accepted_at, (int) $window->payment_lapse_days, $today->tzName, $today)) {

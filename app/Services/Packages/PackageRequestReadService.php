@@ -16,6 +16,7 @@ use App\Services\Authorization\AgentAccess;
 use App\Support\AgentApi\AgentApiCursor;
 use App\Support\Packages\PackageRequestPresenter;
 use App\Support\Packages\PackageRequestStatus;
+use App\Support\Packages\PackageStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -106,19 +107,28 @@ final class PackageRequestReadService
         $packages = ServicePackage::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('service_package_id')->unique()->all())->get()->keyBy('id');
         // With their components: presenting a request reads its version's
         // terms, so one bounded load serves the page (Codex P2 on #666).
-        $versions = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('service_package_version_id')->unique()->all())
+        // The versions read, and the versions an approval would offer now (EDGE-7).
+        $offeredIds = $packages->filter(static fn (ServicePackage $package): bool => $package->packageStatus() === PackageStatus::Published)
+            ->pluck('published_version_id')->filter()->all();
+        $versions = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereIn('id', array_values(array_unique([...$requests->pluck('service_package_version_id')->all(), ...$offeredIds])))
             ->with(['components' => fn ($components) => $components->where('workspace_id', $workspace->id)])
             ->get()->keyBy('id');
         $clients = ClientCompany::query()->where('workspace_id', $workspace->id)->whereIn('id', $requests->pluck('client_company_id')->filter()->unique()->all())->get()->keyBy('id');
         $suggested = $this->suggestedClients($workspace, $requests);
 
-        return array_values($requests->map(static fn (ServicePackageRequest $request): array => PackageRequestPresenter::request(
-            $request,
-            $packages->get($request->service_package_id) ?? throw new \LogicException('A request names a package outside its workspace.'),
-            $versions->get($request->service_package_version_id) ?? throw new \LogicException('A request names a version outside its workspace.'),
-            $request->client_company_id === null ? null : $clients->get($request->client_company_id),
-            $suggested[$request->id] ?? null,
-        ))->all());
+        return array_values($requests->map(static function (ServicePackageRequest $request) use ($packages, $versions, $clients, $suggested): array {
+            $package = $packages->get($request->service_package_id) ?? throw new \LogicException('A request names a package outside its workspace.');
+            $offered = $package->packageStatus() === PackageStatus::Published && $package->published_version_id !== null ? $versions->get($package->published_version_id) : null;
+
+            return PackageRequestPresenter::request(
+                $request,
+                $package,
+                $versions->get($request->service_package_version_id) ?? throw new \LogicException('A request names a version outside its workspace.'),
+                $request->client_company_id === null ? null : $clients->get($request->client_company_id),
+                $suggested[$request->id] ?? null,
+                $offered,
+            );
+        })->all());
     }
 
     /**

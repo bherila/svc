@@ -432,6 +432,39 @@ final class PackageRequestWorkflowTest extends TestCase
     }
 
     #[Requirement('EDGE-10')]
+    /**
+     * The address's lock key (#667) is the workspace's own: the same address
+     * in another workspace has its own key and its own cap, and erasing a
+     * request deletes only its workspace's key, which the next submission
+     * makes again.
+     */
+    #[Requirement('PUB-5')]
+    public function test_each_workspace_keeps_its_own_address_key_and_erasure_deletes_only_its_own(): void
+    {
+        [$first, $firstOwner] = $this->boundPackageWorkspace('4101');
+        [$second, $secondOwner] = $this->boundPackageWorkspace('4102');
+        $firstPackage = $this->publishedPackage($first, $firstOwner);
+        $secondPackage = $this->publishedPackage($second, $secondOwner);
+        foreach (range(1, PackageRequestWorkflow::MAX_OPEN_PER_ADDRESS) as $ignored) {
+            $this->packageRequest($first, $firstPackage);
+        }
+        $kept = $this->packageRequest($second, $secondPackage);
+        $keys = static fn ($workspace): array => DB::table('service_package_request_addresses')->where('workspace_id', $workspace->id)->pluck('email_hash')->all();
+
+        $this->assertSame([PackageRequestWorkflow::emailHash($first, 'morgan.lakeside@example.com')], $keys($first));
+        $this->assertSame([PackageRequestWorkflow::emailHash($second, 'morgan.lakeside@example.com')], $keys($second));
+        $this->assertNotSame($keys($first), $keys($second));
+
+        $erased = ServicePackageRequest::query()->where('workspace_id', $first->id)->firstOrFail();
+        $this->workflow()->erase($firstOwner, $first, $this->workflow()->decline($firstOwner, $first, $erased));
+        $this->assertSame([], $keys($first), 'erasing deletes the hash of the address');
+        $this->assertCount(1, $keys($second), 'another workspace\'s key is untouched');
+        $this->assertSame('new', $kept->refresh()->status);
+
+        $this->packageRequest($first, $firstPackage);
+        $this->assertCount(1, $keys($first));
+    }
+
     public function test_a_decided_request_can_be_erased_to_a_stub(): void
     {
         [$workspace, $owner] = $this->boundPackageWorkspace();

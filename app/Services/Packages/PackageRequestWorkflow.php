@@ -71,14 +71,25 @@ final class PackageRequestWorkflow
     /**
      * Record a visitor's request for a published package (PUB-4).
      *
+     * The answers are checked against the questions of the version the form
+     * showed (`$shownVersion`, its public id), which is recorded as the
+     * version read. A form shown on a version no longer published is refused
+     * with a sentence asking the visitor to reload, before any field is
+     * checked: a question added since would otherwise fail on a field they
+     * cannot see, and one removed would refuse an answer they gave.
+     *
      * @param  array<string, mixed>  $input
+     * @param  string|null  $shownVersion  null for a form that named no version
      */
-    public function submit(Workspace $workspace, ServicePackage $package, array $input, ?User $requester, ?string $fingerprint): ServicePackageRequest
+    public function submit(Workspace $workspace, ServicePackage $package, array $input, ?User $requester, ?string $fingerprint, ?string $shownVersion = null): ServicePackageRequest
     {
         if ($package->workspace_id !== $workspace->id || $package->packageStatus() !== PackageStatus::Published || $package->published_version_id === null) {
             throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
         }
         $version = ServicePackageVersion::query()->where('workspace_id', $workspace->id)->whereKey($package->published_version_id)->firstOrFail();
+        if ($shownVersion !== null && $shownVersion !== $version->public_id) {
+            throw ServicePackageRefused::because(PackageRefusal::FormChanged);
+        }
         $questions = PackageTerms::fromVersion($version)->intakeQuestions;
         if (is_string($input['email'] ?? null)) {
             $input['email'] = trim($input['email']);
@@ -88,6 +99,9 @@ final class PackageRequestWorkflow
         $emailHash = self::emailHash($workspace, $email);
 
         return DB::transaction(function () use ($workspace, $package, $version, $questions, $data, $email, $emailHash, $requester, $fingerprint): ServicePackageRequest {
+            // One submission per address at a time, so the count below and the
+            // insert after it cannot interleave with another's (#667).
+            $this->lockAddress($workspace, $emailHash);
             $open = ServicePackageRequest::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('email_hash', $emailHash)
@@ -131,15 +145,16 @@ final class PackageRequestWorkflow
      *
      * @param  string|null  $clientPublicId  attach to this existing client instead of creating one
      * @param  string|null  $companyName  the new client's name, when the visitor's needs correcting; ignored when attaching
+     * @param  string|null  $expectedOfferVersion  the public id of the version the approver was shown as offered; refused as stale once a newer one is published
      */
-    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null, ?string $companyName = null): ServicePackageEnrollment
+    public function approve(User $actor, Workspace $workspace, ServicePackageRequest $request, ?string $clientPublicId = null, ?string $expectedVersion = null, ?string $companyName = null, ?string $expectedOfferVersion = null): ServicePackageEnrollment
     {
         $this->requireManager($actor, $workspace);
         $companyName = self::nullableText($companyName);
         Validator::make(['company_name' => $companyName], ['company_name' => self::COMPANY_NAME_RULES])->validate();
         $existingAccount = null;
 
-        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, &$existingAccount): ServicePackageEnrollment {
+        $enrollment = DB::transaction(function () use ($actor, $workspace, $request, $clientPublicId, $expectedVersion, $companyName, $expectedOfferVersion, &$existingAccount): ServicePackageEnrollment {
             // Current reads, not the snapshot an enclosing transaction may
             // already hold (the agent API's receipt reads open one before this
             // runs), in registry order (Codex P1 on #666): the package under a
@@ -157,6 +172,8 @@ final class PackageRequestWorkflow
             if ($version === null) {
                 throw ServicePackageRefused::because(PackageRefusal::PackageNotOffered);
             }
+            // The approver signs off the terms they were shown (EDGE-7).
+            abort_unless($expectedOfferVersion === null || $expectedOfferVersion === $version->public_id, 409, 'A newer version of the package was published. Read the request again to see the terms it will be offered on.');
 
             $email = (string) $locked->email;
             $existingAccount = $this->accountFor($email);
@@ -245,6 +262,13 @@ final class PackageRequestWorkflow
                 return $locked;
             }
 
+            // The address's lock key is a hash of the address: it goes too. It
+            // holds nothing, and the next submission from the address makes it
+            // again.
+            DB::table('service_package_request_addresses')
+                ->where('workspace_id', $workspace->id)
+                ->where('email_hash', $locked->email_hash)
+                ->delete();
             $locked->forceFill([
                 'company_name' => null,
                 'contact_name' => null,
@@ -351,6 +375,27 @@ final class PackageRequestWorkflow
         } elseif ($scope !== PortalAccessScope::Company->value) {
             $this->workspaceAccess->changePortalScope($context, $company, $user, PortalAccessScope::Company);
         }
+    }
+
+    /**
+     * Make this address's lock key if it is new, then lock it (#667). The
+     * insert of a key another submission is making waits for that one to
+     * commit, and the lock waits for any that holds it.
+     */
+    private function lockAddress(Workspace $workspace, string $emailHash): void
+    {
+        $now = $this->clock->instant();
+        DB::table('service_package_request_addresses')->insertOrIgnore([
+            'workspace_id' => $workspace->id,
+            'email_hash' => $emailHash,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('service_package_request_addresses')
+            ->where('workspace_id', $workspace->id)
+            ->where('email_hash', $emailHash)
+            ->tap(Locks::forUpdate())
+            ->first(['id']);
     }
 
     private function locked(Workspace $workspace, ServicePackageRequest $request): ServicePackageRequest
