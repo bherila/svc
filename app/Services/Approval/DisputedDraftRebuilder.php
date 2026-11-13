@@ -7,11 +7,14 @@ use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
+use App\Services\Billing\HeldWorkDisclosure;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Concurrency\Locks;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -33,8 +36,9 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  * which the deciding transaction, holding its rows' locks already, could only
  * take out of order. Nothing here runs from a queue.
  *
- * Each rebuild runs in the generator's own transaction; nothing here opens
- * one, so a decision with no draft to rebuild starts no transaction at all.
+ * Each rebuild runs in the generator's own transaction, and an ad-hoc draft's
+ * list of held selections is brought up to date in one of its own; a decision
+ * with no draft to rebuild or list to update starts no transaction at all.
  *
  * A refused rebuild (a buy-down settles the entry, a malformed draft) is
  * reported and left: the dispute still holds the row, and issuing the draft is
@@ -46,6 +50,7 @@ final class DisputedDraftRebuilder
         private readonly DraftInvoiceTimeRegenerator $time,
         private readonly ClientInvoicingService $generated,
         private readonly InvoiceFromTimeService $selectedTime,
+        private readonly HeldWorkDisclosure $heldWork = new HeldWorkDisclosure,
     ) {}
 
     /**
@@ -76,6 +81,7 @@ final class DisputedDraftRebuilder
         foreach ($this->cadenceDraftsCarryingExpenses($workspaceId, $expenseIds) as $draft) {
             $this->attempt(fn () => $this->generated->regenerateDraftInvoice($draft));
         }
+        $this->updateAdHocLists($workspaceId, $entryIds, $rebuilt);
     }
 
     /**
@@ -98,6 +104,7 @@ final class DisputedDraftRebuilder
         // free capacity, a buy-down or termination takes, and a flat-hourly one is carried
         // to the next draft that can bill it.
         $this->rebuildDependents($workspaceId, $entryIds, []);
+        $this->updateAdHocLists($workspaceId, $entryIds, []);
 
         $expenses = $expenseIds === [] ? collect() : ClientExpense::query()
             ->where('workspace_id', $workspaceId)
@@ -244,6 +251,46 @@ final class DisputedDraftRebuilder
             ->orderBy('id')
             ->get()
             ->all());
+    }
+
+    /**
+     * An ad-hoc draft that listed one of these rows as held, and was not just
+     * rebuilt: a settlement leaves its lines alone - an answered selection is
+     * billed where generation puts it, never back on a hand-picked draft - so
+     * only its list changes, dropping what is no longer held.
+     *
+     * @param  list<int>  $entryIds
+     * @param  array<int, true>  $rebuilt  drafts already rebuilt
+     */
+    private function updateAdHocLists(int $workspaceId, array $entryIds, array $rebuilt): void
+    {
+        if ($entryIds === []) {
+            return;
+        }
+
+        $drafts = ClientInvoice::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('status', InvoiceStatus::Draft->value)
+            ->where('invoice_kind', InvoiceKind::AdHoc->value)
+            ->whereNotNull('deferred_work_statement')
+            ->orderBy('id')
+            ->get();
+        foreach ($drafts as $draft) {
+            if (isset($rebuilt[$draft->id]) || array_intersect($this->heldWork->disclosedIds($draft), $entryIds) === []) {
+                continue;
+            }
+            $this->attempt(fn () => DB::transaction(function () use ($workspaceId, $draft): void {
+                BillingMaintenance::share($workspaceId);
+                $locked = ClientInvoice::query()
+                    ->where('workspace_id', $workspaceId)
+                    ->whereKey($draft->id)
+                    ->tap(Locks::forUpdate())
+                    ->first();
+                if ($locked instanceof ClientInvoice && $locked->status === InvoiceStatus::Draft->value) {
+                    $this->heldWork->adHoc($locked);
+                }
+            }));
+        }
     }
 
     /** One rebuild; a refusal is reported, never thrown back at the decision. */

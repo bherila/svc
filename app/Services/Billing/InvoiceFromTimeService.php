@@ -27,6 +27,7 @@ final class InvoiceFromTimeService
         private readonly InvoiceLifecycleService $invoices,
         private readonly InvoiceNumberAllocator $numbers,
         private readonly TimeEntryProjectChainGuard $projectChainGuard,
+        private readonly HeldWorkDisclosure $heldWork = new HeldWorkDisclosure,
     ) {}
 
     /** @param array<string, mixed> $attributes
@@ -241,6 +242,8 @@ final class InvoiceFromTimeService
 
             /** @var list<array{entry:ClientTimeEntry, terms:array{type:string, unit_amount:int}}> $eligible */
             $eligible = [];
+            /** @var list<int> $dropped */
+            $dropped = [];
             foreach ($entryIds as $entryId) {
                 $entry = $entries->get($entryId);
                 $terms = $entry instanceof ClientTimeEntry
@@ -252,6 +255,7 @@ final class InvoiceFromTimeService
                     if ($entryId !== $mutatedEntryId && ! ($dropHeld && $entry instanceof ClientTimeEntry && self::heldOut($entry))) {
                         throw new DomainException('Another selected time entry is no longer invoiceable; refresh the draft explicitly.');
                     }
+                    $dropped[] = (int) $entryId;
 
                     continue;
                 }
@@ -298,6 +302,9 @@ final class InvoiceFromTimeService
             }
 
             $locked->refresh()->recalculateTotals();
+            // A selection a dispute took off is listed, tagged, so the draft
+            // says what was left off and why (docs/ux-overhaul.md 7b″).
+            $this->heldWork->adHoc($locked, $dropped);
 
             return $locked->fresh(['lines', 'clientCompany']);
         });

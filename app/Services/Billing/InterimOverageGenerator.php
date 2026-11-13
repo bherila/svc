@@ -66,6 +66,7 @@ final class InterimOverageGenerator
         private readonly OverpaymentCreditService $overpaymentCreditService = new OverpaymentCreditService,
         ?ClientActivityRecorder $activities = null,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly HeldWorkDisclosure $heldWork = new HeldWorkDisclosure,
     ) {
         $this->activities = $activities ?? app(ClientActivityRecorder::class);
     }
@@ -206,7 +207,7 @@ final class InterimOverageGenerator
 
             $targetOverageHours = round(max(0.0, $cumulativeExcessHours - $alreadyBilledHours), 4);
             if ($targetOverageHours <= 0.0) {
-                $this->finishEmptiedDraft($existingInvoice);
+                $this->finishEmptiedDraft($existingInvoice, $agreement);
 
                 return null;
             }
@@ -254,7 +255,7 @@ final class InterimOverageGenerator
             $entryHours = round(((int) $entries->sum('minutes')) / 60, 4);
             $overageHours = round(min($targetOverageHours, $entryHours), 4);
             if ($overageHours <= 0.0) {
-                $this->finishEmptiedDraft($existingInvoice);
+                $this->finishEmptiedDraft($existingInvoice, $agreement);
 
                 return null;
             }
@@ -344,6 +345,7 @@ final class InterimOverageGenerator
 
             $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice);
             $invoice->recalculateTotals();
+            $this->heldWork->interim($invoice, $agreement);
             $this->recordInvoiceActivity($company, $invoice, $wasCreated);
 
             return $invoice->fresh(['lines']);
@@ -604,13 +606,15 @@ final class InterimOverageGenerator
      * columns, so every early return after the reset must close the row too.
      * Manual adjustment lines, if any, remain and are included in the total.
      */
-    private function finishEmptiedDraft(?ClientInvoice $invoice): void
+    private function finishEmptiedDraft(?ClientInvoice $invoice, ClientAgreement $agreement): void
     {
         if (! $invoice instanceof ClientInvoice) {
             return;
         }
 
         $invoice->update(['hours_billed_at_rate' => 0]);
+        // Emptied by a dispute, the draft still says which hours it left off.
+        $this->heldWork->interim($invoice, $agreement);
         $this->overpaymentCreditService->applyCreditsToDraftInvoice($invoice->refresh());
         $this->recordInvoiceActivity($invoice->clientCompany, $invoice->refresh(), false);
     }

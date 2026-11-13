@@ -1799,13 +1799,21 @@ final class ClientInvoicingService
      * regenerating its charges or allocating any further work. Generation's
      * snapshot can predate new approvals or a client's visibility decision.
      * Legacy drafts without a matching agreement retain their existing facts.
+     * An ad-hoc or interim draft freezes the held work it lists instead
+     * ({@see HeldWorkDisclosure}); `$current` is the cadence candidates only.
      *
      * @param  array<int, array<string, mixed>>|null  $current  the candidates the issue
      *                                                          read with row locks; every row the statement lists must match its locked row
      */
     public function refreshDeferredWorkSnapshotAtIssue(ClientInvoice $invoice, ?array $current = null): void
     {
-        if ($invoice->invoice_kind !== InvoiceKind::CadencePeriod->value || $invoice->client_agreement_id === null) {
+        // An ad-hoc or interim draft lists only what a dispute holds.
+        if ($invoice->invoice_kind !== InvoiceKind::CadencePeriod->value) {
+            (new HeldWorkDisclosure($this->deferredWorkStatements))->refresh($invoice);
+
+            return;
+        }
+        if ($invoice->client_agreement_id === null) {
             return;
         }
         $agreement = ClientAgreement::query()
