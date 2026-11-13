@@ -362,10 +362,13 @@ requirement.
 - **EDGE-5 A currency Stripe can't charge.** Publishing checks the version's
   currency against the connected Stripe account and refuses with a coded
   refusal (this extends PKG-4).
-- **EDGE-6 First period in advance.** The amount is prorated: it covers the
-  rest of the current period, according to the agreement's
-  `first_cycle_proration`. The first regular invoice covers the next full
-  period.
+- **EDGE-6 First period in advance.** A monthly package's opening amount
+  covers the rest of the current calendar month according to
+  `first_cycle_proration`. A longer-cadence package writes native period
+  terms and starts a whole period on the agreement's start date, with its
+  stated period fee and hours. The first regular invoice covers the next
+  full period. This does not replace a standalone agreement's existing
+  calendar-month accrual and rollover terms.
 - **EDGE-7 A new version is published before the client accepts.** Approval
   and acceptance always offer the currently published version. When it
   differs from the version the visitor requested, the review panel and the
@@ -447,8 +450,11 @@ Slice 3b (payment at sign-up) settled these:
   overlap guards make the next regular run bill the next cycle and refuse this
   one (tested: the next run bills December only, and asking for November again
   is refused).
-- **What EDGE-6's proration covers.** The engine prorates the retainer (fee
-  and hours) by the agreement's `first_cycle_proration`; it bills each
+- **What EDGE-6's proration covers.** The engine prorates a monthly package's opening
+  retainer (fee and hours) by the agreement's `first_cycle_proration`; a longer
+  package's native period terms cover a whole opening cycle on its start-date
+  grid. Agreements retaining monthly accrual still read their opening
+  calendar-month grant through that setting. The engine bills each
   recurring item per incidence, so a monthly hosting item's opening month is
   charged in full on the start date, as for every other agreement. The engine
   was not changed: prorating recurring items would change every existing
@@ -900,12 +906,26 @@ Slice 6 (moving subscribers to a new version) settled these:
     1 May, 1 August, by the grid's own month arithmetic). An item that starts
     inside a period - an operator's addition - is charged on its start for that
     period, then on each period's first day.
-  - **Not prorated, and not aligned to an anchor.** The price of a longer
-    cadence's first period is not prorated: that period is a whole one,
+  - **Native period pricing is not prorated or aligned to an anchor.** A
+    longer-cadence package's first period is a whole one,
     anchored on the start (EDGE-6's proration is a monthly agreement's partial
-    first month). So the component is billed in full in it, once, as the price
-    is. Aligning it to an anchor would need a short stub period the price does
-    not have.
+    first month). Its stated period price and retainer pool are counted once
+    under every stored first-cycle setting, including `align_next_cycle`:
+    a package offering 30 hours for $900 per quarter grants and charges that
+    amount for both 16 January–15 April and 16 April–15 July. The recurring
+    component is billed in full in that period, once, as the native period
+    price is. Aligning it to an anchor would need a short stub period the
+    package's price does not have.
+  - **Monthly accrual remains a different retainer contract (#703).** A
+    standalone agreement without period overrides keeps its calendar-month
+    grants and rollover. At 10 hours and $300 per month from 16 January, its
+    first quarterly invoice groups January's opening grant with February,
+    March and April: 35.161 hours and $1,054.83 under `prorate_hours` or
+    `align_next_cycle`, or 40 hours and $1,200 under `full_period`. The next
+    invoice is 30 hours and $900. Its date grid is the same as the package's,
+    but its capacity accrues monthly instead of forming one quarterly pool.
+    The existing monthly arithmetic is preserved; this is not an additional
+    dated alignment cycle and is not a conversion to native period terms.
   - **In the engine, not as anchors written at sign-up.** Writing each sign-up
     item's anchor from its start, as a move's successor's are written, was
     tried first and rejected: a sign-up's start date moves after its items are
