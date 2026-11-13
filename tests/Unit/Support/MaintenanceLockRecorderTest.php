@@ -10,6 +10,7 @@ use App\Support\Concurrency\LockResource;
 use App\Support\Concurrency\Locks;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 #[CoversClass(LockOrderRecorder::class)]
@@ -85,6 +86,54 @@ final class MaintenanceLockRecorderTest extends TestCase
             [LockResource::ClientCompany],
         ], LockOrderRecorder::sequences());
         $this->assertSame([ReplayInvoicesCommand::class, null, null], LockOrderRecorder::maintenanceExemptions());
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function secondConnectionEndings(): iterable
+    {
+        yield 'the second connection commits' => [true];
+        yield 'the second connection rolls back' => [false];
+    }
+
+    /**
+     * Two connections, each with its own transaction. Connection B beginning
+     * and ending its transaction while A's is open must leave A's sequence
+     * whole: archived as though A had committed, A's Company then Invoice
+     * would be split in two and the pair it forms would never be checked.
+     */
+    #[DataProvider('secondConnectionEndings')]
+    public function test_another_connections_transaction_leaves_the_first_ones_sequence_whole(bool $commits): void
+    {
+        config(['database.connections.recorder_second' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']]);
+        $first = DB::connection();
+        $second = DB::connection('recorder_second');
+        try {
+            LockOrderRecorder::start();
+            $first->beginTransaction();
+            $first->table('client_companies')->tap(Locks::forUpdate());
+            LockOrderRecorder::maintenanceExclusive(ReplayInvoicesCommand::class);
+
+            $second->beginTransaction();
+            $second->table('client_time_entries')->tap(Locks::forShare());
+            // Its own exemption question: B's transaction holds no maintenance lock.
+            $commits ? $second->commit() : $second->rollBack();
+
+            $first->table('client_invoices')->tap(Locks::forUpdate());
+            $this->assertSame([
+                [LockResource::ClientTimeEntry],
+                [LockResource::ClientCompany, LockResource::ClientInvoice],
+            ], LockOrderRecorder::sequences(), 'A is still open and still one sequence.');
+            $first->rollBack();
+
+            $this->assertSame([
+                [LockResource::ClientTimeEntry],
+                [LockResource::ClientCompany, LockResource::ClientInvoice],
+            ], LockOrderRecorder::sequences());
+            $this->assertSame([null, ReplayInvoicesCommand::class], LockOrderRecorder::maintenanceExemptions());
+        } finally {
+            LockOrderRecorder::stop();
+            DB::purge('recorder_second');
+        }
     }
 
     public function test_direct_records_and_internal_callbacks_use_the_unknown_source_marker(): void
