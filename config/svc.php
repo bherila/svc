@@ -95,5 +95,8 @@ return [
         'payment-intents' => env('SVC_RATE_LIMIT_PAYMENT_INTENTS'),
         'invitations' => env('SVC_RATE_LIMIT_INVITATIONS'),
         'csp-reports' => env('SVC_RATE_LIMIT_CSP_REPORTS'),
+        'payment-keys' => env('SVC_RATE_LIMIT_PAYMENT_KEYS'),
+        'documents' => env('SVC_RATE_LIMIT_DOCUMENTS'),
+        'revenue' => env('SVC_RATE_LIMIT_REVENUE'),
     ],
 ];

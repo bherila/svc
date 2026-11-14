@@ -128,7 +128,7 @@ Route::middleware('auth')->group(function (): void {
     // controller then authorizes its own audience (members for the Dashboard,
     // owners and admins for the rest).
     Route::get('/workspaces/{workspace}/dashboard', WorkspaceDashboardController::class)
-        ->middleware(ResolveWorkspaceNavigation::class)
+        ->middleware([ResolveWorkspaceNavigation::class, 'throttle:revenue'])
         ->name('workspaces.dashboard');
     Route::get('/workspaces/{workspace}/my-work', WorkspaceMyWorkController::class)
         ->middleware(ResolveWorkspaceNavigation::class)
@@ -159,7 +159,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/mcp', McpSetupController::class)->name('mcp.setup');
         Route::get('/workspaces/{workspace}/payments', [WorkspacePaymentConnectionController::class, 'show'])->name('workspaces.payments');
         Route::get('/workspaces/{workspace}/square', SquareExploreController::class)->name('square.explore');
-        Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->name('clients.index');
+        Route::get('/workspaces/{workspace}/clients', [ClientDirectoryController::class, 'index'])->middleware('throttle:revenue')->name('clients.index');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}', [ClientDirectoryController::class, 'show'])
             ->name('clients.show');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements', ClientAgreementsController::class)
@@ -182,6 +182,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}', [ClientDirectoryController::class, 'agreement'])
             ->name('clients.agreement');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/agreements/{clientAgreement}/proforma', [InvoiceProformaController::class, 'show'])
+            ->middleware('throttle:documents')
             ->name('clients.proforma');
         Route::get('/workspaces/{workspace}/clients/{clientCompany}/proposals/{clientProposal}', [ClientDirectoryController::class, 'proposal'])
             ->name('clients.proposal');
@@ -222,11 +223,15 @@ Route::middleware('auth')->group(function (): void {
 
     // Payment keys are entered here by an owner or admin and nowhere else; the
     // controller checks the role again, and CSRF protection is the web group's.
-    Route::post('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'store'])->name('workspaces.payments.store');
-    Route::post('/workspaces/{workspace}/payments/{processor}/reuse', [WorkspacePaymentConnectionController::class, 'reuse'])->name('workspaces.payments.reuse');
-    Route::delete('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'destroy'])->name('workspaces.payments.destroy');
-    Route::post('/workspaces/{workspace}/payments/{processor}/webhook-check', [WorkspacePaymentConnectionController::class, 'checkWebhook'])->name('workspaces.payments.webhook.check');
-    Route::post('/workspaces/{workspace}/payments/{processor}/webhook-fix', [WorkspacePaymentConnectionController::class, 'fixWebhook'])->name('workspaces.payments.webhook.fix');
+    // Each of these calls Stripe or Square in the request, so they share a low
+    // ceiling per person and per workspace.
+    Route::middleware('throttle:payment-keys')->group(function (): void {
+        Route::post('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'store'])->name('workspaces.payments.store');
+        Route::post('/workspaces/{workspace}/payments/{processor}/reuse', [WorkspacePaymentConnectionController::class, 'reuse'])->name('workspaces.payments.reuse');
+        Route::delete('/workspaces/{workspace}/payments/{processor}', [WorkspacePaymentConnectionController::class, 'destroy'])->name('workspaces.payments.destroy');
+        Route::post('/workspaces/{workspace}/payments/{processor}/webhook-check', [WorkspacePaymentConnectionController::class, 'checkWebhook'])->name('workspaces.payments.webhook.check');
+        Route::post('/workspaces/{workspace}/payments/{processor}/webhook-fix', [WorkspacePaymentConnectionController::class, 'fixWebhook'])->name('workspaces.payments.webhook.fix');
+    });
 
     Route::get('/workspaces/{workspace}/historical-files/{historicalBlob}', [HistoricalLibraryController::class, 'download'])->name('history.download');
 

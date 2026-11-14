@@ -84,6 +84,37 @@ final class RateLimitsTest extends TestCase
         $this->assertSame(99, RateLimits::attempts('invitations'));
     }
 
+    public function test_costly_limiters_are_lower_and_keyed_per_person(): void
+    {
+        $this->assertSame(['payment-keys' => 5, 'documents' => 10, 'revenue' => 60], RateLimits::COSTLY);
+        $this->assertSame([], array_intersect_key(RateLimits::COSTLY, RateLimits::DEFAULTS));
+
+        $request = $this->request('198.51.100.7');
+        $request->setUserResolver(static fn (): object => new class
+        {
+            public function getAuthIdentifier(): int
+            {
+                return 42;
+            }
+        });
+        foreach (RateLimits::COSTLY as $name => $default) {
+            $limits = RateLimiter::limiter($name)($request);
+            $this->assertSame([$name.'|user:42'], array_map(static fn (Limit $limit): string => $limit->key, $limits), $name);
+            $this->assertSame($default, $limits[0]->maxAttempts, $name);
+            $this->assertSame(60, $limits[0]->decaySeconds, $name);
+        }
+
+        config(['svc.rate_limits.documents' => '3']);
+        $this->assertSame(3, RateLimiter::limiter('documents')($request)[0]->maxAttempts);
+    }
+
+    public function test_an_anonymous_payment_key_request_is_keyed_by_address_alone(): void
+    {
+        $limits = RateLimiter::limiter('payment-keys')($this->request('198.51.100.7'));
+
+        $this->assertSame(['payment-keys|ip:198.51.100.7'], array_map(static fn (Limit $limit): string => $limit->key, $limits));
+    }
+
     private function request(string $address): Request
     {
         return Request::create('/x', 'GET', server: ['REMOTE_ADDR' => $address]);
