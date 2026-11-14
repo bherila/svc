@@ -14,7 +14,7 @@
     },
     {
       "name": "import-js",
-      "specifier": "eslint-plugin-import"
+      "specifier": "./tools/oxlint/import-order.mjs"
     },
     {
       "name": "svc-ui",
