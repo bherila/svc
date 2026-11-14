@@ -34,6 +34,12 @@ return [
         'mcp-read' => 120,
         'mcp-write' => 20,
     ],
+    // Every capability call per credential per minute, across all capabilities and however
+    // the calls arrive (one per POST or several in a JSON-RPC batch). Twice the per-POST
+    // HTTP throttle, so a client sending one message per request never reaches it.
+    'mcp_total_rate_limit' => (int) env('AGENT_API_MCP_TOTAL_RATE_LIMIT', 120),
+    // Messages accepted in one legacy JSON-RPC batch; a larger batch is refused whole.
+    'mcp_max_batch_size' => (int) env('AGENT_API_MCP_MAX_BATCH_SIZE', 10),
     'mcp_concurrency_limit' => (int) env('AGENT_API_MCP_CONCURRENCY_LIMIT', 4),
     'mcp_concurrency_lock_seconds' => (int) env('AGENT_API_MCP_CONCURRENCY_LOCK_SECONDS', 60),
     'accept_legacy_cursors' => env('AGENT_API_ACCEPT_LEGACY_CURSORS', true),
