@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<phpunit xmlns="https://schema.phpunit.de/coverage/1.0">
+  <file name="SyntheticExample.php" path="/Services">
+    <class name="App\Services\SyntheticExample" start="7" executable="6" executed="3">
+      <namespace name="App\Services"/>
+      <method name="measured" signature="measured(): int" start="9" end="13" executable="3" executed="3" coverage="100"/>
+      <method name="unmeasured" signature="unmeasured(): int" start="15" end="19" executable="3" executed="0" coverage="0"/>
+      <method name="empty" signature="empty(): void" start="21" end="23" executable="0" executed="0" coverage="100"/>
+    </class>
+    <coverage/>
+  </file>
+</phpunit>

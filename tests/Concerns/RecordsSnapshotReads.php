@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Event;
  */
 trait RecordsSnapshotReads
 {
-    /** @var array<string, string> `opener > reader table` => an example statement */
+    /** @var array<string, string> `opener > reader table #shape` => an example statement */
     private array $snapshotReads = [];
 
     private string $snapshotOpener = 'unknown';
@@ -76,7 +76,7 @@ trait RecordsSnapshotReads
             }
             foreach ($tables as $table) {
                 if (isset($this->snapshotLockedTables[$table])) {
-                    $this->snapshotReads[$this->snapshotOpener.' > '.self::applicationSite().' '.$table] ??= $query->sql;
+                    $this->snapshotReads[self::snapshotReadKey($this->snapshotOpener, self::applicationSite(), $table, $query->sql)] ??= $query->sql;
                 }
             }
         });
@@ -89,7 +89,8 @@ trait RecordsSnapshotReads
     }
 
     /**
-     * Each transaction opener, reader and table seen, as `opener > reader table`.
+     * Each transaction opener, reader, table and statement shape seen, as
+     * `opener > reader table #shape`.
      *
      * @return array<string, string> => an example statement
      */
@@ -98,6 +99,33 @@ trait RecordsSnapshotReads
         ksort($this->snapshotReads);
 
         return $this->snapshotReads;
+    }
+
+    /**
+     * The key a read is pinned by. Opener, reader and table name the place; the
+     * shape names the statement, so a second, different ordinary read added
+     * inside a method already pinned is a new key and fails until it is
+     * reviewed (#661). A method's line is not part of it: the key survives
+     * edits elsewhere in the file.
+     */
+    public static function snapshotReadKey(string $opener, string $reader, string $table, string $sql): string
+    {
+        return $opener.' > '.$reader.' '.$table.' #'.substr(sha1(self::sqlShape($sql)), 0, 8);
+    }
+
+    /**
+     * A statement with its values taken out: literals and bindings become
+     * `?`, and a list of them one `(?)`, since how many rows an `in` names is
+     * data, not shape.
+     */
+    public static function sqlShape(string $sql): string
+    {
+        $shape = strtolower($sql);
+        $shape = (string) preg_replace("/'(?:[^'\\\\]|\\\\.|'')*'/", '?', $shape);
+        $shape = (string) preg_replace('/(?<![\\w`])\\d+(?:\\.\\d+)?(?![\\w`])/', '?', $shape);
+        $shape = (string) preg_replace('/\\(\\s*\\?(?:\\s*,\\s*\\?)*\\s*\\)/', '(?)', $shape);
+
+        return trim((string) preg_replace('/\\s+/', ' ', $shape));
     }
 
     /** @return list<string> */

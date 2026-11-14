@@ -554,6 +554,36 @@ class TimeSheetTest extends TestCase
         $this->assertSame('approved', $entry->fresh()?->status);
     }
 
+    /**
+     * Each way of settling a dispute is offered on its own terms, as
+     * DisputeSettlements enforces them: the author or a workspace owner or
+     * admin answers; a project manager who is neither still writes off what no
+     * issued invoice charges.
+     */
+    public function test_each_settlement_outcome_is_offered_to_whoever_may_take_it(): void
+    {
+        $author = $this->memberWithProjectRole(ProjectRole::Contributor);
+        $projectManager = $this->memberWithProjectRole(ProjectRole::Manager);
+        $entry = $this->entry(['status' => 'approved', 'user_id' => $author->id, 'client_disputed_at' => '2026-07-10 12:00:00']);
+        $this->travelTo('2026-07-20');
+        $url = "/api/v1/workspaces/{$this->workspace->public_id}/time-entries/{$entry->public_id}/dispute/settle";
+        $offered = fn (User $viewer): mixed => $this->actingAs($viewer, 'web')
+            ->get("/workspaces/{$this->workspace->public_id}/clients/{$this->company->public_id}/time")
+            ->assertOk()
+            ->viewData('page')['props']['months'][0]['entries'][0]['settle_dispute'];
+
+        $this->assertSame(['url' => $url, 'outcomes' => ['written_off']], $offered($projectManager));
+        $this->assertSame(['url' => $url, 'outcomes' => ['answered']], $offered($author));
+        $this->assertSame(['url' => $url, 'outcomes' => ['answered', 'written_off']], $offered($this->manager));
+
+        // Once an issued invoice charges it, the charge stands: nothing is left
+        // for the project manager, and the author and admin may only answer.
+        $this->attachToInvoice($entry, 'issued');
+        $this->assertNull($offered($projectManager));
+        $this->assertSame(['url' => $url, 'outcomes' => ['answered']], $offered($author));
+        $this->assertSame(['url' => $url, 'outcomes' => ['answered']], $offered($this->manager));
+    }
+
     public function test_the_sheet_offers_withdrawal_only_where_nothing_has_been_charged(): void
     {
         $unbilled = $this->entry(['worked_on' => '2026-07-06', 'status' => 'approved']);

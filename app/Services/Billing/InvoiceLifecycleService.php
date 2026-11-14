@@ -1003,11 +1003,18 @@ final class InvoiceLifecycleService
      * needs the agreement and the workspace's day, whose ordinary reads would
      * fix the snapshot before the credit lock.
      *
+     * An ad-hoc or interim draft's held-work list is checked the same way
+     * ({@see HeldWorkDisclosure::lockCandidates()}).
+     *
      * @return array<int, array<string, mixed>>|null each candidate's columns by id, or null for a draft with no statement to freeze
      */
     private function lockDeferredCandidates(ClientInvoice $draft): ?array
     {
-        if ($draft->invoice_kind !== InvoiceKind::CadencePeriod->value || $draft->client_agreement_id === null) {
+        // An ad-hoc or interim draft lists only held work, and locks only that.
+        if ($draft->invoice_kind !== InvoiceKind::CadencePeriod->value) {
+            return app(HeldWorkDisclosure::class)->lockCandidates($draft);
+        }
+        if ($draft->client_agreement_id === null) {
             return null;
         }
 

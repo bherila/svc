@@ -151,6 +151,78 @@ final class IssueDigestCoverageTest extends TestCase
     }
 
     /**
+     * The negative control the column probes cannot give: their company change
+     * moves the project too, so a project predicate alone would notice it. A
+     * company-wide basis has only its company predicate between it and another
+     * client's disputed work, which must move nothing here.
+     */
+    public function test_another_clients_disputed_work_moves_neither_digest(): void
+    {
+        [$workspace, $company, $project, $owner] = $this->world('foreign');
+        $agreement = $this->agreement($workspace, $company, null, 'monthly', false);
+        $disputed = $this->hours($workspace, $company, $project, $owner, '2026-01-20', 1200);
+        ClientTimeEntry::query()->whereKey($disputed->id)->update(['client_disputed_at' => '2026-02-02 12:00:00', 'client_dispute_note' => 'Synthetic question']);
+        $this->hours($workspace, $company, $project, $owner, '2026-02-10', 1800);
+        $foreign = $this->foreignDisputedHour($workspace, $owner);
+        $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse('2026-03-01'));
+        $this->assertNotNull($draft->held_work_basis);
+        $current = fn (): bool => app(HeldWorkBasisRecorder::class)->isCurrent($draft->fresh() ?? $draft);
+        $this->assertTrue($current());
+
+        foreach ($this->foreignChanges($foreign) as $what => $change) {
+            DB::beginTransaction();
+            try {
+                DB::table('client_time_entries')->where('id', $foreign->id)->update($change);
+                $this->assertTrue($current(), "Another client's hour, {$what}, moved this client's held-work basis.");
+            } finally {
+                DB::rollBack();
+            }
+        }
+
+        [$workspace, $company, $project, $owner] = $this->world('foreign-interim');
+        $agreement = $this->agreement($workspace, $company, null, 'quarterly', true);
+        $this->hours($workspace, $company, $project, $owner, '2026-01-10', 900);
+        $foreign = $this->foreignDisputedHour($workspace, $owner, '2026-01-12');
+        $generator = app(InterimOverageGenerator::class);
+        $interim = $generator->generateInterimOverageInvoice($company, Carbon::parse('2026-01-01'), $agreement);
+        $this->assertInstanceOf(ClientInvoice::class, $interim);
+        $fingerprint = static fn (): string => $generator->lockTimeFingerprint($interim, $agreement, $generator->lockCycleClaims($interim, $agreement)[0]);
+        $before = $fingerprint();
+
+        foreach ($this->foreignChanges($foreign) as $what => $change) {
+            DB::beginTransaction();
+            try {
+                DB::table('client_time_entries')->where('id', $foreign->id)->update($change);
+                $this->assertSame($before, $fingerprint(), "Another client's hour, {$what}, moved this client's interim fingerprint.");
+            } finally {
+                DB::rollBack();
+            }
+        }
+    }
+
+    /** A disputed hour of another client of the same workspace, in the same months. */
+    private function foreignDisputedHour(Workspace $workspace, User $owner, string $day = '2026-01-21'): ClientTimeEntry
+    {
+        $other = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic foreign client', 'slug' => 'synthetic-foreign-client-'.$workspace->id]);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $other->id, 'name' => 'Synthetic foreign project']);
+        $hour = $this->hours($workspace, $other, $project, $owner, $day, 60);
+        ClientTimeEntry::query()->whereKey($hour->id)->update(['client_disputed_at' => '2026-02-03 12:00:00', 'client_dispute_note' => 'Synthetic question']);
+
+        return $hour->fresh() ?? $hour;
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function foreignChanges(ClientTimeEntry $foreign): array
+    {
+        return [
+            'answered' => ['client_disputed_at' => null, 'client_dispute_settlement' => 'answered'],
+            'resized' => ['minutes' => (int) $foreign->minutes + 30],
+            'versioned' => ['lock_version' => (int) $foreign->getRawOriginal('lock_version') + 1],
+            'deleted' => ['deleted_at' => '2026-02-20 12:00:00'],
+        ];
+    }
+
+    /**
      * @param  list<string>  $read
      * @param  array<string, string>  $ignored  column => reason
      */

@@ -1646,6 +1646,11 @@ CREATE INDEX "client_invoices_ws_updated_id_index" on "client_invoices"(
   "updated_at",
   "id"
 );
+CREATE INDEX "client_invoices_ws_agreement_id_index" on "client_invoices"(
+  "workspace_id",
+  "client_agreement_id",
+  "id"
+);
 CREATE INDEX "client_invoice_payments_ws_updated_id_index" on "client_invoice_payments"(
   "workspace_id",
   "updated_at",
@@ -3581,3 +3586,4 @@ INSERT INTO migrations VALUES(137,'2026_11_15_090000_add_automatic_invoicing_to_
 INSERT INTO migrations VALUES(138,'2026_11_16_090000_add_cancellation_to_client_agreements',1);
 INSERT INTO migrations VALUES(139,'2026_11_17_090000_create_service_package_migrations',1);
 INSERT INTO migrations VALUES(140,'2026_11_18_090000_create_service_package_request_addresses',1);
+INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_client_invoices',1);

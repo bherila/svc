@@ -18,12 +18,16 @@ use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\InterimOverageGenerator;
+use App\Services\Billing\InvoiceDeferredWorkStatements;
+use App\Services\Billing\InvoiceDocumentBuilder;
+use App\Services\Billing\InvoiceDocumentService;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredBuyDownRequest;
+use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\SelectedTimeInvoiceTerms;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -125,10 +129,10 @@ final class DisputeSettlementTest extends TestCase
         return $user;
     }
 
-    private function dispute(User $contact, string $kind, string $id): void
+    private function dispute(User $contact, string $kind, string $id, string $note = 'Synthetic question'): void
     {
         $this->actingAs($contact)->from('/portal/x')
-            ->post('/portal/'.$this->company->public_id.'/approvals/dispute', ['kind' => $kind, 'id' => $id, 'note' => 'Synthetic question'])
+            ->post('/portal/'.$this->company->public_id.'/approvals/dispute', ['kind' => $kind, 'id' => $id, 'note' => $note])
             ->assertSessionHasNoErrors();
     }
 
@@ -394,6 +398,34 @@ final class DisputeSettlementTest extends TestCase
         $this->assertSame('Another reply', $first->fresh()->client_dispute_reply);
     }
 
+    /** @return iterable<string, array{DisputeSettlement, string}> */
+    public static function longestTexts(): iterable
+    {
+        // A CJK character is three UTF-8 bytes but six as a `\uXXXX` escape; a
+        // control character is JSON's worst case, a six-byte escape either way.
+        foreach (DisputeSettlement::cases() as $outcome) {
+            yield $outcome->value.', CJK' => [$outcome, '合'];
+            yield $outcome->value.', control characters' => [$outcome, "\u{1}"];
+        }
+    }
+
+    #[DataProvider('longestTexts')]
+    public function test_the_longest_note_and_reply_a_client_and_provider_may_write_are_recorded_whole(DisputeSettlement $outcome, string $character): void
+    {
+        $entry = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $note = str_repeat($character, 1000);
+        $reply = str_repeat($character, DisputeSettlements::REPLY_MAX);
+        $this->dispute($this->contact(), 'time', $entry->public_id, $note);
+        $this->assertSame($note, $entry->fresh()->client_dispute_note);
+
+        $settled = $this->settleTime($entry, $outcome, reply: $reply);
+
+        $this->assertSame($outcome->value, $settled->client_dispute_settlement);
+        $this->assertSame($reply, $settled->client_dispute_reply);
+        $payload = json_decode((string) DB::table('client_company_activity')->where('action', 'dispute.'.$outcome->value)->value('payload'), true);
+        $this->assertSame([$note, $reply], [$payload['dispute_note'], $payload['reply']]);
+    }
+
     public function test_a_written_off_hour_cannot_be_made_billable_again_and_never_bills_if_it_is(): void
     {
         $entry = $this->hours('2026-09-20', 60, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
@@ -458,6 +490,93 @@ final class DisputeSettlementTest extends TestCase
         $this->assertSame(10000, (int) $draft->fresh()->total_amount);
         app(InvoiceLifecycleService::class)->issue($draft->fresh(), $this->workspace);
         $this->assertSame('issued', $draft->fresh()->status);
+    }
+
+    /**
+     * What a draft says it left off, in each place the document is read: the
+     * stored list, the operator's document data, the rendered PDF markup and
+     * the project index the portal grant reads.
+     *
+     * @return array{list<string>, bool, list<int>}
+     */
+    private function disclosed(ClientInvoice $invoice): array
+    {
+        $invoice = $invoice->fresh() ?? $invoice;
+        $document = app(InvoiceDocumentBuilder::class)->build($invoice, InvoiceLineDetail::OPERATOR)->deferredWork;
+        $disputed = array_map(
+            static fn (array $entry): string => $entry['worked_on'].($entry['disputed'] ? ' disputed' : ''),
+            $document['entries'] ?? [],
+        );
+        $pdf = str_contains(app(InvoiceDocumentService::class)->html($invoice, InvoiceLineDetail::OPERATOR)->render(), 'Disputed: held until settled');
+        $projects = DB::table(InvoiceDeferredWorkStatements::PROJECTS_TABLE)
+            ->where('workspace_id', $this->workspace->id)->where('client_invoice_id', $invoice->id)
+            ->pluck('client_project_id')->map(fn ($id): int => (int) $id)->all();
+
+        return [$disputed, $pdf, $projects];
+    }
+
+    public function test_an_ad_hoc_draft_lists_the_selection_a_dispute_took_off_until_it_is_settled(): void
+    {
+        $approved = ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD'];
+        [$taken, $kept] = [$this->hours('2026-09-20', 60, $approved), $this->hours('2026-09-21', 60, $approved)];
+        // Disputed but never selected: not this draft's to list.
+        $elsewhere = $this->hours('2026-09-22', 60, $approved);
+        $draft = app(InvoiceFromTimeService::class)->create($this->workspace, $this->company, ['invoice_number' => 'SYNTH-ADHOC-LIST', 'currency' => 'USD'], [$taken->public_id, $kept->public_id]);
+        $this->assertSame([[], false, []], $this->disclosed($draft));
+        $contact = $this->contact();
+
+        $this->dispute($contact, 'time', $elsewhere->public_id);
+        $this->dispute($contact, 'time', $taken->public_id);
+
+        $this->assertFalse($this->onAnyLine($taken));
+        $this->assertSame(10000, (int) $draft->fresh()->total_amount);
+        $this->assertSame([['2026-09-20 disputed'], true, [$this->project->id]], $this->disclosed($draft));
+
+        // Answered, it is no longer held, and the draft no longer lists it.
+        $this->settleTime($taken, DisputeSettlement::Answered);
+        $this->assertSame([[], false, []], $this->disclosed($draft));
+    }
+
+    public function test_an_issued_ad_hoc_invoice_freezes_the_held_selection_it_lists(): void
+    {
+        $approved = ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD'];
+        [$taken, $kept, $writtenOff] = [$this->hours('2026-09-20', 60, $approved), $this->hours('2026-09-21', 60, $approved), $this->hours('2026-09-23', 60, $approved)];
+        $draft = app(InvoiceFromTimeService::class)->create($this->workspace, $this->company, ['invoice_number' => 'SYNTH-ADHOC-ISSUE', 'currency' => 'USD'], [$taken->public_id, $kept->public_id, $writtenOff->public_id]);
+        $contact = $this->contact();
+        $this->dispute($contact, 'time', $taken->public_id);
+        $this->dispute($contact, 'time', $writtenOff->public_id);
+        $this->assertSame([['2026-09-20 disputed', '2026-09-23 disputed'], true, [$this->project->id]], $this->disclosed($draft));
+        // Written off without its draft being touched: issue reads what is held then.
+        ClientTimeEntry::query()->whereKey($writtenOff->id)->update(['client_disputed_at' => null, 'client_dispute_settlement' => 'written_off', 'is_billable' => false]);
+
+        app(InvoiceLifecycleService::class)->issue($draft->fresh(), $this->workspace);
+
+        $this->assertSame('issued', $draft->fresh()->status);
+        $this->assertSame([['2026-09-20 disputed'], true, [$this->project->id]], $this->disclosed($draft));
+    }
+
+    public function test_an_interim_draft_lists_the_hour_a_dispute_took_off_until_it_is_answered(): void
+    {
+        $this->agreement->forceFill([
+            'billing_cadence' => 'quarterly', 'starts_on' => '2026-07-01', 'bill_overage_interim' => true,
+            'period_retainer_minutes' => 60, 'period_retainer_amount' => 100000,
+        ])->save();
+        $approved = ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD'];
+        $this->hours('2026-07-05', 60, $approved);
+        $over = $this->hours('2026-07-10', 60, $approved);
+        $draft = app(ClientInvoicingService::class)->generateInterimOverageInvoice($this->company, Carbon::parse('2026-07-01'), $this->agreement->fresh());
+        $this->assertInstanceOf(ClientInvoice::class, $draft);
+        $this->assertSame(10000, (int) $draft->total_amount);
+        $this->assertSame([[], false, []], $this->disclosed($draft));
+
+        $this->dispute($this->contact(), 'time', $over->public_id);
+
+        $this->assertSame(0, (int) $draft->fresh()->total_amount, 'Within the retainer without the held hour.');
+        $this->assertSame([['2026-07-10 disputed'], true, [$this->project->id]], $this->disclosed($draft));
+
+        $this->settleTime($over, DisputeSettlement::Answered);
+        $this->assertSame(10000, (int) $draft->fresh()->total_amount);
+        $this->assertSame([[], false, []], $this->disclosed($draft));
     }
 
     public function test_an_answered_subcontractor_hour_whose_period_has_no_draft_bills_on_the_next_one(): void

@@ -27,6 +27,7 @@ final class InvoiceFromTimeService
         private readonly InvoiceLifecycleService $invoices,
         private readonly InvoiceNumberAllocator $numbers,
         private readonly TimeEntryProjectChainGuard $projectChainGuard,
+        private readonly HeldWorkDisclosure $heldWork = new HeldWorkDisclosure,
     ) {}
 
     /** @param array<string, mixed> $attributes
@@ -187,11 +188,29 @@ final class InvoiceFromTimeService
     ): ClientInvoice {
         return DB::transaction(function () use ($invoice, $workspace, $mutatedEntryId, $dropHeld): ClientInvoice {
             BillingMaintenance::share($workspace->id);
+            // The client's agreements first, where they rank, as a time edit
+            // takes them (TimeEntryMutationService::serialized()). The rebuild
+            // deletes and recreates its lines' allocations, and an issue whose
+            // held-work basis reaches them locks allocations before lines; with
+            // no lock that both take first, the two deadlock
+            // (IssueTimeLockOrderTest). The issue holds these agreements before
+            // it reads that basis, so one now waits for the other. From the
+            // caller's copy of the draft, since nothing may be locked ahead of
+            // them; checked against the locked row below.
+            ClientAgreement::query()
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $invoice->client_company_id)
+                ->orderBy('id')
+                ->tap(Locks::forUpdate())
+                ->get(['id']);
             $locked = ClientInvoice::query()
                 ->whereKey($invoice->id)
                 ->where('workspace_id', $workspace->id)
                 ->tap(Locks::forUpdate())
                 ->firstOrFail();
+            if ($locked->client_company_id !== $invoice->client_company_id) {
+                throw new DomainException('This invoice changed after it was loaded. Reload it and try again.');
+            }
 
             if ($locked->status !== 'draft' || $locked->invoiceKindValue() !== InvoiceKind::AdHoc->value) {
                 throw new DomainException('Only an ad-hoc draft invoice can be refreshed from selected time.');
@@ -241,6 +260,8 @@ final class InvoiceFromTimeService
 
             /** @var list<array{entry:ClientTimeEntry, terms:array{type:string, unit_amount:int}}> $eligible */
             $eligible = [];
+            /** @var list<int> $dropped */
+            $dropped = [];
             foreach ($entryIds as $entryId) {
                 $entry = $entries->get($entryId);
                 $terms = $entry instanceof ClientTimeEntry
@@ -252,6 +273,7 @@ final class InvoiceFromTimeService
                     if ($entryId !== $mutatedEntryId && ! ($dropHeld && $entry instanceof ClientTimeEntry && self::heldOut($entry))) {
                         throw new DomainException('Another selected time entry is no longer invoiceable; refresh the draft explicitly.');
                     }
+                    $dropped[] = (int) $entryId;
 
                     continue;
                 }
@@ -298,6 +320,9 @@ final class InvoiceFromTimeService
             }
 
             $locked->refresh()->recalculateTotals();
+            // A selection a dispute took off is listed, tagged, so the draft
+            // says what was left off and why (docs/ux-overhaul.md 7b″).
+            $this->heldWork->adHoc($locked, $dropped);
 
             return $locked->fresh(['lines', 'clientCompany']);
         });

@@ -3,6 +3,7 @@
 namespace App\Support\Concurrency;
 
 use Closure;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -60,7 +61,7 @@ final class Locks
         $caller = $trace[0];
 
         return static function (EloquentBuilder|QueryBuilder $query) use ($caller): void {
-            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Exclusive, $caller['file'] ?? '', $caller['line'] ?? 0);
+            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Exclusive, $caller['file'] ?? '', $caller['line'] ?? 0, self::connectionOf($query));
 
             $query->lockForUpdate();
         };
@@ -74,8 +75,22 @@ final class Locks
         $caller = $trace[0];
 
         return static function (EloquentBuilder|QueryBuilder $query) use ($caller): void {
-            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Share, $caller['file'] ?? '', $caller['line'] ?? 0);
+            LockOrderRecorder::record(LockResource::forQuery($query), LockMode::Share, $caller['file'] ?? '', $caller['line'] ?? 0, self::connectionOf($query));
             $query->sharedLock();
         };
+    }
+
+    /**
+     * The connection the lock is taken on, so the recorder files it with that
+     * connection's transaction.
+     *
+     * @param  EloquentBuilder<covariant Model>|QueryBuilder  $query
+     */
+    private static function connectionOf(EloquentBuilder|QueryBuilder $query): ?string
+    {
+        /** @infection-ignore-all Eloquent's builder forwards getConnection() to the query builder it wraps, so both branches name the same connection; unwrapping only keeps the call statically typed. */
+        $connection = ($query instanceof EloquentBuilder ? $query->getQuery() : $query)->getConnection();
+
+        return $connection instanceof Connection ? $connection->getName() : null;
     }
 }

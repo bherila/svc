@@ -35,19 +35,35 @@ use Illuminate\Support\Facades\Event;
  * also close to meaningless - the lock is released at the end of the implicit
  * transaction, which is the statement - so recording it as a sequence is how
  * that shows up somewhere rather than nowhere.
+ *
+ * ## Per connection
+ *
+ * A transaction belongs to a connection, and so does every lock it takes. The
+ * floor, the open frame and the maintenance exemption are therefore kept per
+ * connection name: a second connection beginning or ending a transaction never
+ * archives, splits or exempts the first's sequence, which would let an
+ * inversion spread across the two pieces escape detection. A lock names its
+ * connection ({@see Locks}); one that names none is the default connection's.
  */
 final class LockOrderRecorder
 {
     private static bool $recording = false;
 
-    private static int $baseline = 0;
+    /**
+     * The transaction depth each connection was at when recording started.
+     * A connection first used afterwards started at zero.
+     *
+     * @var array<string, int>
+     */
+    private static array $baselines = [];
 
     /**
-     * The transaction currently being recorded, oldest acquisition first.
+     * Each connection's transaction currently being recorded, oldest
+     * acquisition first, in the order the transactions opened.
      *
-     * @var list<LockAcquisition>|null
+     * @var array<string, list<LockAcquisition>>
      */
-    private static ?array $frame = null;
+    private static array $frames = [];
 
     /**
      * Every completed transaction's sequence, in the order they finished.
@@ -56,19 +72,23 @@ final class LockOrderRecorder
      */
     private static array $sequences = [];
 
-    private static ?string $exclusiveCommand = null;
+    /** @var array<string, string> */
+    private static array $exclusiveCommand = [];
 
     /** @var list<string|null> */
     private static array $exclusiveCommands = [];
 
-    /** Begin recording, treating the current transaction depth as the floor. */
+    /** Begin recording, treating each open connection's current transaction depth as its floor. */
     public static function start(): void
     {
         self::listen();
-        self::$baseline = DB::transactionLevel();
-        self::$frame = null;
+        self::$baselines = [];
+        foreach (DB::getConnections() as $name => $connection) {
+            self::$baselines[$name] = $connection->transactionLevel();
+        }
+        self::$frames = [];
         self::$sequences = [];
-        self::$exclusiveCommand = null;
+        self::$exclusiveCommand = [];
         self::$exclusiveCommands = [];
         self::$recording = true;
     }
@@ -77,47 +97,54 @@ final class LockOrderRecorder
     public static function stop(): void
     {
         self::$recording = false;
-        self::$frame = null;
+        self::$baselines = [];
+        self::$frames = [];
         self::$sequences = [];
-        self::$exclusiveCommand = null;
+        self::$exclusiveCommand = [];
         self::$exclusiveCommands = [];
     }
 
     /**
-     * Note that a lock on this resource is about to be taken.
+     * Note that a lock on this resource is about to be taken on a connection.
      *
      * The early return is the production path in its entirety.
      */
-    public static function record(LockResource $resource, LockMode $mode = LockMode::Exclusive, string $file = '', int $line = 0): void
+    public static function record(LockResource $resource, LockMode $mode = LockMode::Exclusive, string $file = '', int $line = 0, ?string $connection = null): void
     {
         if (! self::$recording) {
             return;
         }
 
         $acquisition = new LockAcquisition($resource, $mode, $file, $line);
-        if (self::$frame === null) {
+        $connection ??= DB::getDefaultConnection();
+        if (! isset(self::$frames[$connection])) {
             self::$sequences[] = [$acquisition];
             self::$exclusiveCommands[] = null;
 
             return;
         }
 
-        self::$frame[] = $acquisition;
+        self::$frames[$connection][] = $acquisition;
     }
 
-    public static function maintenanceExclusive(string $command): void
+    public static function maintenanceExclusive(string $command, ?string $connection = null): void
     {
         // A frame exists only during active recording; outside-frame calls
         // cannot assign an exemption to any transaction.
-        if (self::$frame !== null) {
-            self::$exclusiveCommand = $command;
+        /** @infection-ignore-all With recording off no frame exists, so marking reaches nothing either way; returning first only keeps the database facade untouched outside a recording (BillingMaintenanceProtocolTest mocks it). */
+        if (! self::$recording) {
+            return;
+        }
+        $connection ??= DB::getDefaultConnection();
+        if (isset(self::$frames[$connection])) {
+            self::$exclusiveCommand[$connection] = $command;
         }
     }
 
     /**
-     * Every transaction recorded since `start()`, including one still open.
+     * Every transaction recorded since `start()`, including those still open.
      *
-     * The open frame is included because a test that asserts inside the
+     * Open frames are included because a test that asserts inside the
      * transaction it is exercising - which is the only way to observe a
      * sequence that ends in a refusal - would otherwise see nothing at all.
      *
@@ -135,9 +162,10 @@ final class LockOrderRecorder
     public static function acquisitions(): array
     {
         $sequences = self::$sequences;
-
-        if (self::$frame !== null && self::$frame !== []) {
-            $sequences[] = self::$frame;
+        foreach (self::$frames as $frame) {
+            if ($frame !== []) {
+                $sequences[] = $frame;
+            }
         }
 
         return $sequences;
@@ -147,11 +175,24 @@ final class LockOrderRecorder
     public static function maintenanceExemptions(): array
     {
         $commands = self::$exclusiveCommands;
-        if (self::$frame !== null && self::$frame !== []) {
-            $commands[] = self::$exclusiveCommand;
+        foreach (self::$frames as $connection => $frame) {
+            if ($frame !== []) {
+                $commands[] = self::$exclusiveCommand[$connection] ?? null;
+            }
         }
 
         return $commands;
+    }
+
+    /** Archive a connection's open frame, if it took any lock, and close it. */
+    private static function archive(string $connection): void
+    {
+        $frame = self::$frames[$connection] ?? [];
+        if ($frame !== []) {
+            self::$sequences[] = $frame;
+            self::$exclusiveCommands[] = self::$exclusiveCommand[$connection] ?? null;
+        }
+        unset(self::$frames[$connection], self::$exclusiveCommand[$connection]);
     }
 
     /**
@@ -164,10 +205,10 @@ final class LockOrderRecorder
      *
      * Not guarded against registering twice, deliberately. A second `start()`
      * adds a second pair, and both pairs then do the same work in order: the
-     * opening pair sets an empty frame twice, and the closing pair archives
-     * once, because the first of them leaves the frame null and the second
-     * finds nothing to archive. Laravel builds a fresh dispatcher for every
-     * test, so they cannot accumulate beyond one. An earlier revision carried a
+     * opening pair opens an empty frame twice, and the closing pair archives
+     * once, because the first of them closes the frame and the second finds
+     * nothing to archive. Laravel builds a fresh dispatcher for every test, so
+     * they cannot accumulate beyond one. An earlier revision carried a
      * `$listening` flag and a `forgetListeners()` to reset it; both were
      * unobservable by construction - no test could distinguish the guarded from
      * the unguarded behaviour - and unobservable state is the kind that goes on
@@ -176,21 +217,20 @@ final class LockOrderRecorder
     private static function listen(): void
     {
         Event::listen(function (TransactionBeginning $event): void {
+            $connection = $event->connectionName;
             // A nested transaction is a savepoint, and a savepoint releases no
             // locks, so its locks belong to the outermost frame. Only a
-            // transaction opened at the recording floor starts a sequence.
-            if (self::$recording && $event->connection->transactionLevel() === self::$baseline + 1) {
+            // transaction opened at its connection's floor starts a sequence.
+            if (self::$recording && $event->connection->transactionLevel() === (self::$baselines[$connection] ?? 0) + 1) {
                 // Laravel runs after-commit callbacks before it announces the
                 // commit, so a callback that opens a transaction begins here
                 // while the frame of the one that just committed is still
                 // open. That transaction has committed and released its
-                // locks: archive its frame rather than lose it.
-                if (self::$frame !== null && self::$frame !== []) {
-                    self::$sequences[] = self::$frame;
-                    self::$exclusiveCommands[] = self::$exclusiveCommand;
-                }
-                self::$frame = [];
-                self::$exclusiveCommand = null;
+                // locks: archive its frame rather than lose it. Only this
+                // connection's - another connection's open transaction holds
+                // its locks still.
+                self::archive($connection);
+                self::$frames[$connection] = [];
             }
         });
 
@@ -198,17 +238,10 @@ final class LockOrderRecorder
             // And symmetrically: a sequence is archived only when the
             // transaction that opened it ends, not when a savepoint inside it
             // is released.
-            if (! self::$recording || $event->connection->transactionLevel() !== self::$baseline) {
-                return;
+            $connection = $event->connectionName;
+            if (self::$recording && $event->connection->transactionLevel() === (self::$baselines[$connection] ?? 0)) {
+                self::archive($connection);
             }
-
-            if (self::$frame !== null && self::$frame !== []) {
-                self::$sequences[] = self::$frame;
-                self::$exclusiveCommands[] = self::$exclusiveCommand;
-            }
-
-            self::$frame = null;
-            self::$exclusiveCommand = null;
         });
     }
 }
