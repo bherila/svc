@@ -1,9 +1,30 @@
 packages:
   - '.'
-  - 'tools/api-types'
 
 # Keep per-worktree node_modules as links into pnpm's shared virtual store.
 enableGlobalVirtualStore: true
+
+# Oxlint provides the ESLint-compatible plugin host. These plugin paths do not
+# use the ESLint engine; keep their rules without auto-installing that peer.
+# import/order is loaded on its own by tools/oxlint/import-order.mjs because
+# the import plugin's full entrypoint also loads unrelated ESLint-only rules.
+packageExtensions:
+  '@stylistic/eslint-plugin@5.10.0':
+    peerDependenciesMeta:
+      eslint:
+        optional: true
+  'eslint-plugin-import@2.32.0':
+    peerDependenciesMeta:
+      eslint:
+        optional: true
+  'eslint-plugin-react-hooks@7.1.1':
+    peerDependenciesMeta:
+      eslint:
+        optional: true
+  '@eslint-community/eslint-utils@4.10.1':
+    peerDependenciesMeta:
+      eslint:
+        optional: true
 
 allowBuilds:
   # First-party; its postinstall only marks node_modules no-index on macOS.
