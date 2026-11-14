@@ -63,7 +63,9 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // The list opens below the trigger, as every other popup does. Laid over
+  // it (Base UI's default) it hid the field being chosen for (#624).
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<

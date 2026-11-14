@@ -1492,8 +1492,9 @@ Settled by the product owner before a period away:
   - **Golden facts:** the existing #614 golden tests pass unchanged against the
     new template, and a parity test renders invoices through a frozen copy of
     the old template (`tests/Support/Billing/Legacy`) and the new document and
-    compares every printed fact. Delete the copy and that test one release
-    after the new document ships.
+    compares every printed fact. The copy and that test were deleted on
+    2026-11-14 (#624 item 8), after the new document had been deployed for a
+    week with no regression found.
   - **Not printed today, so not lost:** the old template had no payment
     instructions and no void notice. The document adds a pay-online line (a
     portal URL, only for a collectible invoice the client can see) and a void
@@ -2174,6 +2175,26 @@ runbook overstated rollback. Decisions, made unattended and conservatively:
   comment became a labelled group; an open menu's popup is not counted by axe's
   `region` rule in the focused scripts (it is a transient widget, not page
   content).
+
+### #624 closed: the last layout residue (2026-11-14)
+
+- **A `Select` opens its list beside the trigger, not over it.** Base UI's
+  default laid the list over the trigger with the chosen option where the
+  trigger was, so the field being chosen for was hidden (Payments, "Or reuse a
+  connection"). `SelectContent` now defaults `alignItemWithTrigger` to false,
+  like every other popup; Base UI flips the list above when there is no room
+  below. A select may still pass `true`.
+- **The chart table's top clients are a list.** Each client, and "N others",
+  is its own line, and an amount never breaks. One comma-joined run of five
+  names and amounts wrapped mid-amount into a wall of text. The column's
+  minimum is 20rem below `lg`, where the table scrolls sideways anyway, and
+  18rem from `lg`, where it must fit beside six figures. With the harness's
+  66-character unbroken names a phone row is about a quarter shorter; a
+  realistic name takes one line.
+- **"Text button with no icon" stays advisory, as the end state.** Every other
+  harness finding gates (above). Gating this one means an icon on about a
+  hundred deliberately text-only buttons, a redesign rather than a fix.
+- **The frozen legacy invoice template is deleted** (item 8): see slice 12.
 
 ## Open questions
 
