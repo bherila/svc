@@ -70,18 +70,53 @@ const COLORS = {
     expenses: 'var(--revenue-expenses)',
 };
 
-function clientsLine(month: ChartMonth, currency: string | null): string {
-    const parts = month.clients.map(
-        (client) => `${client.name} ${formatMoney(client.total, currency)}`,
-    );
+/**
+ * A month's top clients, then the rest as one entry. Each is its own line in
+ * the table: one comma-joined run of names and amounts wrapped into a column
+ * a phone can spare was a wall of text, broken mid-amount (#624).
+ */
+function clientEntries(
+    month: ChartMonth,
+    currency: string | null,
+): { key: string; label: string; amount: string }[] {
+    const entries = month.clients.map((client, index) => ({
+        key: `client-${index}`,
+        label: client.name,
+        amount: formatMoney(client.total, currency),
+    }));
 
     if (month.others !== null) {
-        parts.push(
-            `${month.others.count} other${month.others.count === 1 ? '' : 's'} ${formatMoney(month.others.total, currency)}`,
-        );
+        entries.push({
+            key: 'others',
+            label: `${month.others.count} other${month.others.count === 1 ? '' : 's'}`,
+            amount: formatMoney(month.others.total, currency),
+        });
     }
 
-    return parts.join(', ');
+    return entries;
+}
+
+function TopClients({
+    entries,
+}: {
+    entries: ReturnType<typeof clientEntries>;
+}) {
+    if (entries.length === 0) {
+        return '—';
+    }
+
+    return (
+        <ul className="grid grid-cols-1 gap-1">
+            {entries.map((entry) => (
+                <li key={entry.key}>
+                    {entry.label}{' '}
+                    <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+                        {entry.amount}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
 }
 
 function MonthTooltip({
@@ -431,7 +466,10 @@ export default function RevenueChart({
                             <TableHead scope="col" className="text-right">
                                 Total
                             </TableHead>
-                            <TableHead scope="col" className="min-w-64">
+                            <TableHead
+                                scope="col"
+                                className="min-w-80 lg:min-w-72"
+                            >
                                 Top clients
                             </TableHead>
                         </TableRow>
@@ -473,8 +511,10 @@ export default function RevenueChart({
                                             : formatMoney(amount, currency)}
                                     </TableCell>
                                 ))}
-                                <TableCell className="max-w-0 min-w-64 wrap-anywhere whitespace-normal">
-                                    {clientsLine(month, currency) || '—'}
+                                <TableCell className="max-w-0 min-w-80 wrap-anywhere whitespace-normal lg:min-w-72">
+                                    <TopClients
+                                        entries={clientEntries(month, currency)}
+                                    />
                                 </TableCell>
                             </TableRow>
                         ))}

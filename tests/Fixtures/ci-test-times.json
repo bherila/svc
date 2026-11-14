@@ -197,7 +197,6 @@
     "tests/Feature/Billing/InvoiceDocumentGoldenTest.php": 12.4,
     "tests/Feature/Billing/InvoiceDocumentHoursStatementGoldenTest.php": 4.1,
     "tests/Feature/Billing/InvoiceDocumentIssuedSnapshotGoldenTest.php": 3.3,
-    "tests/Feature/Billing/InvoiceDocumentLegacyParityTest.php": 2.9,
     "tests/Feature/Billing/InvoiceDocumentReceiptsGoldenTest.php": 6.0,
     "tests/Feature/Billing/InvoiceEmailTest.php": 12.5,
     "tests/Feature/Billing/InvoiceFromTimeOverTheWebTest.php": 5.0,
