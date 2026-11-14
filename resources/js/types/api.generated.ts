@@ -390,7 +390,7 @@ export interface paths {
         /** @description Manager-only bounded billing schedules with opaque current revisions. */
         get: operations['billing_schedules.list'];
         put?: never;
-        /** @description Create a schedule without issuing. Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
+        /** @description Create a schedule without issuing. next_run_on may not precede the agreement start or fall more than two years before today (422). Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
         post: operations['billing_schedules.create'];
         delete?: never;
         options?: never;
@@ -407,7 +407,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
+        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Bills at most 24 periods per call; when the returned schedule next_run_on is still on or before today, call again to bill the rest. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
         post: operations['billing_schedules.generate'];
         delete?: never;
         options?: never;

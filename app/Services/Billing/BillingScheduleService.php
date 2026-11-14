@@ -13,12 +13,27 @@ use App\Support\Billing\PeriodClaim;
 use App\Support\Billing\PeriodClaimVerdict;
 use App\Support\Billing\PlannedBillingPeriod;
 use App\Support\Concurrency\Locks;
+use App\Support\Expenses\ExpenseRecurrence;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
 final class BillingScheduleService
 {
+    /**
+     * Periods one generation run plans and bills, at most.
+     *
+     * Every period is a collision query, a draft, its lines, an issue and
+     * possibly a queued client email, all inside one transaction holding the
+     * schedule and agreement locks. A cursor far in the past - however it got
+     * there - would otherwise bill its entire backlog in one request. The same
+     * shape as {@see ExpenseRecurrence::BATCH_LIMIT}: a run bills the oldest
+     * periods up to the limit, advances the cursor exactly past them, and the
+     * caller generates again for the rest. The cursor never points into the
+     * middle of a batch, because the batch is what was billed.
+     */
+    public const int GENERATION_BATCH_LIMIT = ExpenseRecurrence::BATCH_LIMIT;
+
     public function __construct(
         private readonly InvoiceLifecycleService $invoices,
         private readonly BillingPeriodCollisionResolver $collisions,
@@ -27,7 +42,10 @@ final class BillingScheduleService
     ) {}
 
     /**
-     * Bill every period this schedule is due for, up to and including `$through`.
+     * Bill every period this schedule is due for, up to and including `$through`,
+     * at most {@see self::GENERATION_BATCH_LIMIT} of them per run. A run that
+     * stops at the limit leaves the rest due: `next_run_on` is still on or
+     * before `$through`, and the caller generates again.
      *
      * Two passes over the same periods, under one lock and one transaction.
      * The first classifies every due period and mutates nothing; the second
@@ -121,6 +139,10 @@ final class BillingScheduleService
      * locked - {@see BillingPeriodCollisionResolver} takes no lock of its own,
      * and the plan is only good for as long as the lock the caller holds.
      *
+     * At most {@see self::GENERATION_BATCH_LIMIT} periods are planned; the
+     * cursor returned stands just past the last of them, so the rest stay due
+     * for the next run.
+     *
      * @return array{0: list<PlannedBillingPeriod>, 1: CarbonImmutable} the plan, and where the schedule
      *                                                                  stands once every period in it is billed
      *
@@ -131,7 +153,7 @@ final class BillingScheduleService
         $plan = [];
         $nextRun = CarbonImmutable::parse((string) $schedule->next_run_on);
 
-        while ($nextRun->lte($through)) {
+        while ($nextRun->lte($through) && count($plan) < self::GENERATION_BATCH_LIMIT) {
             $period = BillingPeriod::beginningAt($nextRun, (string) $schedule->cadence);
             $handover?->assertClear($period->start->toDateString(), $period->end->toDateString());
 
