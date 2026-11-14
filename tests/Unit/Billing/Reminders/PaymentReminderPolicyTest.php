@@ -66,6 +66,22 @@ final class PaymentReminderPolicyTest extends TestCase
         $this->assertFalse($decision->retry);
     }
 
+    public function test_a_person_waits_out_the_cooldown_after_the_last_reminder_sent(): void
+    {
+        $policy = new PaymentReminderPolicy;
+        $cooldown = PaymentReminderPolicy::MANUAL_COOLDOWN_MINUTES;
+        $this->assertSame(60, $cooldown);
+
+        $this->assertSame(PaymentReminderRefusal::RecentlyReminded, $policy->manual($this->facts(lastSentAt: '2030-03-15 09:01'))->refusal);
+        $this->assertSame(PaymentReminderRefusal::RecentlyReminded, $policy->manual($this->facts(lastSentAt: '2030-03-15 10:00'))->refusal);
+        $this->assertSends($policy->manual($this->facts(lastSentAt: '2030-03-15 09:00')), PaymentReminderPayLink::SvcPortal, self::PORTAL);
+        // The invoice and a reminder in flight are asked about first.
+        $this->assertSame(PaymentReminderRefusal::NotOpen, $policy->manual($this->facts(status: 'paid', lastSentAt: '2030-03-15 09:30'))->refusal);
+        $this->assertSame(PaymentReminderRefusal::InFlight, $policy->manual($this->facts(inFlight: true, lastSentAt: '2030-03-15 09:30'))->refusal);
+        // The cadence has its own rules and is not held by a person's reminder.
+        $this->assertNotSame(PaymentReminderRefusal::RecentlyReminded, $policy->automatic($this->facts(lastSentAt: '2030-03-15 09:30'))->refusal);
+    }
+
     public function test_the_invoice_itself_is_asked_about_before_a_reminder_in_flight(): void
     {
         $this->assertSame(PaymentReminderRefusal::NotOpen, (new PaymentReminderPolicy)->manual($this->facts(status: 'paid', inFlight: true))->refusal);
@@ -299,6 +315,7 @@ final class PaymentReminderPolicyTest extends TestCase
         ?string $enabledAt = '2030-01-01 12:00',
         array $claims = [],
         bool $inFlight = false,
+        ?string $lastSentAt = null,
     ): PaymentReminderFacts {
         $zone = 'America/New_York';
         $date = static fn (?string $value): ?CarbonImmutable => $value === null ? null : CarbonImmutable::parse($value, $zone);
@@ -315,6 +332,7 @@ final class PaymentReminderPolicyTest extends TestCase
             $date($enabledAt),
             $claims,
             $inFlight,
+            $date($lastSentAt),
         );
     }
 }

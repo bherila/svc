@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiResponseSchemaCatalog;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\Reminders\PaymentReminderPolicy;
 use App\Support\Billing\Reminders\PaymentReminderRefusal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
@@ -133,6 +134,49 @@ final class PaymentReminderApiTest extends TestCase
         ]);
         $this->rest('invoices.send_reminder', $workspace, $path, ['expected_version' => $version, 'confirm' => true], 'synthetic-busy')->assertConflict();
         Mail::assertNothingSent();
+    }
+
+    #[DataProvider('transports')]
+    public function test_a_second_reminder_waits_out_the_cooldown(string $transport): void
+    {
+        [$workspace, $owner, , $invoice] = $this->reminderFixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $path = ['invoice_id' => $invoice->public_id];
+        $body = ['expected_version' => AgentApiVersion::for($invoice), 'confirm' => true];
+        $this->assertSame('sent', $this->success($transport, 'invoices.send_reminder', $workspace, $path, $body, 'synthetic-first')['data']['status']);
+
+        $this->failure($transport, 'invoices.send_reminder', $workspace, $path, $body, 'synthetic-again', 422);
+        $list = $this->success($transport, 'invoices.reminders.list', $workspace, $path);
+        $this->assertFalse($list['data']['manual']['available']);
+        $this->assertSame('recently_reminded', $list['data']['manual']['refusal']['code']);
+        Mail::assertSentCount(1);
+
+        $this->travel(PaymentReminderPolicy::MANUAL_COOLDOWN_MINUTES + 1)->minutes();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $this->assertSame('sent', $this->success($transport, 'invoices.send_reminder', $workspace, $path, $body, 'synthetic-later')['data']['status']);
+        Mail::assertSentCount(2);
+    }
+
+    public function test_a_reminder_past_the_workspaces_daily_recipient_limit_is_refused(): void
+    {
+        config(['svc.client_email.daily_recipients' => 1]);
+        [$workspace, $owner, , $invoice] = $this->reminderFixture();
+        $this->actingAsMcp($owner, self::SCOPES);
+        InvoiceReminderLog::query()->create([
+            'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id, 'origin' => 'manual', 'channel' => 'email', 'pay_link' => 'none',
+            'recipients' => ['billing@reminders.example.test'], 'subject' => 'Synthetic', 'currency' => 'USD', 'amount_due' => 1, 'status' => 'failed',
+            'triggered_by' => 'website', 'queued_at' => now(), 'claimed_at' => now(),
+        ]);
+        $path = ['invoice_id' => $invoice->public_id];
+        $body = ['expected_version' => AgentApiVersion::for($invoice), 'confirm' => true];
+        // A failed reminder addressed nobody, so it does not count.
+        $this->assertSame('sent', $this->success('rest', 'invoices.send_reminder', $workspace, $path, $body, 'synthetic-within')['data']['status']);
+
+        $this->travel(PaymentReminderPolicy::MANUAL_COOLDOWN_MINUTES + 1)->minutes();
+        $this->actingAsMcp($owner, self::SCOPES);
+        $this->rest('invoices.send_reminder', $workspace, $path, $body, 'synthetic-over')
+            ->assertUnprocessable()->assertJsonPath('message', PaymentReminderRefusal::DailyRecipientLimit->message());
+        Mail::assertSentCount(1);
     }
 
     public function test_only_managers_of_the_invoices_own_workspace_reach_reminders(): void

@@ -303,7 +303,8 @@ final class AgentMutationIntegrityTest extends TestCase
         $registeredVersion = AgentApiVersion::for($invoice->fresh());
         $this->assertNotSame($issuedVersion, $registeredVersion);
 
-        app(InvoiceEmailService::class)->send($invoice, $draft, $workspace);
+        // A second, different message: an identical one inside the resend cooldown is refused.
+        app(InvoiceEmailService::class)->send($invoice, InvoiceEmailDraft::of(['client@example.test'], [], 'Invoice', 'A covering note.'), $workspace);
         $deliveredVersion = AgentApiVersion::for($invoice->fresh());
         $this->assertNotSame($registeredVersion, $deliveredVersion);
 

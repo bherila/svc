@@ -86,6 +86,12 @@ return [
         'csp_report_uri' => env('SVC_CSP_REPORT_URI', '/api/csp-reports'),
     ],
 
+    // Recipients a workspace may email by hand (invoice sends and payment reminders) in a
+    // rolling 24 hours; see App\Services\Billing\ManualClientEmailBudget. Unset keeps 300.
+    'client_email' => [
+        'daily_recipients' => env('SVC_CLIENT_EMAIL_DAILY_RECIPIENTS'),
+    ],
+
     // Attempts per minute for the named limiters in App\Support\Http\RateLimits.
     // Unset (or not a positive number) keeps the generous default.
     'rate_limits' => [
