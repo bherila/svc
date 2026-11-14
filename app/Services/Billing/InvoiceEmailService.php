@@ -642,7 +642,7 @@ final class InvoiceEmailService
     private function assertNotARepeat(ClientInvoice $invoice, InvoiceEmailDraft $draft): void
     {
         $normalise = static function (array $addresses): array {
-            $addresses = array_map(static fn (mixed $address): string => strtolower(trim((string) $address)), $addresses);
+            $addresses = array_map(static fn (string $address): string => strtolower(trim($address)), array_filter($addresses, is_string(...)));
             sort($addresses);
 
             return array_values(array_unique($addresses));
