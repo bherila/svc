@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Support;
 
+use App\Console\Commands\Billing\RehearseGenerationCommand;
 use App\Console\Commands\Billing\ReplayInvoicesCommand;
 use App\Services\Billing\BillingMaintenance;
 use App\Support\Concurrency\LockMode;
@@ -115,7 +116,8 @@ final class MaintenanceLockRecorderTest extends TestCase
 
             $second->beginTransaction();
             $second->table('client_time_entries')->tap(Locks::forShare());
-            // Its own exemption question: B's transaction holds no maintenance lock.
+            // An exemption named for B is B's, and leaves A's alone.
+            LockOrderRecorder::maintenanceExclusive(RehearseGenerationCommand::class, 'recorder_second');
             $commits ? $second->commit() : $second->rollBack();
 
             $first->table('client_invoices')->tap(Locks::forUpdate());
@@ -129,10 +131,37 @@ final class MaintenanceLockRecorderTest extends TestCase
                 [LockResource::ClientTimeEntry],
                 [LockResource::ClientCompany, LockResource::ClientInvoice],
             ], LockOrderRecorder::sequences());
-            $this->assertSame([null, ReplayInvoicesCommand::class], LockOrderRecorder::maintenanceExemptions());
+            $this->assertSame([RehearseGenerationCommand::class, ReplayInvoicesCommand::class], LockOrderRecorder::maintenanceExemptions());
         } finally {
             LockOrderRecorder::stop();
             DB::purge('recorder_second');
+        }
+    }
+
+    /**
+     * Recording started inside a transaction already open - as RefreshDatabase
+     * opens one around every test - takes that depth as the floor: the
+     * transaction the code under test opens is one sequence, and ends at its
+     * own commit, so a lock after it is a sequence of its own.
+     */
+    public function test_the_floor_is_the_depth_recording_started_at(): void
+    {
+        DB::beginTransaction();
+        try {
+            LockOrderRecorder::start();
+            DB::transaction(static function (): void {
+                DB::table('client_companies')->tap(Locks::forUpdate());
+                DB::table('client_invoices')->tap(Locks::forUpdate());
+            });
+            DB::table('client_time_entries')->tap(Locks::forUpdate());
+
+            $this->assertSame([
+                [LockResource::ClientCompany, LockResource::ClientInvoice],
+                [LockResource::ClientTimeEntry],
+            ], LockOrderRecorder::sequences());
+        } finally {
+            LockOrderRecorder::stop();
+            DB::rollBack();
         }
     }
 

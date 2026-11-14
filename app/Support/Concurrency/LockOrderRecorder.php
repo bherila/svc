@@ -131,6 +131,7 @@ final class LockOrderRecorder
     {
         // A frame exists only during active recording; outside-frame calls
         // cannot assign an exemption to any transaction.
+        /** @infection-ignore-all With recording off no frame exists, so marking reaches nothing either way; returning first only keeps the database facade untouched outside a recording (BillingMaintenanceProtocolTest mocks it). */
         if (! self::$recording) {
             return;
         }
