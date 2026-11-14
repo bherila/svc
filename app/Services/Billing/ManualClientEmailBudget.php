@@ -58,13 +58,13 @@ final class ManualClientEmailBudget
         return $count(ClientInvoiceEmailDelivery::query()
             ->where('workspace_id', $workspaceId)
             ->where('origin', 'manual')
-            ->where('status', '!=', 'failed')
+            ->whereIn('status', ['pending', 'sending', 'sent'])
             ->where('queued_at', '>=', $since)
             ->pluck('recipients'))
             + $count(InvoiceReminderLog::query()
                 ->where('workspace_id', $workspaceId)
                 ->where('origin', PaymentReminderOrigin::Manual->value)
-                ->whereNotIn('status', [PaymentReminderStatus::Failed->value, PaymentReminderStatus::Cancelled->value])
+                ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value, PaymentReminderStatus::Sent->value])
                 ->where('queued_at', '>=', $since)
                 ->pluck('recipients'));
     }
