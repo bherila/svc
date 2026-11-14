@@ -147,10 +147,20 @@ final class IssueTimeLockOrderTest extends TestCase
             $heldSession->start();
             $this->awaitFile($heldSession, $paused);
             $otherSession->start();
-            // Until the other session waits on a lock the held one has, or finishes.
+            // Until the other session waits on a lock the held one has, or
+            // finishes. The process is checked often; the lock view at most
+            // once a second: MariaDB refreshes `innodb_trx` only after 100ms
+            // in which nobody read it, so polling it faster freezes it for
+            // every other test on the server too.
             $deadline = microtime(true) + 10;
-            while ($otherSession->isRunning() && ! $this->aSessionWaits() && microtime(true) < $deadline) {
+            $lastLook = 0.0;
+            $waits = false;
+            while ($otherSession->isRunning() && ! $waits && microtime(true) < $deadline) {
                 usleep(10_000);
+                if (microtime(true) - $lastLook >= 1.0) {
+                    $lastLook = microtime(true);
+                    $waits = $this->aSessionWaits();
+                }
             }
             $otherWaited = $otherSession->isRunning();
             $this->assertTrue(touch($release), 'Could not release the held session.');
@@ -229,9 +239,14 @@ final class IssueTimeLockOrderTest extends TestCase
         return compact('workspace', 'company', 'contact', 'draft', 'linked', 'disputed', 'adHoc', 'heldOnAdHoc');
     }
 
+    /** A session of this test's own probe database waits on a row lock - never another test's. */
     private function aSessionWaits(): bool
     {
-        return DB::table('information_schema.innodb_trx')->where('trx_state', 'LOCK WAIT')->exists();
+        return DB::table('information_schema.innodb_trx as trx')
+            ->join('information_schema.processlist as session', 'session.id', '=', 'trx.trx_mysql_thread_id')
+            ->where('trx.trx_state', 'LOCK WAIT')
+            ->where('session.db', config('database.connections.issue_time_lock.database'))
+            ->exists();
     }
 
     /** @param array<string, mixed> $input */
