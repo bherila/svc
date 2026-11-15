@@ -522,10 +522,40 @@ of a table its transaction has already locked, keyed `opener > reader table
 #shape` - the shape a hash of the statement with its values taken out - in
 `tests/Concerns/RecordsSnapshotReads.php`, and requires the set to equal
 `tests/Fixtures/Concurrency/snapshot-reads.txt`. A second, different read in
-a method already listed is therefore a new entry. Many entries predate the
+a method already listed is therefore a new entry. Some entries predate the
 check and are unreviewed; those with a `# reason` were reviewed, issue's among
 them (#661). A new one fails until it is made a locking read, refused, or
 pinned with the reason it cannot change money.
+
+The three generation openers (`generateMonthlyInvoiceForWorkPeriod`,
+`BillingScheduleService::generateDue`, `generateInterimOverageInvoice`) are
+reviewed in full (#718). Their reasons rest on two facts:
+
+- **The snapshot follows the agreement lock.** Each generator opens its own
+  transaction and takes the maintenance share lock and the agreement row lock
+  before its first ordinary read, and InnoDB fixes the snapshot at that first
+  ordinary read. So the agreement's own invoices, lines and row are read as
+  every writer that holds that lock left them: the generators, void, discard
+  and reopen. A hand edit reaches only an ad-hoc draft.
+- **The issue re-reads what can still move.** Time, expenses, other agreements
+  and the company's credit have writers that do not take the agreement lock.
+  Generation's reads of them are either checked against the row's lock where
+  they are written (`attach`, `pricedEntry`, the expense claim's locking
+  re-read) or re-read under lock at issue:
+  - the pricing, held-work and catch-up bases;
+  - the segment checks over the agreements `lockHandoverSegments()` locks;
+  - the interim claim's ledger;
+  - `lockForSpending()` and the credit cap.
+
+One gap is not the snapshot's. A schedule period's handover check can miss a
+successor activated after generation's snapshot, because activation takes the
+company lock rather than the outgoing agreement's. This is reachable only when
+the outgoing agreement is not active: activation refuses a successor that
+overlaps an active agreement in its scope (`assertNoOverlappingActiveAgreement`).
+A schedule, though, generates whatever its agreement's status. A successor
+activated just after generation commits meets the same invoice, since
+activation does not check the outgoing agreement's invoices, so a lock in the
+generator would not close it.
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
@@ -741,7 +771,10 @@ later work for a later invoice, not a reason to refuse this one.
 `PricingBasisChanged` - after the more specific checks have had their say, so
 work now outside the agreement's segment is reported as that - telling the
 owner to regenerate, review and issue. A cadence draft with no basis is refused
-with `PricingBasisMissing`. Where the reads sit in the issue's lock order:
+with `PricingBasisMissing`. A reopened invoice's reissue is held to its basis
+too. The reopen regenerates the draft, which records a fresh basis, and the
+reopen's own charge check (`assertChargeUnchanged`) asks only whether a later
+invoice was sized against it. Where the reads sit in the issue's lock order:
 
 - The agreement's invoices and their re-carried lines are read with share
   locks at the time phase, after the invoice and lines they rank behind; every

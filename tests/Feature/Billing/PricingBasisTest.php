@@ -79,6 +79,32 @@ final class PricingBasisTest extends TestCase
     }
 
     /**
+     * A reopen regenerates the invoice, which records a fresh basis, and the
+     * reissue is held to it as any draft's issue is. Its own charge checks ask
+     * only whether a later invoice was sized against it, so without this a
+     * reopened draft reissued after a priced row moved charged the row as it
+     * was (#718).
+     */
+    public function test_a_reopened_draft_whose_priced_time_has_moved_is_not_reissued(): void
+    {
+        $entry = $this->entry('2026-01-10', 900);
+        $february = $this->issue($this->generate('2026-02-01'));
+        $reopened = app(InvoiceLifecycleService::class)->reopen($february->fresh(), 'Synthetic correction', $this->workspace);
+        $this->assertSame('draft', $reopened->fresh()->status);
+        $this->assertNotNull($reopened->fresh()->pricing_basis);
+
+        $this->assertSame(600, $entry->fresh()->minutes);
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['minutes' => 300, 'lock_version' => DB::raw('lock_version + 1')]);
+
+        try {
+            $this->issue($reopened);
+            $this->fail('A reopened draft priced from fifteen hours was reissued against ten.');
+        } catch (PricingBasisChanged) {
+        }
+        $this->assertSame('draft', $reopened->fresh()->status);
+    }
+
+    /**
      * Work logged after the draft was priced is later work: a later invoice
      * bills it, and it does not make this draft's charges wrong.
      */
