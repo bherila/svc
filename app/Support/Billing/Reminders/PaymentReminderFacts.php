@@ -16,6 +16,7 @@ final readonly class PaymentReminderFacts
     /**
      * @param  list<string>  $recipients
      * @param  list<PaymentReminderClaim>  $claims  the automatic steps already claimed
+     * @param  CarbonImmutable|null  $lastSentAt  when any reminder for this invoice last left, if one has
      */
     public function __construct(
         public string $invoiceStatus,
@@ -29,6 +30,7 @@ final readonly class PaymentReminderFacts
         public ?CarbonImmutable $cadenceEnabledAt,
         public array $claims,
         public bool $inFlight,
+        public ?CarbonImmutable $lastSentAt = null,
     ) {}
 
     public function today(): CarbonImmutable

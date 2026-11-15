@@ -67,6 +67,14 @@ final class InvoiceEmailService
 {
     private const MAX_AUTOMATIC_ATTEMPTS = 5;
 
+    /**
+     * Minutes during which a person's send that repeats the last one - the same
+     * recipients, subject and message for the same revision - is refused. A
+     * changed recipient list, a reworded message or a new revision of the
+     * invoice is a different send and goes at once.
+     */
+    public const int REPEAT_SEND_COOLDOWN_MINUTES = 15;
+
     public function __construct(
         private readonly WorkspaceAuthorization $workspaceAuthorization,
         private readonly InvoiceDocumentService $documents,
@@ -74,6 +82,7 @@ final class InvoiceEmailService
         private readonly PortalInvoiceQuery $portalInvoices,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
         private readonly ?SquareCollectionGuard $squareCollection = null,
+        private readonly ManualClientEmailBudget $budget = new ManualClientEmailBudget,
     ) {}
 
     /**
@@ -572,6 +581,12 @@ final class InvoiceEmailService
                 if ($inFlight) {
                     throw new DomainException('Another client delivery is already in progress for this invoice.');
                 }
+                if ($origin === 'manual') {
+                    $this->assertNotARepeat($locked, $draft);
+                    if (! $this->budget->allows($locked->workspace_id, count($draft->recipients))) {
+                        throw new DomainException('This workspace has reached its limit of '.$this->budget->limit().' recipients emailed by hand in the last 24 hours. Try again later.');
+                    }
+                }
 
                 $delivery = $locked->emailDeliveries()->create([
                     'workspace_id' => $locked->workspace_id,
@@ -616,6 +631,35 @@ final class InvoiceEmailService
             $this->assertMatchingDelivery($existing, $current, $draft, $origin);
 
             return [$existing, $current];
+        }
+    }
+
+    /**
+     * Refuse a send identical to one this invoice sent within
+     * {@see self::REPEAT_SEND_COOLDOWN_MINUTES}. The invoice is locked, so two
+     * identical requests cannot both pass.
+     */
+    private function assertNotARepeat(ClientInvoice $invoice, InvoiceEmailDraft $draft): void
+    {
+        $normalise = static function (array $addresses): array {
+            $addresses = array_map(static fn (string $address): string => strtolower(trim($address)), array_filter($addresses, is_string(...)));
+            sort($addresses);
+
+            return array_values(array_unique($addresses));
+        };
+        $recipients = $normalise($draft->recipients);
+        $recent = $invoice->emailDeliveries()
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('origin', 'manual')
+            ->where('status', 'sent')
+            ->where('invoice_revision', $invoice->document_revision)
+            ->where('queued_at', '>=', $this->clock->instant()->subMinutes(self::REPEAT_SEND_COOLDOWN_MINUTES))
+            ->get(['id', 'recipients', 'subject', 'body']);
+        foreach ($recent as $sent) {
+            if ($normalise($sent->recipients) === $recipients && $sent->subject === $draft->subject && $sent->body === $draft->body) {
+                throw new DomainException('This invoice was just emailed to the same recipients with the same message. Wait '
+                    .self::REPEAT_SEND_COOLDOWN_MINUTES.' minutes before sending it again, or change the recipients or the message.');
+            }
         }
     }
 

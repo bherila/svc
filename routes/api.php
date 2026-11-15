@@ -46,6 +46,7 @@ use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
 use App\Http\Middleware\ExpectSelfRevokingOAuthResource;
+use App\Http\Middleware\LimitMcpBatchSize;
 use App\Http\Middleware\NoStoreAgentResponse;
 use App\Http\Middleware\ThrottleOuterAgentRequests;
 use App\Models\Workspace;
@@ -476,5 +477,5 @@ Route::options('/v1/mcp', static fn () => response()->noContent())
     ->middleware([McpHttpSecurityMiddleware::class, 'throttle:60,1'])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class.':mcp', 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class.':mcp', 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', LimitMcpBatchSize::class, NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');

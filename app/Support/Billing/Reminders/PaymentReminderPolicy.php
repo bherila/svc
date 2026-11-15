@@ -38,13 +38,24 @@ final class PaymentReminderPolicy
 
     public const int SENDING_ENDS_AT_HOUR = 17;
 
+    /**
+     * Minutes after a reminder leaves before a person may send another for the
+     * same invoice. The recipients and the message are the client's and SVC's,
+     * so a resend inside this window can only repeat what the client was just
+     * sent; it stops a loop, or an agent retrying with fresh keys, from
+     * filling the client's inbox.
+     */
+    public const int MANUAL_COOLDOWN_MINUTES = 60;
+
     /** Square statuses with money still to pay on Square's page. */
     public const array OPEN_SQUARE_STATUSES = ['UNPAID', 'PARTIALLY_PAID'];
 
     /** A person asked: everything but the cadence's own rules. */
     public function manual(PaymentReminderFacts $facts): PaymentReminderDecision
     {
-        $refusal = $this->invoiceRefusal($facts) ?? ($facts->inFlight ? PaymentReminderRefusal::InFlight : null);
+        $refusal = $this->invoiceRefusal($facts)
+            ?? ($facts->inFlight ? PaymentReminderRefusal::InFlight : null)
+            ?? ($this->recentlySent($facts) ? PaymentReminderRefusal::RecentlyReminded : null);
 
         return $refusal !== null ? PaymentReminderDecision::refuse($refusal) : $this->payLink($facts);
     }
@@ -173,6 +184,12 @@ final class PaymentReminderPolicy
             $attemptNumber <= 1 => $now->addMinutes(30),
             default => $now->addHours(4),
         };
+    }
+
+    private function recentlySent(PaymentReminderFacts $facts): bool
+    {
+        return $facts->lastSentAt !== null
+            && $facts->lastSentAt->gt($facts->now->subMinutes(self::MANUAL_COOLDOWN_MINUTES));
     }
 
     private function invoiceRefusal(PaymentReminderFacts $facts): ?PaymentReminderRefusal

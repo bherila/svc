@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\InvoiceDocumentService;
+use App\Services\Billing\ManualClientEmailBudget;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\InvoiceStatus;
@@ -20,6 +21,7 @@ use App\Support\Billing\Reminders\PaymentReminderFacts;
 use App\Support\Billing\Reminders\PaymentReminderOrigin;
 use App\Support\Billing\Reminders\PaymentReminderPayLink;
 use App\Support\Billing\Reminders\PaymentReminderPolicy;
+use App\Support\Billing\Reminders\PaymentReminderRefusal;
 use App\Support\Billing\Reminders\PaymentReminderStatus;
 use App\Support\Billing\Reminders\PaymentReminderStep;
 use App\Support\Billing\Reminders\PaymentReminderTrigger;
@@ -56,6 +58,7 @@ final class PaymentReminderService
         private readonly InvoiceDocumentService $documents,
         private readonly ClientActivityRecorder $activities,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
+        private readonly ManualClientEmailBudget $budget = new ManualClientEmailBudget,
     ) {}
 
     /**
@@ -81,6 +84,9 @@ final class PaymentReminderService
             $decision = $this->policy->manual($facts);
             if ($decision->refusal !== null) {
                 throw PaymentReminderRefused::because($decision->refusal);
+            }
+            if (! $this->budget->allows($workspace->id, count($facts->recipients))) {
+                throw PaymentReminderRefused::because(PaymentReminderRefusal::DailyRecipientLimit);
             }
 
             return InvoiceReminderLog::query()->create([

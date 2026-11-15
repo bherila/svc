@@ -3,9 +3,15 @@
 namespace Tests\Feature\Http;
 
 use App\Models\User;
+use App\Models\Workspace;
+use App\Models\WorkspaceMembership;
 use App\Support\Http\RateLimits;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Routing\Route as RoutingRoute;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -80,6 +86,85 @@ final class RateLimitsTest extends TestCase
         $this->actingAs($person)->postJson($path)->assertStatus(429);
     }
 
+    public function test_payment_keys_also_bucket_by_a_workspace_the_person_manages(): void
+    {
+        $workspace = Workspace::query()->create(['name' => 'Synthetic limiter workspace', 'slug' => 'synthetic-limiter']);
+        $admin = User::factory()->create();
+        $member = User::factory()->create();
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $admin->id, 'role' => 'admin']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $member->id, 'role' => 'member']);
+
+        $keys = RateLimiter::limiter('payment-keys')($this->routed($admin, $workspace->public_id));
+        $this->assertSame(['payment-keys|user:'.$admin->id, 'payment-keys|workspace:'.$workspace->id], array_map(static fn (Limit $limit): string => $limit->key, $keys));
+        $this->assertSame([5, 5], array_map(static fn (Limit $limit): int => $limit->maxAttempts, $keys));
+
+        // A member, or anyone naming a workspace they do not manage, draws only on their own bucket.
+        foreach ([[$member, $workspace->public_id], [$admin, 'not-a-uuid'], [$admin, (string) Str::uuid()]] as [$person, $key]) {
+            $limits = RateLimiter::limiter('payment-keys')($this->routed($person, $key));
+            $this->assertSame(['payment-keys|user:'.$person->id], array_map(static fn (Limit $limit): string => $limit->key, $limits), $key);
+        }
+    }
+
+    public function test_payment_key_routes_answer_429_per_person_and_per_managed_workspace(): void
+    {
+        config(['svc.rate_limits.payment-keys' => 2]);
+        $workspace = Workspace::query()->create(['name' => 'Synthetic keys workspace', 'slug' => 'synthetic-keys']);
+        $owner = User::factory()->create();
+        $admin = User::factory()->create();
+        $outsider = User::factory()->create();
+        foreach ([[$owner, 'owner'], [$admin, 'admin']] as [$person, $role]) {
+            WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $person->id, 'role' => $role]);
+        }
+        $path = "/workspaces/{$workspace->public_id}/payments/stripe";
+
+        // An outsider spends only their own bucket, so they cannot lock the workspace's admins out.
+        $this->actingAs($outsider)->post($path);
+        $this->actingAs($outsider)->post($path);
+        $this->actingAs($outsider)->post($path)->assertStatus(429);
+
+        $this->actingAs($owner)->post($path.'/webhook-check');
+        $this->actingAs($owner)->post($path.'/reuse');
+        $this->actingAs($owner)->post($path)->assertStatus(429)->assertHeader('Retry-After');
+        // The workspace's bucket is spent too, so its other admin waits as well.
+        $this->actingAs($admin)->post($path.'/webhook-fix')->assertStatus(429);
+        // A person with no workspace bucket spent is still served elsewhere.
+        $this->assertNotSame(429, $this->actingAs($admin)->post('/workspaces/'.Str::uuid().'/payments/stripe')->status());
+    }
+
+    public function test_document_routes_answer_429_after_the_ceiling_per_person(): void
+    {
+        config(['svc.rate_limits.documents' => 2]);
+        $person = User::factory()->create();
+        $other = User::factory()->create();
+        $path = '/workspaces/'.Str::uuid().'/invoices/'.Str::uuid().'/pdf';
+
+        $this->actingAs($person)->get($path);
+        $this->actingAs($person)->get('/workspaces/'.Str::uuid().'/timesheet/export');
+        $this->actingAs($person)->get($path)->assertStatus(429);
+        $this->assertNotSame(429, $this->actingAs($other)->get($path)->status());
+    }
+
+    public function test_costly_routes_carry_their_limiter(): void
+    {
+        $expected = [
+            'workspaces.payments.store' => 'throttle:payment-keys',
+            'workspaces.payments.reuse' => 'throttle:payment-keys',
+            'workspaces.payments.destroy' => 'throttle:payment-keys',
+            'workspaces.payments.webhook.check' => 'throttle:payment-keys',
+            'workspaces.payments.webhook.fix' => 'throttle:payment-keys',
+            'svc.billing.invoices.pdf' => 'throttle:documents',
+            'clients.proforma' => 'throttle:documents',
+            'workspaces.timesheet.export' => 'throttle:documents',
+            'workspaces.dashboard' => 'throttle:revenue',
+            'clients.index' => 'throttle:revenue',
+        ];
+        foreach ($expected as $name => $middleware) {
+            $route = Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, $name);
+            $this->assertContains($middleware, $route->gatherMiddleware(), $name);
+        }
+    }
+
     public function test_shared_project_invitation_decisions_answer_429_after_the_ceiling(): void
     {
         config(['svc.rate_limits.invitations' => 2]);
@@ -134,5 +219,17 @@ final class RateLimitsTest extends TestCase
             $this->assertSame($isWrite, in_array('throttle:portal-writes', $middleware, true), $route->uri());
         }
         $this->assertGreaterThan(20, $portal);
+    }
+
+    private function routed(User $user, string $workspace): Request
+    {
+        $request = Request::create('/x', 'POST', server: ['REMOTE_ADDR' => '198.51.100.7']);
+        $request->setUserResolver(static fn (): User => $user);
+        $route = new RoutingRoute('POST', '/workspaces/{workspace}/payments/{processor}', []);
+        $route->bind($request);
+        $route->setParameter('workspace', $workspace);
+        $request->setRouteResolver(static fn (): RoutingRoute => $route);
+
+        return $request;
     }
 }

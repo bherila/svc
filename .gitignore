@@ -12,6 +12,13 @@ node_modules/
 /storage/*.key
 /storage/pail
 /vendor
+# Transient: scripts/cloud/vendor-bundle.sh moves the old vendor/ aside here
+# while swapping in a new one, and removes it on exit.
+/vendor.replaced.*
+# Transient: the same script downloads and unpacks the bundle here, as a
+# sibling of vendor/ so the final move is an atomic rename rather than a
+# cross-filesystem copy. Removed on exit.
+/.vendor-bundle-stage.*
 .env
 .env.backup
 .env.production

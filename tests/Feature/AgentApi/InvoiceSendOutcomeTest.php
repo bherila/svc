@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceEmailDelivery;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\InvoiceEmailService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\AgentApi\AgentApiVersion;
@@ -207,7 +208,8 @@ final class InvoiceSendOutcomeTest extends TestCase
 
         try {
             DB::transaction(function () use ($workspace, $invoice): void {
-                $pending = $this->send('rest', $workspace, $invoice, $this->body($invoice->fresh()), 'synthetic-outer-rollback');
+                // A different message: an identical resend inside the cooldown is refused before this point.
+                $pending = $this->send('rest', $workspace, $invoice, [...$this->body($invoice->fresh()), 'message' => 'Synthetic second note'], 'synthetic-outer-rollback');
                 $this->assertSame('pending', $pending['delivery']['status']);
                 throw new \RuntimeException('Synthetic rollback');
             });
@@ -217,6 +219,44 @@ final class InvoiceSendOutcomeTest extends TestCase
         $this->assertSame(1, ClientInvoiceEmailDelivery::query()->count());
         $this->assertSame(0, AgentMutationReceipt::query()->where('idempotency_key', 'synthetic-outer-rollback')->count());
         Mail::assertSent(InvoiceMail::class, 1);
+    }
+
+    public function test_an_identical_resend_waits_out_the_cooldown_and_a_changed_one_goes(): void
+    {
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, $this->body($invoice), 'synthetic-first-send')['delivery']['status']);
+
+        $repeat = $this->postJson($this->url($workspace, $invoice), $this->body($invoice->fresh()), ['Idempotency-Key' => 'synthetic-repeat-send'])->assertUnprocessable();
+        $this->assertStringContainsString('same recipients with the same message', (string) $repeat->json('message'));
+        $mcp = $this->callTool($this->initialize(), 'invoices.send', ['workspace_id' => $workspace->public_id, 'invoice_id' => $invoice->public_id, 'idempotency_key' => 'synthetic-repeat-mcp', ...$this->body($invoice->fresh())]);
+        $this->assertTrue($mcp['result']['isError'] ?? false, json_encode($mcp));
+        $this->assertStringContainsString('same recipients with the same message', json_encode($mcp, JSON_THROW_ON_ERROR));
+        // Recipients compared as a set, whatever their case or order.
+        $this->postJson($this->url($workspace, $invoice), [...$this->body($invoice->fresh()), 'recipients' => ['SYNTHETIC-billing@example.test']], ['Idempotency-Key' => 'synthetic-repeat-case'])->assertUnprocessable();
+
+        $added = [...$this->body($invoice->fresh()), 'recipients' => ['synthetic-billing@example.test', 'synthetic-second@example.test']];
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, $added, 'synthetic-added-recipient')['delivery']['status']);
+
+        $this->travel(InvoiceEmailService::REPEAT_SEND_COOLDOWN_MINUTES + 1)->minutes();
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, $this->body($invoice->fresh()), 'synthetic-after-cooldown')['delivery']['status']);
+        $this->assertSame(3, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('status', 'sent')->count());
+    }
+
+    public function test_a_workspace_cannot_email_more_recipients_by_hand_than_its_daily_limit(): void
+    {
+        config(['svc.client_email.daily_recipients' => 3]);
+        [$owner, $workspace, $invoice] = $this->fixture();
+        $this->actingAsMcp($owner, ['mcp:use', AgentApiScopes::BILLING_DELIVER]);
+        $two = ['synthetic-one@example.test', 'synthetic-two@example.test'];
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, [...$this->body($invoice), 'recipients' => $two], 'synthetic-budget-1')['delivery']['status']);
+
+        $over = $this->postJson($this->url($workspace, $invoice), [...$this->body($invoice->fresh()), 'recipients' => ['synthetic-three@example.test', 'synthetic-four@example.test']], ['Idempotency-Key' => 'synthetic-budget-2'])->assertUnprocessable();
+        $this->assertStringContainsString('limit of 3 recipients', (string) $over->json('message'));
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, [...$this->body($invoice->fresh()), 'recipients' => ['synthetic-three@example.test']], 'synthetic-budget-3')['delivery']['status']);
+
+        $this->travel(25)->hours();
+        $this->assertSame('sent', $this->send('rest', $workspace, $invoice, [...$this->body($invoice->fresh()), 'recipients' => $two], 'synthetic-budget-4')['delivery']['status']);
     }
 
     public function test_legacy_or_foreign_delivery_identity_never_projects_an_unrelated_delivery(): void

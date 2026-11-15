@@ -6,34 +6,89 @@ name: Cloud vendor bundle
 # manual permission grant. The proxy does serve release assets of the
 # session's own repository, so this workflow builds vendor/ for each
 # composer.lock and uploads it as vendor-<sha256 of composer.lock>.tar.zst to a
-# DRAFT release tagged cloud-vendor. The SessionStart hook
-# (cloud-repo-bootstrap, from the cloud environment's setup script) downloads
-# the bundle that matches the checkout.
+# DRAFT release tagged cloud-vendor. scripts/cloud/vendor-bundle.sh (run by the
+# SessionStart hook in .claude/settings.json, before cloud-repo-bootstrap)
+# downloads the bundle that matches the checkout and verifies where it came
+# from before unpacking it.
 #
 # The release stays a draft on purpose: a draft creates no tag and never fires
 # `release: published`, so it cannot trigger release or deploy workflows.
 # Never publish it.
+#
+# WHY ONLY main MAY PUBLISH
+# -------------------------
+# Every asset here is keyed on the *public* sha256 of a composer.lock, and a
+# cloud session installs the matching one automatically at SessionStart and
+# then runs Composer over it. An asset that any branch could replace is
+# therefore code execution in somebody else's session. So the upload path is a
+# separate job that only runs on refs/heads/main; a push to any other ref gets
+# the `validate` job, which builds and packs the same bundle with
+# `contents: read` and throws it away.
+#
+# Be clear about what that does and does not buy. It removes this workflow as
+# a publication path from non-default refs -- including the accidental case,
+# where pushing an unrelated branch with a different lock quietly replaces what
+# a maintainer's session installs. It does not by itself stop someone with push
+# access from authoring a *different* workflow on their branch (or editing this
+# one there) that requests `contents: write`; only the repository's "Workflow permissions" setting and
+# rulesets can do that. The independent, immutable Actions artifact described
+# below makes such a replacement unusable; repository settings are still needed
+# to prevent the write itself.
+#
+# WHY EVERY UPLOAD RECORDS WHO WROTE IT
+# -------------------------------------
+# Restricting publication going forward does nothing about an asset already on
+# the release, and every asset there before this scheme was uploadable by any ref. So the
+# publish job stamps each asset with a compact label locating the run and proof
+# that produced it, and rebuilds anything that does not carry one. A label on a
+# mutable release asset is still only a claim, so the same trusted run also
+# uploads a small immutable Actions artifact containing the full repository,
+# workflow, ref, commits and bundle digest contract. The installer verifies that
+# run-scoped proof and requires the release bytes to match it before unpacking.
+# A branch may delete the proof (denial of service), but it cannot change or
+# recreate an artifact inside the trusted run.
 
 on:
   push:
     paths:
       - composer.lock
       - .github/workflows/cloud-vendor.yml
+      - scripts/cloud/vendor-bundle-refresh-plan.sh
+      - scripts/cloud/vendor-bundle-artifact-meta.sh
+      - scripts/cloud/vendor-bundle-publish-asset.sh
+      - scripts/cloud/vendor-bundle.sh
+  # Actions artifacts expire. Rebuild every retained lock monthly from the
+  # matching composer.lock in trusted main history, so no retained release
+  # bundle outlives its immutable 90-day proof.
+  schedule:
+    - cron: '0 5 1 * *'
   workflow_dispatch:
 
+# Read-only by default. Only the publish job below widens this, and only on
+# the default branch.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: cloud-vendor
+  # One publish lane, so the find-or-create-the-draft step cannot race itself
+  # into a second draft. Branch validations get a lane each and never queue
+  # behind main.
+  group: cloud-vendor-${{ github.ref == 'refs/heads/main' && 'publish' || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  bundle:
-    name: Build and upload vendor bundle
-    # x86_64, like the cloud session VM.
+  plan:
+    name: Plan trusted vendor bundle sources
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      count: ${{ steps.plan.outputs.count }}
+      current_lock: ${{ steps.plan.outputs.current_lock }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      targets: ${{ steps.plan.outputs.targets }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
@@ -41,28 +96,41 @@ jobs:
       KEEP: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Historical lock sources must be proven members of this exact main
+          # head's ancestry. A shallow clone cannot establish that.
+          fetch-depth: 0
 
-      - name: Find or create the draft release
-        id: release
+      - name: Plan current and retained lock sources
+        id: plan
         run: |
-          name="vendor-$(sha256sum composer.lock | cut -d' ' -f1).tar.zst"
-          id="$(gh api "repos/$REPO/releases?per_page=100" --jq "[.[] | select(.draft and .tag_name == \"$TAG\")][0].id // empty")"
-          if [[ -z "$id" ]]; then
-            id="$(gh api -X POST "repos/$REPO/releases" \
-              -f tag_name="$TAG" -F draft=true -F prerelease=true \
-              -f name="cloud-vendor bundles (draft; never publish)" \
-              -f body="vendor/ builds for Claude Code cloud sessions, one per composer.lock, named by its SHA-256. Written by .github/workflows/cloud-vendor.yml. Keep this a draft: publishing it would create a tag and fire release workflows." \
-              --jq .id)"
-          fi
-          exists="$(gh api "repos/$REPO/releases/$id/assets?per_page=100" --jq "any(.[]; .name == \"$name\")")"
-          {
-            echo "id=$id"
-            echo "name=$name"
-            echo "exists=$exists"
-          } >>"$GITHUB_OUTPUT"
+          scripts/cloud/vendor-bundle-refresh-plan.sh retained
+
+  build:
+    name: Build vendor bundle (${{ matrix.lock }})
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # x86_64, like the cloud session VM.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      REPO: ${{ github.repository }}
+      TRUSTED_REF: refs/heads/main
+      WORKFLOW_PATH: .github/workflows/cloud-vendor.yml
+      LOCK: ${{ matrix.lock }}
+      SOURCE_SHA: ${{ matrix.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.source_sha }}
 
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
-        if: steps.release.outputs.exists != 'true'
         with:
           php-version: '8.5'
           extensions: bcmath, curl, gd, intl, mbstring, sodium, zip
@@ -70,26 +138,256 @@ jobs:
           coverage: none
 
       - name: Build vendor/
-        if: steps.release.outputs.exists != 'true'
         # Scripts run in the session instead, after unpacking: they need the
         # checkout's .env and write the autoloader for that path.
-        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+        run: |
+          got="$(sha256sum composer.lock | cut -d' ' -f1)"
+          if [[ "$got" != "$LOCK" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "::error::checked-out source does not match the trusted refresh plan"
+            exit 1
+          fi
+          composer install --no-interaction --prefer-dist --no-progress --no-scripts
 
-      - name: Upload the bundle and prune old ones
-        if: steps.release.outputs.exists != 'true'
+      - name: Pack the bundle and write its immutable provenance manifest
+        id: bundle
+        run: |
+          name="vendor-$LOCK.tar.zst"
+          tar --exclude-vcs -cf - vendor | zstd -T0 -12 -q -o "$name"
+          ls -lh "$name"
+          want="$(sha256sum "$name" | cut -d' ' -f1)"
+          manifest="cloud-vendor-provenance-$LOCK.txt"
+          artifact="cloud-vendor-provenance-$LOCK-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf '%s\n' \
+            'cloud-vendor-attestation/v2' \
+            "repo=$REPO" \
+            "workflow=$WORKFLOW_PATH" \
+            "ref=$TRUSTED_REF" \
+            "run_sha=$GITHUB_SHA" \
+            "source_sha=$SOURCE_SHA" \
+            "run=$GITHUB_RUN_ID" \
+            "attempt=$GITHUB_RUN_ATTEMPT" \
+            "lock=$LOCK" \
+            "bundle=$name" \
+            "artifact=$artifact" \
+            "sha256=$want" >"$manifest"
+          echo "sha256 of the bundle we are uploading: $want"
+          {
+            echo "name=$name"
+            echo "manifest=$manifest"
+            echo "artifact=$artifact"
+          } >>"$GITHUB_OUTPUT"
+
+      # Unlike a release asset, an Actions artifact cannot be changed or
+      # recreated inside this run after upload. It may be deleted, which makes
+      # installation fail closed until the workflow is rerun.
+      - name: Upload immutable provenance proof
+        id: provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.bundle.outputs.artifact }}
+          path: ${{ steps.bundle.outputs.manifest }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      # This short-lived transport artifact moves the newly built bytes to the
+      # single publisher. It is never trusted by the installer; the separate
+      # 90-day proof above binds the release bytes to this run.
+      - name: Stage bundle for sequential publication
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cloud-vendor-payload-${{ matrix.lock }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.bundle.outputs.name }}
+            ${{ steps.bundle.outputs.manifest }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    name: Publish trusted vendor bundles
+    needs: [plan, build]
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.count != '0'
+    # This is the only contents:write job. It publishes sequentially. It runs
+    # even when a retained matrix child fails so a successful current bundle
+    # does not wait for historical repair.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: cloud-vendor
+      KEEP: 20
+      TARGETS: ${{ needs.plan.outputs.targets }}
+      CURRENT_LOCK: ${{ needs.plan.outputs.current_lock }}
+      TRUSTED_REF: refs/heads/main
+      WORKFLOW_PATH: .github/workflows/cloud-vendor.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download freshly built bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: cloud-vendor-payload-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cloud-vendor-payloads
+          merge-multiple: true
+
+      - name: Find or create the draft release
+        id: release
+        run: |
+          if ! drafts="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id")"; then
+            echo "::error::could not list releases; refusing to create a second $TAG draft"
+            exit 1
+          fi
+          id="$(grep -m1 . <<<"$drafts" || true)"
+          count="$(grep -c . <<<"$drafts" || true)"
+          if [[ -z "$id" ]]; then
+            id="$(gh api -X POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" -F draft=true -F prerelease=true \
+              -f name="cloud-vendor bundles (draft; never publish)" \
+              -f body="vendor/ builds for Claude Code cloud sessions, one per composer.lock, named by its SHA-256. Written by .github/workflows/cloud-vendor.yml. Keep this a draft: publishing it would create a tag and fire release workflows." \
+              --jq .id)"
+          fi
+          {
+            echo "id=$id"
+            echo "draft_count=${count:-0}"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Publish rebuilt bundles sequentially
         env:
           ID: ${{ steps.release.outputs.id }}
-          NAME: ${{ steps.release.outputs.name }}
         run: |
-          tar --exclude-vcs -cf - vendor | zstd -T0 -12 -q -o "$NAME"
-          ls -lh "$NAME"
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Content-Type: application/zstd' \
-            --data-binary @"$NAME" \
-            "https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$NAME" >/dev/null
+          missing_historical=()
+          if ! artifact_pages="$(gh api --paginate --slurp \
+            "repos/$REPO/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100")"; then
+            echo "::error::could not list this run's immutable artifacts"
+            exit 1
+          fi
+          target_rows="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/cloud-vendor-targets.XXXXXX")"
+          trap 'rm -f "$target_rows"' EXIT
+          if ! php -r '
+            $targets = json_decode((string) getenv("TARGETS"), true, flags: JSON_THROW_ON_ERROR);
+            foreach ($targets as $target) {
+                printf("%s\t%s\n", $target["lock"], $target["source_sha"]);
+            }
+          ' >"$target_rows"; then
+            echo "::error::could not parse the trusted vendor bundle targets"
+            exit 1
+          fi
+
+          while IFS=$'\t' read -r lock source_sha; do
+            name="vendor-$lock.tar.zst"
+            manifest="cloud-vendor-provenance-$lock.txt"
+            artifact="cloud-vendor-provenance-$lock-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            bundle_path="cloud-vendor-payloads/$name"
+            manifest_path="cloud-vendor-payloads/$manifest"
+            if [[ ! -f "$bundle_path" || ! -f "$manifest_path" ]]; then
+              if [[ "$lock" == "$CURRENT_LOCK" ]]; then
+                echo "::error::current bundle build did not stage $name and $manifest"
+                exit 1
+              fi
+              echo "::error::historical build failed to stage $name and $manifest; publishing other successful targets"
+              missing_historical+=("$lock")
+              continue
+            fi
+            want="$(sha256sum "$bundle_path" | cut -d' ' -f1)"
+            expected="$(printf '%s\n' \
+              'cloud-vendor-attestation/v2' \
+              "repo=$REPO" \
+              "workflow=$WORKFLOW_PATH" \
+              "ref=$TRUSTED_REF" \
+              "run_sha=$GITHUB_SHA" \
+              "source_sha=$source_sha" \
+              "run=$GITHUB_RUN_ID" \
+              "attempt=$GITHUB_RUN_ATTEMPT" \
+              "lock=$lock" \
+              "bundle=$name" \
+              "artifact=$artifact" \
+              "sha256=$want")"
+            if [[ "$(cat "$manifest_path")" != "$expected" ]]; then
+              echo "::error::$manifest does not bind the staged bundle to the planned source"
+              exit 1
+            fi
+
+            if ! evidence_meta="$(printf '%s' "$artifact_pages" \
+              | scripts/cloud/vendor-bundle-artifact-meta.sh "$artifact" "$GITHUB_RUN_ID")"; then
+              echo "::error::could not identify the immutable proof $artifact in this run"
+              exit 1
+            fi
+            IFS=$'\t' read -r evidence_id evidence_digest <<<"$evidence_meta"
+            label="cloud-vendor/v4 h=$GITHUB_SHA s=$source_sha r=$GITHUB_RUN_ID a=$GITHUB_RUN_ATTEMPT l=$lock e=$evidence_id"
+
+            scripts/cloud/vendor-bundle-publish-asset.sh \
+              "$ID" "$bundle_path" "$name" "$label" "$want"
+            echo "published $name from main ancestor ${source_sha:0:12} with proof $evidence_id ($evidence_digest)"
+          done <"$target_rows"
+
           gh api "repos/$REPO/releases/$ID/assets?per_page=100" \
-            --jq "sort_by(.created_at) | reverse | .[$KEEP:][] | .id" \
+            --jq "map(select(.name | test(\"^vendor-[0-9a-f]{64}[.]tar[.]zst$\"))) | sort_by(.created_at) | reverse | .[$KEEP:][] | .id" \
             | while read -r old; do
                 gh api -X DELETE "repos/$REPO/releases/assets/$old"
               done
+
+          if (( ${#missing_historical[@]} > 0 )); then
+            printf '::error::%s historical build(s) failed: %s\n' \
+              "${#missing_historical[@]}" "${missing_historical[*]}"
+            exit 1
+          fi
+
+      # Deliberately last, and deliberately fatal. A forked draft needs a human
+      # to delete the extras and re-push the locks whose bundles they hold, and
+      # an Actions warning is not a signal anyone reliably sees. Failing the run
+      # is, so the fork gets noticed on the very next publish rather than when a
+      # session mysteriously has no bundle for its lock.
+      #
+      # It runs AFTER the upload on purpose: this job's own output is still
+      # correct in a forked state (the producer and vendor-bundle.sh both select
+      # the first of a created_at-descending listing, so they agree), and there
+      # is no fallback for a lock with no bundle in a cloud session. Failing
+      # earlier would withhold a good bundle to report a problem it does not
+      # cause.
+      - name: Fail if the cloud-vendor draft has been forked
+        if: always() && steps.release.outputs.draft_count != '' && steps.release.outputs.draft_count > 1
+        run: |
+          echo "::error::${{ steps.release.outputs.draft_count }} draft releases are tagged cloud-vendor. This run published to the one selected by the installer; delete the extra drafts."
+          exit 1
+
+  validate:
+    name: Build the bundle without publishing
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Deliberately read-only: a non-default ref must never be able to replace
+    # an asset that another session installs automatically.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: bcmath, curl, gd, intl, mbstring, sodium, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Build vendor/
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Pack the bundle and discard it
+        run: |
+          name="vendor-$(sha256sum composer.lock | cut -d' ' -f1).tar.zst"
+          tar --exclude-vcs -cf - vendor | zstd -T0 -12 -q -o "$name"
+          ls -lh "$name"
+          echo "would publish $name (sha256 $(sha256sum "$name" | cut -d' ' -f1)) on main"
+          echo "this ref publishes nothing and records no provenance, so an asset"
+          echo "of this name produced anywhere but the publish job on main stays"
+          echo "untrusted and is rebuilt there."
