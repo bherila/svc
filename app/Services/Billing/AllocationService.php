@@ -98,12 +98,27 @@ final class AllocationService
             ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->get();
-        $allocated = $group->isEmpty() ? [] : array_values(array_unique(array_map('intval', DB::table('client_invoice_line_time_entries')
-            ->whereIn('client_time_entry_id', $group->modelKeys())
-            ->orderBy('id')
-            ->tap(Locks::forShare())
-            ->pluck('client_time_entry_id')
-            ->all())));
+        $ids = $group->modelKeys();
+        // Scoped to the workspace so the read is a bounded lookup on
+        // (workspace_id, client_time_entry_id) - unscoped, the locking scan
+        // reached other tenants' rows - and the composite key to the time
+        // entry keeps every allocation in its entry's workspace. A legacy row
+        // written past that key is still found, by an ordinary read: nothing
+        // writes such rows now, so no snapshot can be behind them.
+        $allocated = $ids === [] ? [] : array_values(array_unique(array_map('intval', [
+            ...DB::table('client_invoice_line_time_entries')
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_time_entry_id', $ids)
+                ->orderBy('id')
+                ->tap(Locks::forShare())
+                ->pluck('client_time_entry_id')
+                ->all(),
+            ...DB::table('client_invoice_line_time_entries')
+                ->where('workspace_id', '!=', $workspace->id)
+                ->whereIn('client_time_entry_id', $ids)
+                ->pluck('client_time_entry_id')
+                ->all(),
+        ])));
 
         // Validate after taking the same row locks recombination relies on, so
         // a concurrent edit cannot move a fragment to another project's chain

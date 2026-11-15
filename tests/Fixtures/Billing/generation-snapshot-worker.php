@@ -36,6 +36,9 @@ foreach (['paused', 'release'] as $key) {
         exit(2);
     }
 }
+if (($input['period'] ?? null) !== null && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $input['period'])) {
+    exit(2);
+}
 config(['database.connections.generation_snapshot' => $input['connection'], 'database.default' => 'generation_snapshot']);
 DB::purge('generation_snapshot');
 
@@ -43,11 +46,18 @@ $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFai
 $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['company'])->firstOrFail();
 $agreement = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey((int) ($input['agreement'] ?? 0))->first();
 
-$armed = true;
-DB::listen(static function (QueryExecuted $query) use (&$armed, $input): void {
+// Where to hold: by default the transaction's first ordinary read; with
+// `pause_on`, the first statement containing that text; with `pause_on` set to
+// `never`, nowhere.
+$pauseOn = $input['pause_on'] ?? null;
+$armed = $pauseOn !== 'never';
+DB::listen(static function (QueryExecuted $query) use (&$armed, $input, $pauseOn): void {
     $sql = strtolower($query->sql);
-    if (! $armed || DB::transactionLevel() < 1 || ! str_starts_with(ltrim($sql), 'select')
-        || ! str_contains($sql, ' from `') || str_contains($sql, 'for update') || str_contains($sql, 'lock in share mode')) {
+    if (! $armed || DB::transactionLevel() < 1) {
+        return;
+    }
+    if (is_string($pauseOn) ? ! str_contains($sql, strtolower($pauseOn)) : (! str_starts_with(ltrim($sql), 'select')
+        || ! str_contains($sql, ' from `') || str_contains($sql, 'for update') || str_contains($sql, 'lock in share mode'))) {
         return;
     }
     $armed = false;
@@ -71,6 +81,8 @@ try {
     }
     $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
     echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate], JSON_THROW_ON_ERROR)."\n";
+} catch (Illuminate\Database\QueryException $failure) {
+    echo json_encode(['outcome' => 'failed', 'class' => $failure::class, 'code' => $failure->errorInfo[1] ?? null, 'message' => $failure->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (DomainException|RuntimeException $refusal) {
     echo json_encode(['outcome' => 'refused', 'class' => $refusal::class, 'message' => $refusal->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {
