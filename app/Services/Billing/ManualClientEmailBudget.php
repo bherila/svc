@@ -8,8 +8,12 @@ use App\Support\Billing\Reminders\PaymentReminderOrigin;
 use App\Support\Billing\Reminders\PaymentReminderStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
+use Illuminate\Database\DatabaseTransactionRecord;
+use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use LogicException;
+use WeakMap;
 
 /**
  * How many recipients a workspace may email by hand in a rolling day.
@@ -48,6 +52,15 @@ final class ManualClientEmailBudget
 
     private const string KEY_TABLE = 'client_email_budget_locks';
 
+    /**
+     * The workspaces each open application transaction has called
+     * {@see admit()} for. Keyed weakly by the transaction's record, so an
+     * entry ends with its transaction and a new transaction starts clean.
+     *
+     * @var WeakMap<DatabaseTransactionRecord, array<int, true>>|null
+     */
+    private static ?WeakMap $admissions = null;
+
     public function __construct(private readonly WorkspaceClock $clock = new WorkspaceClock) {}
 
     public function limit(): int
@@ -65,11 +78,25 @@ final class ManualClientEmailBudget
      * ranks after `ClientInvoice`), and insert it in that same transaction:
      * the key stays locked until it commits, and an admission rolled back with
      * it is undone with it. Outside a transaction the lock would end with its
-     * own statement and admit nothing atomically. Nothing is written when this
-     * refuses.
+     * own statement and admit nothing atomically. Nothing is admitted when
+     * this refuses.
+     *
+     * One admission per workspace per transaction. The correction for a stale
+     * snapshot reads the key through the snapshot before this transaction has
+     * written it; once it has - and the upsert below writes it even when this
+     * refuses - a second call reads its own write instead and would miss
+     * every admission committed after the snapshot. So admit everything a
+     * transaction sends in one call, and a send whose recipients grow later
+     * is asked for again in a transaction of its own (see
+     * `PaymentReminderService::sendRegistered()`). A second call for the same
+     * workspace in one application transaction, or a call outside any, throws.
+     *
+     * @throws LogicException called outside a transaction, or a second time for this workspace in one
      */
     public function admit(int $workspaceId, int $recipients): bool
     {
+        $this->claimTransaction($workspaceId);
+
         // Through this transaction's snapshot, and before this transaction
         // writes the key: once it has, its own write is what this would read.
         $seen = $this->admitted($this->key($workspaceId));
@@ -138,6 +165,38 @@ final class ManualClientEmailBudget
                 ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value, PaymentReminderStatus::Sent->value])
                 ->where('queued_at', '>=', $since)
                 ->pluck('recipients'));
+    }
+
+    /**
+     * Note this transaction's admission for the workspace, or throw if it has
+     * one already. "This transaction" is the outermost one the application
+     * opened: a savepoint shares its snapshot. The transactions manager's
+     * callback-applicable transactions are exactly those - under
+     * `RefreshDatabase` it leaves out the test's wrapping transaction - and
+     * when there is none past that wrapper there is nothing to note.
+     */
+    private function claimTransaction(int $workspaceId): void
+    {
+        $connection = DB::connection();
+        if ($connection->transactionLevel() === 0) {
+            throw new LogicException('ManualClientEmailBudget::admit() must run inside the transaction that records the send.');
+        }
+        $manager = app('db.transactions');
+        if (! $manager instanceof DatabaseTransactionsManager) {
+            return;
+        }
+        $transaction = $manager->callbackApplicableTransactions()
+            ->first(static fn (DatabaseTransactionRecord $record): bool => $record->connection === $connection->getName());
+        if (! $transaction instanceof DatabaseTransactionRecord) {
+            return;
+        }
+        self::$admissions ??= new WeakMap;
+        $admitted = self::$admissions[$transaction] ?? [];
+        if (isset($admitted[$workspaceId])) {
+            throw new LogicException('ManualClientEmailBudget::admit() was already called for this workspace in this transaction; admit every recipient in one call.');
+        }
+        $admitted[$workspaceId] = true;
+        self::$admissions[$transaction] = $admitted;
     }
 
     private function key(int $workspaceId): Builder
