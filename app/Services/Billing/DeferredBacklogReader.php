@@ -38,6 +38,8 @@ final class DeferredBacklogReader
      * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance; null where it was not read
      * @param  Collection<int, ClientAgreement>|null  $segments  the client's agreements, when the caller read them
      *                                                           itself - with row locks, for a buy-down ({@see self::lockedSegments()})
+     *
+     * @infection-ignore-all The segments map is what BuyDownAttachSnapshotTest's two-session successor case (MariaDB) depends on: removing it, inverting the ternary, or reading the snapshot instead each let the stale buy-down bill the successor's hour (verified by hand-mutation, #730). The int casts on array keys are equivalent. The carried-minutes map is the existing call, only reformatted here. The mutation lane runs the Unit suite only.
      */
     public function forAgreement(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through, array $periods = [], ?int $carriedMinutes = null, ?Collection $segments = null): DeferredBacklog
     {
@@ -96,7 +98,7 @@ final class DeferredBacklogReader
             ->orderBy('id')
             ->get();
         $moved = $history === null ? new Collection : $history->withCapacityPlacement($workspaceId)->get();
-        $segments = $segmentsByCompany ?? $this->segments($workspaceId, $companyIds);
+        $segments = $this->segmentsFor($segmentsByCompany, $workspaceId, $companyIds);
 
         $backlogs = [];
         foreach ($agreements as $agreement) {
@@ -207,6 +209,20 @@ final class DeferredBacklogReader
         $successor = $this->agreements->successorAgreementForGeneration($segments, $agreement);
 
         return DeferredWorkDates::through($through, $agreement->termination_date, $successor?->starts_on);
+    }
+
+    /**
+     * The segments a caller read itself, or else a read through the snapshot.
+     *
+     * @infection-ignore-all Preferring the snapshot read over the caller's locked segments is the stale buy-down BuyDownAttachSnapshotTest refuses (MariaDB two-session, verified by hand-mutation, #730); the mutation lane runs the Unit suite only.
+     *
+     * @param  array<int, Collection<int, ClientAgreement>>|null  $given
+     * @param  list<int>  $companyIds
+     * @return array<int, Collection<int, ClientAgreement>>
+     */
+    private function segmentsFor(?array $given, int $workspaceId, array $companyIds): array
+    {
+        return $given ?? $this->segments($workspaceId, $companyIds);
     }
 
     /**
