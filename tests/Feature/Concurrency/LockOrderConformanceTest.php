@@ -11,6 +11,7 @@ use App\Models\ClientBillingSchedule;
 use App\Models\ClientCompany;
 use App\Models\ClientCompanyMembership;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\ClientProposal;
@@ -56,6 +57,8 @@ use App\Support\Access\StaffRole;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
 use App\Support\Billing\DeferredBuyDownRequest;
+use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
@@ -729,6 +732,22 @@ final class LockOrderConformanceTest extends TestCase
 
         $split = $this->approvedEntry('2026-01-10', 900, $company, $project);
         app(TimeEntrySplitter::class)->splitEntry($split, 600);
+        // Another invoice of the client holding deferred work, so the claim's
+        // ledger fingerprint locks and compares invoices, lines and their
+        // allocations, not only the client's invoice rows (#718).
+        $placed = $this->approvedEntry('2026-01-05', 60, $company, $project);
+        $placed->forceFill(['is_deferred' => true])->save();
+        $holder = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYNTHETIC-PLACED',
+            'status' => 'issued', 'invoice_kind' => InvoiceKind::AdHoc->value, 'issue_date' => '2026-01-31',
+            'service_period_start' => '2026-01-01', 'service_period_end' => '2026-01-31', 'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'balance_amount' => 0, 'hours_billed_at_rate' => 0,
+        ]);
+        ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $holder->id,
+            'type' => InvoiceLineType::PriorMonthRetainer->value, 'description' => 'Synthetic deferred work applied',
+            'quantity' => '0', 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'hours' => 1, 'line_date' => '2026-01-31', 'sort_order' => 1,
+        ])->timeEntries()->attach($placed->id, ['workspace_id' => $this->workspace->id]);
 
         $draft = app(InterimOverageGenerator::class)->generateInterimOverageInvoice(
             $company,

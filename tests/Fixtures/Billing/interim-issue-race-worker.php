@@ -37,6 +37,21 @@ if (($input['mode'] ?? 'issue') === 'reduce-time') {
     exit(0);
 }
 
+// A committed allocation change, as a draft rebuild or a void that releases
+// work makes one: the pivot goes and the time entry's own row is untouched.
+if (($input['mode'] ?? 'issue') === 'release-allocation') {
+    DB::table('client_invoice_line_time_entries')->where('workspace_id', $workspace->id)->where('client_time_entry_id', (int) $input['entry'])->delete();
+    echo json_encode(['outcome' => 'success'], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
+// A committed change to a line that holds the work, its time untouched.
+if (($input['mode'] ?? 'issue') === 'redate-line') {
+    DB::table('client_invoice_lines')->where('workspace_id', $workspace->id)->where('id', (int) $input['line'])->update(['line_date' => (string) $input['date']]);
+    echo json_encode(['outcome' => 'success'], JSON_THROW_ON_ERROR)."\n";
+    exit(0);
+}
+
 $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['invoice'])->firstOrFail();
 
 $hold = static function () use ($input): void {

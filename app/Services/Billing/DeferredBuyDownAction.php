@@ -22,6 +22,7 @@ use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -37,11 +38,15 @@ final class DeferredBuyDownAction
         private readonly InvoiceDeferredWorkStatements $deferredWorkStatements = new InvoiceDeferredWorkStatements,
     ) {}
 
-    public function preview(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, ?string $expectedVersion = null): DeferredBuyDownSnapshot
+    /**
+     * @param  SupportCollection<int, ClientAgreement>|null  $segments  the client's agreements read with row locks, inside
+     *                                                                  {@see self::create()}; null reads them through the snapshot
+     */
+    public function preview(Workspace $workspace, ClientAgreement $agreement, DeferredBuyDownRequest $request, ?string $expectedVersion = null, ?SupportCollection $segments = null): DeferredBuyDownSnapshot
     {
         abort_unless($agreement->workspace_id === $workspace->id, 404);
         $today = $this->clock->today($workspace);
-        $backlog = $this->backlogs->forAgreement($workspace, $agreement, $today);
+        $backlog = $this->backlogs->forAgreement($workspace, $agreement, $today, segments: $segments);
         $entries = ClientTimeEntry::query()->where('workspace_id', $workspace->id)
             ->where('client_company_id', $agreement->client_company_id)->whereIn('id', $backlog->entryIds)
             ->with(TimeEntryAllocation::relations($workspace->id))
@@ -80,10 +85,17 @@ final class DeferredBuyDownAction
 
         return DB::transaction(function () use ($workspace, $agreement, $request, $expectedVersion, $target): ClientInvoice {
             BillingMaintenance::share($workspace->id);
+            // The client's agreements first, with row locks and in the order
+            // issue() takes them: a successor for the same scope ends this
+            // agreement's segment, and so how far its backlog reaches. Read
+            // through a caller's older snapshot, one added since is missed and
+            // its work is bought down here, at these terms (#718).
+            $segments = $this->backlogs->lockedSegments((int) $workspace->id, (int) $agreement->client_company_id);
             $locked = ClientAgreement::query()->where('workspace_id', $workspace->id)->whereKey($agreement->id)
                 ->tap(Locks::forUpdate())->firstOrFail();
+            abort_unless((int) $locked->client_company_id === (int) $agreement->client_company_id, 409, 'The agreement changed; preview it again.');
             $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey($locked->client_company_id)->firstOrFail();
-            $snapshot = $this->preview($workspace, $locked, $request, $expectedVersion);
+            $snapshot = $this->preview($workspace, $locked, $request, $expectedVersion, $segments);
             $selection = $snapshot->selection;
             if ($selection->entries === []) {
                 throw new DomainException('No whole deferred entry fits this target. Increase the target or choose round up.');

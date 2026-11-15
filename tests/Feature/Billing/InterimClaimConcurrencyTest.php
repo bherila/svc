@@ -5,12 +5,15 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\InterimOverageGenerator;
 use App\Support\Billing\InterimLedgerChanged;
+use App\Support\Billing\InvoiceKind;
+use App\Support\Billing\InvoiceLineType;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -192,6 +195,82 @@ final class InterimClaimConcurrencyTest extends TestCase
         }
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function allocationChanges(): iterable
+    {
+        yield 'the allocation is released' => ['release-allocation'];
+        yield 'the allocating line is redated' => ['redate-line'];
+    }
+
+    /**
+     * The ledger also reads where deferred work was placed - by another
+     * invoice's line and its pivot, neither of which a time entry's row
+     * records. With a month of rollover, five deferred hours placed in January
+     * use the January hours that would otherwise roll into February, so
+     * February's fifteen hours leave five of excess and the draft claims them.
+     * Released or moved out of the cycle after the caller's snapshot, January's
+     * hours roll again and the excess is gone: the stale ledger must not
+     * approve a five-hour claim against none (#718).
+     */
+    #[DataProvider('allocationChanges')]
+    public function test_a_stale_allocation_snapshot_cannot_approve_an_interim_claim(string $change): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('Snapshot visibility under REPEATABLE READ is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('interim_race');
+        Artisan::call('migrate', ['--database' => 'interim_race', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('interim_race');
+        Schema::clearResolvedInstance('db.schema');
+        $processes = [];
+        $barrier = sys_get_temp_dir().'/svc-interim-race-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        try {
+            [$workspace, $company, $agreement, $entries] = $this->cycle();
+            $agreement->forceFill(['rollover_months' => 1])->save();
+            $entries[0]->forceFill(['minutes' => 300])->save();
+            $deferred = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $entries[0]->client_project_id,
+                'user_id' => $entries[0]->user_id, 'worked_on' => '2024-01-12', 'minutes' => 300, 'description' => 'Synthetic deferred work',
+                'is_billable' => true, 'is_deferred' => true, 'status' => 'approved', 'currency' => 'USD',
+            ]);
+            $line = $this->allocate($workspace, $company, $deferred, '2024-01-31');
+            $february = app(InterimOverageGenerator::class)->generateInterimOverageInvoice($company, Carbon::parse('2024-02-01'), $agreement->fresh());
+            $this->assertSame('5.0000', (string) $february?->hours_billed_at_rate, 'The fixture no longer places the deferred hours in January.');
+
+            $issuer = $this->worker($workspace, $february, $paused, $release, ['mode' => 'outer-snapshot']);
+            $competitor = $this->worker($workspace, null, null, null, ['mode' => $change, 'entry' => $deferred->id, 'line' => $line->id, 'date' => '2024-04-30']);
+            $processes = [$issuer, $competitor];
+            $issuer->start();
+            $this->awaitFile($issuer, $paused);
+            $competitor->start();
+            $competitor->wait();
+            $this->assertTrue(touch($release), 'Could not release the held issue.');
+            $issuer->wait();
+            $output = $issuer->getOutput().$issuer->getErrorOutput().$competitor->getOutput().$competitor->getErrorOutput();
+            $this->assertSame(['outcome' => 'success'], $this->workerResult($competitor), $output);
+
+            DB::purge('interim_race');
+            $row = ClientInvoice::query()->where('workspace_id', $workspace->id)->findOrFail($february->id);
+            $this->assertSame('draft', $row->status, 'Five hours charged against no excess. '.$output);
+            $this->assertSame(['outcome' => 'refused', 'class' => InterimLedgerChanged::class], $this->workerResult($issuer), $output);
+            // The premise: against current rows there is no excess to claim.
+            $regenerated = app(InterimOverageGenerator::class)->generateInterimOverageInvoice($company->fresh(), Carbon::parse('2024-02-01'), $agreement->fresh());
+            $this->assertSame(0.0, (float) ($regenerated->hours_billed_at_rate ?? 0), 'The change left February with excess after all.');
+        } finally {
+            foreach ($processes as $process) {
+                $process->stop(0);
+            }
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
     /**
      * Time the claim's ledger never reads cannot refuse it. The agreement
      * covers one project; an edit to another project's entry after the
@@ -277,6 +356,26 @@ final class InterimClaimConcurrencyTest extends TestCase
         }
 
         return [$workspace, $company, $agreement, $entries];
+    }
+
+    /** Place deferred work on another invoice's line, dated as given. */
+    private function allocate(Workspace $workspace, ClientCompany $company, ClientTimeEntry $entry, string $lineDate): ClientInvoiceLine
+    {
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'invoice_number' => 'SYN-PLACED-1',
+            'status' => 'issued', 'invoice_kind' => InvoiceKind::AdHoc->value, 'issue_date' => $lineDate,
+            'service_period_start' => '2024-01-01', 'service_period_end' => $lineDate, 'currency' => 'USD',
+            'subtotal_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0, 'balance_amount' => 0, 'hours_billed_at_rate' => 0,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $workspace->id, 'client_invoice_id' => $invoice->id,
+            'type' => InvoiceLineType::PriorMonthRetainer->value, 'description' => 'Synthetic deferred work applied',
+            'quantity' => '0', 'unit_amount' => 0, 'tax_amount' => 0, 'total_amount' => 0,
+            'hours' => ((int) $entry->minutes) / 60, 'line_date' => $lineDate, 'sort_order' => 1,
+        ]);
+        $line->timeEntries()->attach($entry->id, ['workspace_id' => $workspace->id]);
+
+        return $line;
     }
 
     /** @param  array<string, int|string>  $extra */
