@@ -108,8 +108,9 @@ final class PaymentReminderService
      *
      * One that is no longer pending - already sent, failed, or claimed by a
      * concurrent replay - is returned untouched, so replaying the request that
-     * registered it sends nothing more. One whose invoice changed under it is
-     * cancelled with the reason rather than sent.
+     * registered it sends nothing more. One whose invoice changed under it, or
+     * that would now reach a recipient it was not admitted for, is cancelled
+     * with the reason rather than sent.
      */
     public function sendRegistered(Workspace $workspace, ClientInvoice $invoice, string $reminderPublicId): InvoiceReminderLog
     {
@@ -128,6 +129,18 @@ final class PaymentReminderService
             $decision = $this->policy->manual($facts);
             if ($decision->refusal !== null) {
                 $this->cancel($workspace, $reminder, $decision->refusal->message());
+
+                return [$locked, $reminder, null];
+            }
+            // Registration admitted these people against the workspace's
+            // daily limit, and only these: anyone added since was never
+            // counted. Admitting them here would take the budget key after
+            // this reminder's lock, against the declared order, so a reminder
+            // that would reach someone new is cancelled and asked for again,
+            // which admits the whole list. One that now reaches fewer still
+            // goes, and its admission is not refunded.
+            if (array_diff($facts->recipients, $reminder->recipients) !== []) {
+                $this->cancel($workspace, $reminder, 'the client\'s recipients changed after the reminder was registered. Send it again to reach them.');
 
                 return [$locked, $reminder, null];
             }

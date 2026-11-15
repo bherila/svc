@@ -25,6 +25,7 @@ use App\Support\Square\SquareMatchMethod;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -244,6 +245,66 @@ final class PaymentReminderServiceTest extends TestCase
         Mail::assertNothingSent();
     }
 
+    public function test_a_recipient_added_between_registration_and_claim_is_never_sent_to_without_its_own_admission(): void
+    {
+        config(['svc.client_email.daily_recipients' => 1]);
+        [$workspace, $owner, $company, $invoice] = $this->reminderFixture();
+        $service = app(PaymentReminderService::class);
+        $registered = $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website);
+        $this->assertSame(['billing@reminders.example.test'], $registered->recipients);
+        $this->assertSame(1, $this->admittedRecipients($workspace));
+        // A second eligible recipient appears before the claim.
+        $portal = User::factory()->create(['email' => 'portal@reminders.example.test']);
+        $company->portalUsers()->attach($portal, ['role' => 'client']);
+
+        $result = $service->sendRegistered($workspace, $invoice, $registered->public_id);
+
+        $this->assertSame(PaymentReminderStatus::Cancelled, $result->status);
+        $this->assertSame(['billing@reminders.example.test'], $result->refresh()->recipients);
+        $this->assertSame('Not sent: the client\'s recipients changed after the reminder was registered. Send it again to reach them.', $result->error_summary);
+        Mail::assertNothingSent();
+        $this->assertSame(1, $this->admittedRecipients($workspace));
+
+        // Asking again admits the whole list, which the limit refuses...
+        $this->assertThrows(
+            fn () => $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website),
+            PaymentReminderRefused::class,
+            PaymentReminderRefusal::DailyRecipientLimit->message(),
+        );
+        Mail::assertNothingSent();
+
+        // ...and, with room for both, sends to both only after that admission.
+        config(['svc.client_email.daily_recipients' => 3]);
+        $again = $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website);
+        $this->assertSame(3, $this->admittedRecipients($workspace));
+        $sent = $service->sendRegistered($workspace, $invoice, $again->public_id);
+
+        $this->assertSame(PaymentReminderStatus::Sent, $sent->status);
+        $this->assertSame(['billing@reminders.example.test', 'portal@reminders.example.test'], $sent->recipients);
+        Mail::assertSentCount(1);
+    }
+
+    public function test_a_recipient_removed_between_registration_and_claim_leaves_a_reminder_that_still_sends(): void
+    {
+        [$workspace, $owner, $company, $invoice] = $this->reminderFixture();
+        $portal = User::factory()->create(['email' => 'portal@reminders.example.test']);
+        $company->portalUsers()->attach($portal, ['role' => 'client']);
+        $service = app(PaymentReminderService::class);
+        $registered = $service->register($workspace, $invoice, $owner, PaymentReminderTrigger::Website);
+        $this->assertSame(['billing@reminders.example.test', 'portal@reminders.example.test'], $registered->recipients);
+        $company->portalUsers()->detach($portal);
+
+        $sent = $service->sendRegistered($workspace, $invoice, $registered->public_id);
+
+        // Only to who is still eligible, and the admission is not refunded.
+        $this->assertSame(PaymentReminderStatus::Sent, $sent->status);
+        $this->assertSame(['billing@reminders.example.test'], $sent->recipients);
+        Mail::assertSent(InvoicePaymentReminderMail::class, fn (InvoicePaymentReminderMail $mail): bool => $mail->hasTo('billing@reminders.example.test')
+            && ! $mail->hasTo('portal@reminders.example.test'));
+        Mail::assertSentCount(1);
+        $this->assertSame(2, $this->admittedRecipients($workspace));
+    }
+
     public function test_a_partial_payment_between_claim_and_send_stops_a_reminder_stating_the_old_balance(): void
     {
         [$workspace, $owner, , $invoice] = $this->reminderFixture();
@@ -361,5 +422,13 @@ final class PaymentReminderServiceTest extends TestCase
 
         [$other] = $this->reminderFixture('synthetic-reminders-other');
         $this->assertThrows(fn () => $service->setCadence($other, $company, true, $owner), ModelNotFoundException::class);
+    }
+
+    /** The recipients the workspace's budget key has admitted, in total. */
+    private function admittedRecipients(Workspace $workspace): int
+    {
+        $admitted = DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients');
+
+        return is_numeric($admitted) ? (int) $admitted : 0;
     }
 }

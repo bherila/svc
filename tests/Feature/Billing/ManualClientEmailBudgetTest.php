@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use LogicException;
 use Tests\Concerns\BuildsPaymentReminders;
 use Tests\TestCase;
 
@@ -157,6 +158,45 @@ final class ManualClientEmailBudgetTest extends TestCase
         }
 
         $this->assertNull(DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients'));
+    }
+
+    public function test_one_transaction_admits_a_workspace_once(): void
+    {
+        [$workspace] = $this->issuedInvoice();
+        [$otherWorkspace] = $this->issuedInvoice();
+        $budget = app(ManualClientEmailBudget::class);
+
+        DB::transaction(function () use ($budget, $workspace, $otherWorkspace): void {
+            $this->assertTrue($budget->admit($workspace->id, 1));
+            // Another workspace's key is its own admission.
+            $this->assertTrue($budget->admit($otherWorkspace->id, 1));
+            // A savepoint shares the transaction's snapshot, so it is the same transaction.
+            $this->assertThrows(
+                fn () => DB::transaction(fn (): bool => $budget->admit($workspace->id, 1)),
+                LogicException::class,
+                'already called for this workspace in this transaction',
+            );
+        });
+        $this->assertSame(1, (int) DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients'));
+
+        // A later transaction starts clean.
+        DB::transaction(function () use ($budget, $workspace): void {
+            $this->assertTrue($budget->admit($workspace->id, 2));
+        });
+        $this->assertSame(3, (int) DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients'));
+    }
+
+    public function test_a_refused_admission_still_counts_as_the_transactions_one(): void
+    {
+        config(['svc.client_email.daily_recipients' => 1]);
+        [$workspace] = $this->issuedInvoice();
+        $budget = app(ManualClientEmailBudget::class);
+
+        // The refusal's upsert has written the key, so a retry here would read its own write.
+        DB::transaction(function () use ($budget, $workspace): void {
+            $this->assertFalse($budget->admit($workspace->id, 2));
+            $this->assertThrows(fn () => $budget->admit($workspace->id, 1), LogicException::class);
+        });
     }
 
     /** @param  list<string>  $recipients */
