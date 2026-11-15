@@ -364,6 +364,7 @@ final class InvoiceLifecycleService
                 $assertLocked($locked);
             }
             $interimClaims = null;
+            $interimLedger = null;
             $interimTime = null;
             // Only a draft whose claim can be placed: one with a complete,
             // ordered period. Anything else is refused by the period checks
@@ -402,6 +403,9 @@ final class InvoiceLifecycleService
                 // The claims are invoice rows, so they are locked now, before
                 // the company.
                 $interimClaims = $this->interimOverageGenerator()->lockCycleClaims($locked, $agreement);
+                // The client's other invoices the claim's ledger can read
+                // (#718), still in the invoice phase.
+                $interimLedger = $this->interimOverageGenerator()->lockLedgerInvoices($locked);
             }
 
             // A monthly invoice records the earlier catch-up it was sized
@@ -469,10 +473,15 @@ final class InvoiceLifecycleService
                 // for the credit check that follows.
                 $lines = $this->lockLines($locked);
                 $lineIds = array_values($lines->map(fn (ClientInvoiceLine $line): int => $line->id)->all());
-                // The interim claim's time fingerprint, also a locking read
-                // of time entries, after the lines and before the company.
-                if ($interimClaims !== null && $agreement instanceof ClientAgreement) {
+                // The interim claim's ledger lines, then its time fingerprint:
+                // locking reads of other invoices' lines and of time entries,
+                // after the draft's lines and before the company.
+                if ($interimClaims !== null) {
+                    $interimLedger = $this->interimOverageGenerator()->lockLedgerLines($locked, $interimLedger);
                     $interimTime = $this->interimOverageGenerator()->lockTimeFingerprint($locked, $agreement, $interimClaims[0]);
+                    // Allocations rank after time and before the disputed
+                    // expenses the next check locks.
+                    $interimLedger = $this->interimOverageGenerator()->lockLedgerAllocations($locked, $interimLedger);
                 }
                 $this->assertChargesNoDisputedRows($locked, $lineIds);
                 $deferredCandidates = $this->lockDeferredCandidates($locked);
@@ -623,7 +632,7 @@ final class InvoiceLifecycleService
             if ($interimClaims !== null && $interimTime !== null) {
                 // After every lock, so a transaction this method owns builds the
                 // ledger through a snapshot that starts after all of them.
-                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimTime);
+                $this->interimOverageGenerator()->assertClaimIssuable($locked, $agreement, $interimClaims[0], $interimClaims[1], $interimTime, $interimLedger);
             }
             if ($this->capOverpaymentCreditAtIssue($locked)) {
                 $this->overpaymentCreditService->recordPoolChange((int) $locked->workspace_id, (int) $company->id);

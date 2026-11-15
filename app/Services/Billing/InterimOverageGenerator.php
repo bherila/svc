@@ -14,6 +14,7 @@ use App\Support\Billing\BillingCadence;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InterimClaimRefused;
 use App\Support\Billing\InterimLedgerChanged;
+use App\Support\Billing\InterimLedgerFingerprint;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
@@ -24,9 +25,11 @@ use App\Support\WorkspaceClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use RuntimeException;
+use stdClass;
 
 /**
  * Intra-cycle overage invoices for agreements that bill excess as it accrues.
@@ -426,6 +429,43 @@ final class InterimOverageGenerator
     }
 
     /**
+     * The client's other invoices, read with a share lock: the first part of
+     * {@see InterimLedgerFingerprint}. The claim's ledger places deferred work
+     * by the line and invoice that absorbed it, and counts re-carried work by
+     * live invoices' lines - rows of other invoices that no lock of this issue
+     * covers and no time entry's row records. Invoice rows, so locked in the
+     * invoice phase, after the cycle's claims.
+     *
+     * The client's invoices rather than only those the ledger reads: which
+     * those are is known from the allocations, which rank last. The draft
+     * itself is left out - this issue writes it before the claim is checked.
+     */
+    public function lockLedgerInvoices(ClientInvoice $draft): InterimLedgerFingerprint
+    {
+        $invoices = $this->ledgerInvoices($draft, locking: true);
+
+        return new InterimLedgerFingerprint(self::digest($invoices), self::ids($invoices));
+    }
+
+    /** Those invoices' lines, read with a share lock in the lines phase. */
+    public function lockLedgerLines(ClientInvoice $draft, InterimLedgerFingerprint $ledger): InterimLedgerFingerprint
+    {
+        $lines = $this->ledgerLines($draft, $ledger->invoiceIds, locking: true);
+
+        return $ledger->withLines(self::digest($lines), self::ids($lines));
+    }
+
+    /**
+     * The work those lines hold, read with a share lock: allocations rank
+     * after time, so this comes after every time lock of the issue and before
+     * the company's.
+     */
+    public function lockLedgerAllocations(ClientInvoice $draft, InterimLedgerFingerprint $ledger): InterimLedgerFingerprint
+    {
+        return $ledger->withAllocations(self::digest($this->ledgerAllocations($draft, $ledger->lineIds, locking: true)));
+    }
+
+    /**
      * Refuse to issue an interim draft whose claim the cycle can no longer bear.
      *
      * The invariant, per agreement cycle: at the end of every month before the
@@ -449,8 +489,9 @@ final class InterimOverageGenerator
      *
      * @param  Collection<int, ClientInvoice>  $claims  from {@see self::lockCycleClaims()}
      * @param  string  $currentTime  the time fingerprint from {@see self::lockTimeFingerprint()}
+     * @param  InterimLedgerFingerprint  $currentLedger  the rest of what the ledger reads, from {@see self::lockLedgerInvoices()} on
      */
-    public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims, string $currentTime): void
+    public function assertClaimIssuable(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, Collection $claims, string $currentTime, InterimLedgerFingerprint $currentLedger): void
     {
         // The ledger below is built from ordinary reads. Compare the time it
         // will read through this transaction's snapshot with the fingerprint
@@ -459,6 +500,12 @@ final class InterimOverageGenerator
         // equal, and a caller's older snapshot would check this claim against
         // time that no longer exists.
         if ($this->timeFingerprint($draft, $agreement, $cycle, locking: false) !== $currentTime) {
+            throw new InterimLedgerChanged;
+        }
+        // The same for where that time was placed and what re-carried work
+        // other invoices count (#718): a released allocation or a redated line
+        // moves capacity between months without touching a time entry's row.
+        if (! $this->snapshotHoldsLedger($draft, $currentLedger)) {
             throw new InterimLedgerChanged;
         }
 
@@ -555,6 +602,95 @@ final class InterimOverageGenerator
             .'uncharged interim drafts; its time is then reconciled with the cycle.',
             false,
         );
+    }
+
+    /** Every part of the ledger fingerprint, read again through the snapshot. */
+    private function snapshotHoldsLedger(ClientInvoice $draft, InterimLedgerFingerprint $current): bool
+    {
+        $invoices = $this->ledgerInvoices($draft, locking: false);
+        if (self::digest($invoices) !== $current->invoices) {
+            return false;
+        }
+        $lines = $this->ledgerLines($draft, self::ids($invoices), locking: false);
+
+        return self::digest($lines) === $current->lines
+            && self::digest($this->ledgerAllocations($draft, self::ids($lines), locking: false)) === $current->allocations;
+    }
+
+    /**
+     * The client's invoices other than the draft, with every column the ledger
+     * reads of one: its status (live or not), its kind and agreement, the
+     * period a line without a date falls back to, and the hours it charged.
+     *
+     * @return SupportCollection<int, stdClass>
+     */
+    private function ledgerInvoices(ClientInvoice $draft, bool $locking): SupportCollection
+    {
+        $query = DB::table('client_invoices')
+            ->where('workspace_id', $draft->workspace_id)
+            ->where('client_company_id', $draft->client_company_id)
+            ->where('id', '!=', $draft->id)
+            ->orderBy('id')
+            ->select(['id', 'status', 'invoice_kind', 'client_agreement_id', 'service_period_start', 'service_period_end', 'cycle_start', 'cycle_end', 'hours_billed_at_rate']);
+        if ($locking) {
+            $query->tap(Locks::forShare());
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * @param  list<int>  $invoiceIds
+     * @return SupportCollection<int, stdClass>
+     */
+    private function ledgerLines(ClientInvoice $draft, array $invoiceIds, bool $locking): SupportCollection
+    {
+        $query = DB::table('client_invoice_lines')
+            ->where('workspace_id', $draft->workspace_id)
+            ->whereIn('client_invoice_id', $invoiceIds)
+            ->orderBy('id')
+            ->select(['id', 'client_invoice_id', 'client_agreement_id', 'type', 'hours', 'line_date']);
+        if ($locking) {
+            $query->tap(Locks::forShare());
+        }
+
+        return $invoiceIds === [] ? new SupportCollection : $query->get();
+    }
+
+    /**
+     * @param  list<int>  $lineIds
+     * @return SupportCollection<int, stdClass>
+     */
+    private function ledgerAllocations(ClientInvoice $draft, array $lineIds, bool $locking): SupportCollection
+    {
+        $query = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $draft->workspace_id)
+            ->whereIn('client_invoice_line_id', $lineIds)
+            ->orderBy('id')
+            ->select(['id', 'client_invoice_line_id', 'client_time_entry_id']);
+        if ($locking) {
+            $query->tap(Locks::forShare());
+        }
+
+        return $lineIds === [] ? new SupportCollection : $query->get();
+    }
+
+    /**
+     * @param  SupportCollection<int, stdClass>  $rows
+     * @return list<int>
+     */
+    private static function ids(SupportCollection $rows): array
+    {
+        return array_values($rows->map(static fn (stdClass $row): int => (int) $row->id)->all());
+    }
+
+    /** @param  SupportCollection<int, stdClass>  $rows */
+    private static function digest(SupportCollection $rows): string
+    {
+        return hash('sha256', (string) json_encode($rows->map(fn (stdClass $row): array => array_map(
+            fn (mixed $value): string => $value === null ? "\0" : (is_scalar($value) ? (string) $value : ''),
+            (array) $row,
+        ))->all(), JSON_THROW_ON_ERROR));
     }
 
     /**
