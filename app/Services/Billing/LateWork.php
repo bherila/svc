@@ -110,10 +110,24 @@ final class LateWork
         }
 
         $late = $this->ids($this->withinSegment($this->eligible($company)->forAgreementScope($agreement), $tookOver, $handedOver), $agreement, $before);
+        if ($late === []) {
+            return 0;
+        }
 
-        return $late === [] ? 0 : $this->eligible($company)
-            ->whereKey($late)
-            ->update(['is_deferred' => true, 'lock_version' => DB::raw('lock_version + 1')]);
+        // Classified from this transaction's snapshot, so each row is deferred
+        // only at the version it was classified at. An hour whose date was
+        // corrected since - out of the charged period, into the one this draft
+        // reconciles - still matched the other conditions, and was set aside
+        // instead of billed (#718). A moved row is left for the next draft.
+        $deferred = 0;
+        foreach ($this->eligible($company)->whereKey($late)->orderBy('id')->pluck('lock_version', 'id') as $id => $version) {
+            $deferred += $this->eligible($company)
+                ->whereKey($id)
+                ->where('lock_version', $version)
+                ->update(['is_deferred' => true, 'lock_version' => DB::raw('lock_version + 1')]);
+        }
+
+        return $deferred;
     }
 
     /**

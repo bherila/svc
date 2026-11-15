@@ -11,10 +11,13 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\TimeChangedDuringBilling;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -374,6 +377,90 @@ final class CadenceGenerationSnapshotTest extends TestCase
             DB::purge('generation_snapshot');
             $row = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->findOrFail($entry->id);
             $this->assertSame([20000, 'explicit'], [(int) $row->billing_rate_amount, $row->billing_rate_source], 'The release overwrote a rate set after its snapshot. '.$output);
+        } finally {
+            $worker?->stop(0);
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    /**
+     * Review finding B2 (#718): late work - an hour logged after the invoice
+     * charging its period - is set aside as deferred work, by ids classified
+     * through the generator's snapshot. An hour whose date is corrected after
+     * that snapshot, out of January's charged period into February, is
+     * ordinary February work and must not be deferred by the stale
+     * classification.
+     */
+    public function test_an_hour_redated_after_the_generators_snapshot_is_not_deferred_as_late_work(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('A REPEATABLE READ snapshot in a second session is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('generation_snapshot');
+        Artisan::call('migrate', ['--database' => 'generation_snapshot', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('generation_snapshot');
+        Schema::clearResolvedInstance('db.schema');
+        $barrier = sys_get_temp_dir().'/svc-generation-snapshot-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        $worker = null;
+        try {
+            $workspace = Workspace::query()->create(['name' => 'Synthetic late work snapshot', 'slug' => 'synthetic-late-work-snapshot']);
+            $owner = User::factory()->create();
+            $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+            $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic late work client', 'slug' => 'synthetic-late-work-client']);
+            $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic late work project']);
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic monthly retainer', 'status' => 'active',
+                'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
+                'retainer_minutes' => 600, 'retainer_amount' => 60000, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+            ]);
+            // January is charged before the hour is logged, which makes it late.
+            $january = app(ClientInvoicingService::class)->generateCadencePeriod($company->fresh(), $agreement->fresh(), Carbon::parse('2026-02-01'));
+            $january = app(InvoiceLifecycleService::class)->issue($january, $workspace);
+            $entry = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+                'user_id' => $owner->id, 'worked_on' => '2026-01-25', 'minutes' => 60, 'description' => 'Synthetic late work',
+                'status' => 'approved', 'is_billable' => true, 'is_deferred' => false, 'billing_rate_amount' => 10000, 'currency' => 'USD',
+            ]);
+            // Logged a day after January was issued: late, by the second.
+            ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)
+                ->update(['created_at' => $january->fresh()->issued_at->copy()->addDay()]);
+
+            $worker = new Process(
+                [PHP_BINARY, base_path('tests/Fixtures/Billing/generation-snapshot-worker.php'), base64_encode(json_encode([
+                    'connection' => config('database.connections.'.DB::getDefaultConnection()),
+                    'workspace' => $workspace->id, 'company' => $company->id, 'agreement' => $agreement->id, 'period' => '2026-03-01',
+                    'paused' => $paused, 'release' => $release,
+                ], JSON_THROW_ON_ERROR))],
+                base_path(),
+                ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
+                null,
+                120,
+            );
+            $worker->start();
+            $deadline = microtime(true) + 30;
+            while (! is_file($paused) && $worker->isRunning() && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($paused, $worker->getOutput().$worker->getErrorOutput());
+
+            // Unapproved, corrected to February and approved again.
+            ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)
+                ->update(['worked_on' => '2026-02-15', 'lock_version' => DB::raw('lock_version + 2')]);
+
+            $this->assertTrue(touch($release), 'Could not release the generator.');
+            $worker->wait();
+            $output = $worker->getOutput().$worker->getErrorOutput();
+            $this->assertTrue($worker->isSuccessful(), $output);
+
+            DB::purge('generation_snapshot');
+            $this->assertFalse((bool) ClientTimeEntry::query()->where('workspace_id', $workspace->id)->findOrFail($entry->id)->is_deferred, 'February work was deferred as January\'s late work. '.$output);
         } finally {
             $worker?->stop(0);
             @unlink($paused);
