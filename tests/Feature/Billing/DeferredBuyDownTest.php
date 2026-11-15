@@ -421,7 +421,9 @@ final class DeferredBuyDownTest extends TestCase
     {
         $invoice = app(ClientInvoicingService::class)->generateCadencePeriod($this->company, $this->agreement, Carbon::parse('2026-07-01'));
         $attributes = $invoice->getRawOriginal();
-        foreach (['id', 'public_id', 'created_at', 'updated_at'] as $identity) {
+        // The pricing basis records what the draft was priced from - here the
+        // rows themselves differ - not what it charges, which is compared.
+        foreach (['id', 'public_id', 'created_at', 'updated_at', 'pricing_basis'] as $identity) {
             unset($attributes[$identity]);
         }
 

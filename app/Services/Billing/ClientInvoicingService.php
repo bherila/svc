@@ -1255,6 +1255,7 @@ final class ClientInvoicingService
             ));
             $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
             app(HeldWorkBasisRecorder::class)->record($invoice, $agreement);
+            app(PricingBasisRecorder::class)->record($invoice, $agreement);
 
             // Credit is applied last so it lands against the final figure rather
             // than against a subtotal that later lines then increase.
@@ -1597,6 +1598,7 @@ final class ClientInvoicingService
             ));
             $this->recordDeferredWorkSnapshot($invoice, $agreement, $company);
             app(HeldWorkBasisRecorder::class)->record($invoice, $agreement);
+            app(PricingBasisRecorder::class)->record($invoice, $agreement);
 
             $invoice->update([
                 'retainer_hours_included' => $retainerHours,

@@ -39,6 +39,9 @@ use App\Support\Billing\PaymentCorrectionOutcome;
 use App\Support\Billing\PaymentDateBounds;
 use App\Support\Billing\PaymentRefundKind;
 use App\Support\Billing\PaymentVersionChanged;
+use App\Support\Billing\PricingBasis;
+use App\Support\Billing\PricingBasisChanged;
+use App\Support\Billing\PricingBasisMissing;
 use App\Support\Billing\ServicePeriodRequirement;
 use App\Support\Billing\SubcontractorBillingMode;
 use App\Support\Concurrency\LockResource;
@@ -349,7 +352,10 @@ final class InvoiceLifecycleService
             // time and then the agreement's disputed history, and two drafts
             // of one agreement that each lock their own first could otherwise
             // wait on each other's history (docs/ux-overhaul.md 7b″).
+            // And a draft with a pricing basis (#718), whose issue reads the
+            // agreement's other invoices and their lines late, under it.
             $basisAgreement = $invoice->catch_up_basis === null && $invoice->reopened_at === null && $invoice->held_work_basis === null
+                && $invoice->pricing_basis === null
                 ? null
                 : $this->lockAgreementOf($invoice);
             $locked = $this->lockInvoice($invoice, $workspace);
@@ -483,6 +489,10 @@ final class InvoiceLifecycleService
                     // expenses the next check locks.
                     $interimLedger = $this->interimOverageGenerator()->lockLedgerAllocations($locked, $interimLedger);
                 }
+                // Every ledger input the draft was priced from, read with
+                // share locks at the time phase (#718). A moved basis is
+                // refused last: the checks below say more precisely what moved.
+                $staleBasis = $this->pricedFromCurrentInputs($locked, $basisAgreement, $handoverSegments);
                 $this->assertChargesNoDisputedRows($locked, $lineIds);
                 $deferredCandidates = $this->lockDeferredCandidates($locked);
                 $company = $this->overpaymentCreditService->lockForSpending(
@@ -493,6 +503,9 @@ final class InvoiceLifecycleService
                 $this->assertSnapshotHoldsTheLockedLines($locked);
                 $this->assertChargesOnlyItsAgreementsSegment($locked, $handoverSegments);
                 $this->assertSellsNothingAfterItsAgreementEnds($locked, $lines, $handoverSegments);
+                if ($staleBasis instanceof PricingBasisChanged) {
+                    throw $staleBasis;
+                }
             }
 
             // Re-read even when the caller supplied the authorized workspace.
@@ -1085,6 +1098,42 @@ final class InvoiceLifecycleService
                 ));
             }
         }
+    }
+
+    /**
+     * Refuse a cadence draft which recorded no pricing basis, and return the
+     * refusal for one whose ledger inputs have moved since it was priced
+     * (#718), for the caller to throw once the more specific checks have had
+     * their say. The inputs' writers hold the agreement's lock, which this
+     * issue took first for any draft with a basis; a draft whose caller's copy
+     * recorded none took no such lock and is refused by what its locked row
+     * says.
+     */
+    /** @param  SupportCollection<int, ClientAgreement>|null  $segments  the client's agreements, locked */
+    private function pricedFromCurrentInputs(ClientInvoice $locked, ?ClientAgreement $basisAgreement, ?SupportCollection $segments): ?PricingBasisChanged
+    {
+        $recorder = app(PricingBasisRecorder::class);
+        if (! $recorder->appliesTo($locked)) {
+            return null;
+        }
+        if (PricingBasis::fromStored($locked->pricing_basis) === null) {
+            throw new PricingBasisMissing;
+        }
+        // Both were locked from the caller's copy of the invoice; one whose
+        // agreement or kind has changed since is not checked against them. An
+        // agreement not yet in force - a sign-up's - is in no segment, and
+        // its successors are found among the client's agreements all the same.
+        if (! $basisAgreement instanceof ClientAgreement || $basisAgreement->id !== (int) $locked->client_agreement_id
+            || ! $segments instanceof SupportCollection) {
+            throw new DomainException('This invoice changed after it was loaded. Reload it and issue it again.');
+        }
+        try {
+            $recorder->assertCurrent($locked, $basisAgreement, $segments);
+        } catch (PricingBasisChanged $changed) {
+            return $changed;
+        }
+
+        return null;
     }
 
     /**

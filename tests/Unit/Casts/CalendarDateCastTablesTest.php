@@ -131,6 +131,7 @@ final class CalendarDateCastTablesTest extends TestCase
                 'deferred_work_statement' => 'array',
                 'catch_up_basis' => 'array',
                 'held_work_basis' => 'array',
+                'pricing_basis' => 'array',
                 'issued_at' => 'datetime',
                 'voided_at' => 'datetime',
                 'reopened_at' => 'datetime',

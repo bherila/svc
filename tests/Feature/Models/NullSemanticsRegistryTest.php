@@ -25,6 +25,7 @@ use Tests\Feature\Billing\InvoiceHoursStatementTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoiceReviewDeliveryTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
+use Tests\Feature\Billing\PricingBasisTest;
 use Tests\Feature\Billing\ReopenAndReissueInvoiceTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
 use Tests\Feature\Billing\ReplaySourceScopeNullBranchesTest;
@@ -208,6 +209,7 @@ final class NullSemanticsRegistryTest extends TestCase
         'client_invoices.automatic_delivery_status => covered_by:Tests\Feature\Billing\InvoiceReviewDeliveryTest::test_settings_are_manager_only_and_affect_only_new_issuance_without_releasing_cancelled_work',
         'client_invoices.catch_up_basis => covered_by:Tests\Feature\Billing\EarlierDraftCatchUpTest::test_an_invoice_with_no_recorded_basis_is_treated_as_before',
         'client_invoices.held_work_basis => covered_by:Tests\Feature\Approval\DisputeLedgerDependencyTest::test_an_undisturbed_draft_issues_and_one_generated_before_the_basis_existed_is_not_refused',
+        'client_invoices.pricing_basis => covered_by:Tests\Feature\Billing\PricingBasisTest::test_a_draft_generated_before_its_basis_was_recorded_is_regenerated_first',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_rival_schedule_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_an_unattributed_invoice_is_refused_when_a_scheduleless_agreement_could_own_it',
         'client_invoices.client_agreement_id => covered_by:Tests\Feature\Billing\BillingWorkflowTest::test_another_agreements_unlinked_invoice_does_not_block_this_schedule',
@@ -384,6 +386,15 @@ final class NullSemanticsRegistryTest extends TestCase
             'held_work_basis' => [
                 'covered_by' => DisputeLedgerDependencyTest::class,
                 'method' => 'test_an_undisturbed_draft_issues_and_one_generated_before_the_basis_existed_is_not_refused',
+            ],
+            // Null for every kind that is not a cadence draft, and for a
+            // cadence draft generated before the basis existed. A draft that
+            // records neither basis issues as it did; one that recorded the
+            // held-work basis but no pricing basis is refused until it is
+            // regenerated, rather than issued from inputs nobody compared.
+            'pricing_basis' => [
+                'covered_by' => PricingBasisTest::class,
+                'method' => 'test_a_draft_generated_before_its_basis_was_recorded_is_regenerated_first',
             ],
             'deferred_work_statement' => [
                 'covered_by' => DeferredBuyDownOnInvoiceTest::class,

@@ -758,6 +758,7 @@ CREATE TABLE "client_invoices"(
   "reissued_at" datetime,
   "deferred_work_statement" text,
   "held_work_basis" text,
+  "pricing_basis" text,
   foreign key("workspace_id") references "workspaces"("id") on delete cascade on update no action,
   foreign key("client_company_id") references "client_companies"("id") on delete restrict on update no action,
   foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete restrict
@@ -3596,3 +3597,4 @@ INSERT INTO migrations VALUES(139,'2026_11_17_090000_create_service_package_migr
 INSERT INTO migrations VALUES(140,'2026_11_18_090000_create_service_package_request_addresses',1);
 INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_client_invoices',1);
 INSERT INTO migrations VALUES(142,'2026_11_20_090000_create_client_email_budget_locks',1);
+INSERT INTO migrations VALUES(143,'2026_11_21_090000_add_pricing_basis_to_client_invoices',1);
