@@ -129,10 +129,10 @@ final class ServicePackageOperationContractTest extends TestCase
         $files = new Filesystem;
         $files->ensureDirectoryExists($base.'/public/openapi');
         try {
-            $document = self::checkedDocument();
-            foreach ($document['paths'] as $path => $methods) {
+            $document = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/public/openapi/svc-agent-v1.json'), flags: JSON_THROW_ON_ERROR);
+            foreach ($document->paths as $path => $methods) {
                 if (str_contains($path, '/packages')) {
-                    unset($document['paths'][$path]);
+                    unset($document->paths->{$path});
                 }
             }
             $files->put($base.'/public/openapi/svc-agent-v1.json', json_encode($document, JSON_THROW_ON_ERROR));

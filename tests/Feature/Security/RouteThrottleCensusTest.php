@@ -94,10 +94,6 @@ final class RouteThrottleCensusTest extends TestCase
     private const UNPREFIXED_ALLOWLIST = [
         'passport.token' => 'Vendor route (laravel/passport) with a bare `throttle` (60 a minute). Guests, so keyed on '
             .'domain|address; no SVC route shares an unprefixed per-address bucket with it.',
-        'bherila-auth.credentials.tokens.store' => 'Vendor route (bherila/auth-laravel), `throttle:10,1`, keyed per person. '
-            .'It shares that bucket only with bherila-auth.credentials.apps.store, the other way to mint a credential; '
-            .'the group also carries SVC\'s own `throttle:credentials` (config/bherila-auth.php).',
-        'bherila-auth.credentials.apps.store' => 'Vendor route (bherila/auth-laravel), as bherila-auth.credentials.tokens.store.',
     ];
 
     /**
