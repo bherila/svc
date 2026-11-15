@@ -14,12 +14,14 @@ use App\Models\Workspace;
 use App\Services\Approval\DisputedDraftRebuilder;
 use App\Services\Approval\DisputeSettlements;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\DeferredBuyDownAction;
 use App\Services\Billing\HeldWorkBasisRecorder;
 use App\Services\Billing\InvoiceFromTimeService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Engagement\AgreementWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\DeferredBuyDownRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -231,6 +233,33 @@ final class BuyDownAttachSnapshotTest extends TestCase
             $this->assertSame('refused', $outcome['outcome'], json_encode($outcome, JSON_THROW_ON_ERROR));
             $this->assertSame(WorkOutsideAgreementSegment::class, $outcome['class']);
             $this->assertSame('draft', $x->fresh()->status);
+        });
+    }
+
+    /**
+     * The buy-down's backlog reaches as far as the agreement's segment, and a
+     * successor for the same scope ends it (#718). The caller's snapshot
+     * predates the successor, which takes over before March's deferred hour:
+     * read through that snapshot, the hour is still this agreement's backlog,
+     * the version the caller previewed still matches, and the buy-down would
+     * bill the successor's work at this agreement's terms. The agreements are
+     * read with row locks instead, so the backlog has changed and the attach
+     * is refused.
+     */
+    public function test_a_buy_down_from_a_snapshot_older_than_a_successor_is_refused(): void
+    {
+        $this->inProbe('buydown_handover', function (Workspace $workspace, ClientAgreement $agreement, ClientInvoice $x): void {
+            $before = $x->lines()->count();
+            $outcome = $this->attachFromSnapshot($workspace, $agreement, $x, function () use ($workspace, $agreement): void {
+                $this->successor($workspace, $agreement);
+            }, 'buy-down');
+
+            $this->assertSame('refused', $outcome['outcome'], 'Billed the successor\'s deferred hour on this agreement: '.json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame(409, $outcome['status'] ?? null, json_encode($outcome, JSON_THROW_ON_ERROR));
+            $this->assertSame('The deferred backlog has changed; preview it again.', $outcome['message']);
+            $this->assertSame($before, $x->lines()->count());
+            // The premise: against current rows the hour is not this agreement's to sell.
+            $this->assertSame([], app(DeferredBuyDownAction::class)->preview($workspace, $agreement->fresh(), DeferredBuyDownRequest::from(['hours' => 1]))->selection->entries);
         });
     }
 

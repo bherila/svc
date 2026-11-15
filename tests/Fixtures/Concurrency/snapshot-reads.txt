@@ -257,7 +257,6 @@ Services\Billing\ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod > S
 Services\Billing\ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod > Services\Billing\TimeEntryProjectChainGuard::projectChainsAgree client_time_entries #da701ded
 Services\Billing\ClientInvoicingService::generateMonthlyInvoiceForWorkPeriod > Services\Billing\TimeEntrySplitter::splitEntry client_time_entries #49c3bd60
 Services\Billing\DeferredBuyDownAction::create > Models\ClientInvoice::assertLineOwnership client_invoice_lines #76f69088  # a tenant-ownership refusal; no concurrent writer creates another workspace's line
-Services\Billing\DeferredBuyDownAction::create > Services\Billing\DeferredBacklogReader::segments client_agreements #78cb9187
 Services\Billing\DeferredBuyDownAction::create > Services\Billing\DeferredBuyDownAction::create client_invoice_line_time_entries #1700ecbd  # the selected entries' allocations for their API version; the locking claims read that follows refuses any the snapshot missed
 Services\Billing\DeferredBuyDownAction::create > Services\Billing\DeferredBuyDownAction::create client_invoice_lines #1700ecbd  # the same eager load, through the lines
 Services\Billing\InterimOverageGenerator::generateInterimOverageInvoice > Services\Billing\AllocationService::merge client_time_entries #49c3bd60

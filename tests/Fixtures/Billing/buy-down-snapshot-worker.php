@@ -8,6 +8,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\DeferredBuyDownRequest;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /*
  * The caller side of BuyDownAttachSnapshotTest, in a process of its own so it
@@ -68,6 +69,8 @@ try {
     echo json_encode(['outcome' => 'success', 'total' => (int) $attached->total_amount, 'lines' => $attached->lines->count()], JSON_THROW_ON_ERROR)."\n";
 } catch (DomainException $exception) {
     echo json_encode(['outcome' => 'refused', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
+} catch (HttpException $exception) {
+    echo json_encode(['outcome' => 'refused', 'class' => $exception::class, 'status' => $exception->getStatusCode(), 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {
     echo json_encode(['outcome' => 'unexpected', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
     exit(1);

@@ -465,6 +465,25 @@ claim issued against 5 hours of excess). A time entry inserted into the range
 between the two reads can also make them differ; that refusal is conservative
 and a retry resolves it.
 
+**Where the time was placed (#718).** The ledger also reads rows no time entry
+records: the line and invoice that absorbed deferred work (its capacity month),
+and live invoices' re-carried deferred lines. With rollover, deferred hours
+placed in a month use capacity that would otherwise roll into the next, so a
+released allocation or a redated line changes the excess without touching a
+time entry. `issue()` therefore also takes, with share locks, the client's other
+invoices (`lockLedgerInvoices()`, in the invoice phase after the claims), their
+lines (`lockLedgerLines()`, after the draft's lines) and those lines' allocations
+(`lockLedgerAllocations()`, after time and before the disputed expenses), and
+`assertClaimIssuable()` compares each with the same read through the snapshot
+(`InterimLedgerFingerprint`), refusing with `InterimLedgerChanged` on any
+difference. The draft is left out, since the issue writes it before the check.
+`InterimClaimConcurrencyTest::test_a_stale_allocation_snapshot_cannot_approve_an_interim_claim`
+releases the allocation, or redates its line, after the caller's snapshot;
+before this, February's 5-hour claim issued against no excess. The share locks
+on every invoice of the client make a concurrent write to any of them wait for
+the issue, and every writer of those pivots takes its invoice lock first, so
+the allocation lock after time cannot wait on a pivot writer that holds time.
+
 **Unreadable statuses fail closed.** An interim invoice of the cycle whose status is not one the application recognises may have charged the client, so it is not left out of the claims: the draft is refused until that status is classified, as `InvoiceStatus::hasChargedValue()` treats an unknown value everywhere else.
 
 **Scope.** Only drafts with an agreement and a complete, ordered period are
@@ -676,7 +695,13 @@ read in the lock registry.
 ### Deferred buy-down reservation
 
 `DeferredBuyDownAction::create` follows the enforced registry, whose agreement
-lock precedes numbering, time entries and pivot claims. The company is scoped
+lock precedes numbering, time entries and pivot claims. It locks the client's
+agreements first (`DeferredBacklogReader::lockedSegments()`, the order `issue()`
+uses) and prices the backlog from those rows: a successor for the same scope
+ends the agreement's segment and so how far its backlog reaches, and read
+through a caller's older snapshot a successor added since was missed and its
+deferred work bought down at the outgoing terms (#718,
+`BuyDownAttachSnapshotTest::test_a_buy_down_from_a_snapshot_older_than_a_successor_is_refused`). The company is scoped
 and read here, not locked before the agreement: the current registry places
 company locks after billing rows. The agreement lock is the serialisation point
 shared with cadence regeneration. Selected entries are locked in id order, their

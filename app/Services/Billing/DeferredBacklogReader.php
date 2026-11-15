@@ -36,19 +36,29 @@ final class DeferredBacklogReader
     /**
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
      * @param  int|null  $carriedMinutes  the ledger's re-carried deferred balance; null where it was not read
+     * @param  Collection<int, ClientAgreement>|null  $segments  the client's agreements, when the caller read them
+     *                                                           itself - with row locks, for a buy-down ({@see self::lockedSegments()})
      */
-    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through, array $periods = [], ?int $carriedMinutes = null): DeferredBacklog
+    public function forAgreement(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $through, array $periods = [], ?int $carriedMinutes = null, ?Collection $segments = null): DeferredBacklog
     {
-        return $this->forAgreements($workspace, collect([$agreement]), $through, $periods, [(int) $agreement->id => $carriedMinutes])[(int) $agreement->id];
+        return $this->forAgreements(
+            $workspace,
+            collect([$agreement]),
+            $through,
+            $periods,
+            [(int) $agreement->id => $carriedMinutes],
+            $segments === null ? null : [(int) $agreement->client_company_id => $segments],
+        )[(int) $agreement->id];
     }
 
     /**
      * @param  Collection<int, ClientAgreement>  $agreements  every one of them in $workspace
      * @param  list<string>  $periods  `Y-m` months for the trend, oldest first
      * @param  array<int, int|null>  $carriedMinutes  re-carried balances by agreement id; absent is not read
+     * @param  array<int, Collection<int, ClientAgreement>>|null  $segmentsByCompany  the clients' agreements by company, when the caller read them
      * @return array<int, DeferredBacklog> keyed by agreement id
      */
-    public function forAgreements(Workspace $workspace, Collection $agreements, CarbonImmutable $through, array $periods = [], array $carriedMinutes = []): array
+    public function forAgreements(Workspace $workspace, Collection $agreements, CarbonImmutable $through, array $periods = [], array $carriedMinutes = [], ?array $segmentsByCompany = null): array
     {
         if ($agreements->isEmpty()) {
             return [];
@@ -86,7 +96,7 @@ final class DeferredBacklogReader
             ->orderBy('id')
             ->get();
         $moved = $history === null ? new Collection : $history->withCapacityPlacement($workspaceId)->get();
-        $segments = $this->segments($workspaceId, $companyIds);
+        $segments = $segmentsByCompany ?? $this->segments($workspaceId, $companyIds);
 
         $backlogs = [];
         foreach ($agreements as $agreement) {
