@@ -260,9 +260,15 @@ class TimeEntrySplitter
             ->first(['id', 'minutes', 'lock_version', 'deleted_at']);
         if (! $current instanceof ClientTimeEntry
             || $current->deleted_at !== null
-            || (int) $current->minutes !== (int) $entry->getOriginal('minutes')
-            || (int) $current->lock_version !== (int) $entry->getOriginal('lock_version')) {
+            || self::intOf($current->getAttribute('minutes')) !== self::intOf($entry->getOriginal('minutes'))
+            || self::intOf($current->getAttribute('lock_version')) !== self::intOf($entry->getOriginal('lock_version'))) {
             throw new TimeChangedDuringBilling;
         }
+    }
+
+    /** A stored integer column as an int; anything else compares unequal to it. */
+    private static function intOf(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
     }
 }

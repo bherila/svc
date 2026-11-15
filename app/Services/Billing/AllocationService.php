@@ -105,7 +105,7 @@ final class AllocationService
         // entry keeps every allocation in its entry's workspace. A legacy row
         // written past that key is still found, by an ordinary read: nothing
         // writes such rows now, so no snapshot can be behind them.
-        $allocated = $ids === [] ? [] : array_values(array_unique(array_map('intval', [
+        $allocated = $ids === [] ? [] : array_values(array_unique(array_map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0, [
             ...DB::table('client_invoice_line_time_entries')
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('client_time_entry_id', $ids)
