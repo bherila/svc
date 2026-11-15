@@ -9,7 +9,6 @@ use App\Support\Billing\Reminders\PaymentReminderStatus;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\DatabaseTransactionRecord;
-use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -181,11 +180,7 @@ final class ManualClientEmailBudget
         if ($connection->transactionLevel() === 0) {
             throw new LogicException('ManualClientEmailBudget::admit() must run inside the transaction that records the send.');
         }
-        $manager = app('db.transactions');
-        if (! $manager instanceof DatabaseTransactionsManager) {
-            return;
-        }
-        $transaction = $manager->callbackApplicableTransactions()
+        $transaction = app('db.transactions')->callbackApplicableTransactions()
             ->first(static fn (DatabaseTransactionRecord $record): bool => $record->connection === $connection->getName());
         if (! $transaction instanceof DatabaseTransactionRecord) {
             return;
