@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Model;
  * The lock goes through {@see Locks} so `LockOrderConformanceTest` sees sign-in's acquisitions:
  * the subject's row first, then the holder of the address about to be written, which is the
  * order the shared rules take and the order this application's own sign-in always took.
+ *
+ * The inherited `newAccountAttributes()` and `refreshedAttributes()` stamp `email_verified_at`
+ * and take the provider's email on every sign-in. Grants that bind by email rely on the
+ * provider verifying address changes: see "Security assumption: the identity provider
+ * verifies email changes" in SECURITY.md before overriding them or adding a provider.
  */
 final class OAuthAccounts extends RelyingPartyAccounts
 {

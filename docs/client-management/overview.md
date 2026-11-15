@@ -167,7 +167,10 @@ person's first sign-in here (`OAuthLoginController::afterSignIn()` after the sig
 `WorkspaceAccess::applyPortalInvitation`):
 
 - only to an account signing in with the invited address, case-insensitive. A
-  different address gets nothing and the invitation stays pending;
+  different address gets nothing and the invitation stays pending. The address is
+  the one the identity provider asserts, trusted as verified; see
+  [the identity-provider assumption](../../SECURITY.md#security-assumption-the-identity-provider-verifies-email-changes)
+  for this and the other grants that bind by email;
 - under the workspace access lock, the inviter must still be an owner or admin,
   and each invited project must still belong to the client. Moved or deleted
   projects are dropped. If the inviter lost that authority, or a project-limited
