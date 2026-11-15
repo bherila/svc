@@ -303,4 +303,83 @@ final class CadenceGenerationSnapshotTest extends TestCase
             Schema::clearResolvedInstance('db.schema');
         }
     }
+
+    /**
+     * Review finding B3 (#718): releasing consultant time approves a draft
+     * entry and gives it the agreement's rate, by a compare-and-set on its
+     * status. An approver who set an explicit $200 rate and then unapproved
+     * it after the generator's snapshot leaves it a draft with that rate;
+     * releasing it from the snapshot must not overwrite the rate with $100.
+     */
+    public function test_a_rate_set_after_the_generators_snapshot_is_not_overwritten_by_the_release(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('A REPEATABLE READ snapshot in a second session is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('generation_snapshot');
+        Artisan::call('migrate', ['--database' => 'generation_snapshot', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('generation_snapshot');
+        Schema::clearResolvedInstance('db.schema');
+        $barrier = sys_get_temp_dir().'/svc-generation-snapshot-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        $worker = null;
+        try {
+            $workspace = Workspace::query()->create(['name' => 'Synthetic release snapshot', 'slug' => 'synthetic-release-snapshot']);
+            $owner = User::factory()->create();
+            $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+            $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic release client', 'slug' => 'synthetic-release-client']);
+            $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic release project']);
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic monthly retainer', 'status' => 'active',
+                'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
+                'retainer_minutes' => 600, 'retainer_amount' => 60000, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+            ]);
+            $entry = ClientTimeEntry::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+                'user_id' => $owner->id, 'worked_on' => '2026-01-20', 'minutes' => 60, 'description' => 'Synthetic consultant work',
+                'status' => 'draft', 'is_billable' => true, 'is_deferred' => false, 'currency' => 'USD',
+            ]);
+
+            $worker = new Process(
+                [PHP_BINARY, base_path('tests/Fixtures/Billing/generation-snapshot-worker.php'), base64_encode(json_encode([
+                    'connection' => config('database.connections.'.DB::getDefaultConnection()),
+                    'workspace' => $workspace->id, 'company' => $company->id, 'agreement' => $agreement->id, 'period' => '2026-02-01',
+                    'paused' => $paused, 'release' => $release,
+                ], JSON_THROW_ON_ERROR))],
+                base_path(),
+                ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
+                null,
+                120,
+            );
+            $worker->start();
+            $deadline = microtime(true) + 30;
+            while (! is_file($paused) && $worker->isRunning() && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($paused, $worker->getOutput().$worker->getErrorOutput());
+
+            // Approved at an explicit $200 and unapproved again: a draft that keeps its rate.
+            ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($entry->id)->update([
+                'billing_rate_amount' => 20000, 'billing_rate_source' => 'explicit', 'lock_version' => DB::raw('lock_version + 2'),
+            ]);
+
+            $this->assertTrue(touch($release), 'Could not release the generator.');
+            $worker->wait();
+            $output = $worker->getOutput().$worker->getErrorOutput();
+            $this->assertTrue($worker->isSuccessful(), $output);
+
+            DB::purge('generation_snapshot');
+            $row = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->findOrFail($entry->id);
+            $this->assertSame([20000, 'explicit'], [(int) $row->billing_rate_amount, $row->billing_rate_source], 'The release overwrote a rate set after its snapshot. '.$output);
+        } finally {
+            $worker?->stop(0);
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
 }
