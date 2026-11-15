@@ -2,6 +2,7 @@
 
 use App\Exceptions\CodedRefusal;
 use App\Exceptions\InvalidAgentApiCursor;
+use App\Http\Middleware\AuthenticateBrowserSession;
 use App\Http\Middleware\AuthenticateFirstPartySession;
 use App\Http\Middleware\EnsureAgentWorkspaceVisible;
 use App\Http\Middleware\EnsureOperationDeployed;
@@ -61,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // identity enforcement is enabled). Inside Inertia's middleware, so an
         // ended session's redirect after a PUT or DELETE becomes a 303.
         $middleware->web(append: [
+            AuthenticateBrowserSession::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             RequireActiveProviderSession::class,

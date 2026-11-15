@@ -2370,7 +2370,9 @@ final class AgentOperationCatalog
         }
         $body = self::requestBody($id);
 
-        return isset($body['properties']['confirm']);
+        $properties = (array) ($body['properties'] ?? []);
+
+        return isset($properties['confirm']);
     }
 
     private function takesVersion(string $id): bool
@@ -2383,8 +2385,10 @@ final class AgentOperationCatalog
         }
         $body = self::requestBody($id);
 
-        return isset($body['properties']['expected_version']) || isset($body['properties']['expected_backlog_version'])
-            || isset($body['properties']['expected_graph_version']) || isset($body['properties']['expected_container_version']);
+        $properties = (array) ($body['properties'] ?? []);
+
+        return isset($properties['expected_version']) || isset($properties['expected_backlog_version'])
+            || isset($properties['expected_graph_version']) || isset($properties['expected_container_version']);
     }
 
     /**

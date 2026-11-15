@@ -22,6 +22,7 @@ final class AgentInlineSchemas
     public static function deferredBuyDownPreviewInput(): array
     {
         $schema = AgentApiResponseSchemaCatalog::schema('DeferredBuyDownCreateRequest');
+        $schema['properties'] = (array) $schema['properties'];
         // A quote names no host invoice: the target is a creation-time choice,
         // and the same version guards a settlement on either shape of draft.
         unset($schema['properties']['expected_backlog_version'], $schema['properties']['invoice_id']);
@@ -302,7 +303,7 @@ final class AgentInlineSchemas
         if ($write) {
             $body = AgentApiResponseSchemaCatalog::requestForOperation($operationId);
             $constraints = array_intersect_key($body, ['allOf' => true]);
-            $properties = [...$properties, ...$body['properties']];
+            $properties = [...$properties, ...(array) $body['properties']];
             $required = [...$required, ...$body['required']];
         }
 

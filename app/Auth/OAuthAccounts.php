@@ -22,13 +22,11 @@ use Illuminate\Database\Eloquent\Model;
  * verifies email changes" in SECURITY.md before overriding them or adding a provider.
  *
  * Both refuse, before anything is written, an identity whose provider sent `email_verified`
- * as anything but true ({@see ProviderEmailVerification}): such an address is never used to
+ * as anything but true ({@see OAuthIdentity::$emailVerified}): such an address is never used to
  * create, link or update an account. An identity without the claim is trusted as before.
  */
 final class OAuthAccounts extends RelyingPartyAccounts
 {
-    public function __construct(private readonly ProviderEmailVerification $emailVerification) {}
-
     /** @return array<string, mixed> */
     public function newAccountAttributes(OAuthIdentity $identity): array
     {
@@ -56,7 +54,7 @@ final class OAuthAccounts extends RelyingPartyAccounts
 
     private function refuseUnverifiedEmail(OAuthIdentity $identity): void
     {
-        if ($this->emailVerification->refuses($identity)) {
+        if ($identity->emailVerified === false) {
             throw new UnverifiedProviderEmail($identity->provider);
         }
     }
