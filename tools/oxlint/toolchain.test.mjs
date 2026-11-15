@@ -4,29 +4,13 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { assertLockIdentities, inspectToolchain } from './toolchain.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(import.meta.url);
 
 void test('the locked dependency graph contains TypeScript 7 without legacy engines', () => {
-    // Inspect package and snapshot keys, rather than peer declarations: retained
-    // plugins mention optional ESLint peers and the generator accepts a legacy
-    // TypeScript callback adapter, but neither engine should be installed.
-    const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
-    const packages = [
-        ...lock.matchAll(
-            /^ {2}['"]?(eslint|typescript|@typescript\/typescript6)@([^'":\s]+)['"]?:$/gm,
-        ),
-    ];
-    assert.ok(packages.length > 0, 'No compiler package records found');
-
-    for (const [, name, version] of packages) {
-        assert.equal(name, 'typescript', `Legacy engine is locked: ${name}`);
-        assert.ok(
-            Number.parseInt(version, 10) >= 7,
-            `Legacy compiler is locked: ${version}`,
-        );
-    }
+    assertLockIdentities(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'));
 });
 
 void test('API generation resolves TypeScript 7 and has no classic compiler adapter', () => {
@@ -46,4 +30,11 @@ void test('API generation resolves TypeScript 7 and has no classic compiler adap
             code: 'MODULE_NOT_FOUND',
         });
     }
+});
+
+void test('every reachable installed identity is free of classic compilers and ESLint', () => {
+    const count = inspectToolchain(root);
+    console.log(
+        `Toolchain contract: ${count} reachable package manifests inspected; native TypeScript only, no ESLint engine/classic compiler.`,
+    );
 });
