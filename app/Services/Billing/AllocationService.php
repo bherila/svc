@@ -60,14 +60,14 @@ final class AllocationService
             $recombined = 0;
 
             foreach ($rootIds as $rootId) {
-                $group = $this->group($workspace, $company, (int) $rootId);
+                [$group, $allocated] = $this->group($workspace, $company, (int) $rootId);
 
-                if ($group->count() < 2 || ! $this->canMerge($group)) {
+                if ($group->count() < 2 || ! $this->canMerge($group, $allocated)) {
                     continue;
                 }
 
                 $recombined += $group->count() - 1;
-                $this->merge($group);
+                $this->merge($group, $allocated);
             }
 
             return $recombined;
@@ -77,11 +77,17 @@ final class AllocationService
     /**
      * Every surviving row that was once part of one entry: the root and its
      * fragments, locked together so a concurrent invoice run cannot bill one
-     * of them while this decides they are all free.
+     * of them while this decides they are all free - and the ids of those
+     * already billed.
      *
-     * @return Collection<int, ClientTimeEntry>
+     * Billed is read from the allocation rows with a lock, after the rows':
+     * an eager load would read them through this transaction's snapshot, and
+     * a fragment allocated after it would look free and be merged away with
+     * its allocation (#718). Any allocation counts, whatever its workspace.
+     *
+     * @return array{Collection<int, ClientTimeEntry>, list<int>}
      */
-    private function group(Workspace $workspace, ClientCompany $company, int $rootId): Collection
+    private function group(Workspace $workspace, ClientCompany $company, int $rootId): array
     {
         $group = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
@@ -89,10 +95,30 @@ final class AllocationService
             ->where(function ($query) use ($rootId): void {
                 $query->whereKey($rootId)->orWhere('split_from_time_entry_id', $rootId);
             })
-            ->with('invoiceLines')
             ->orderBy('id')
             ->tap(Locks::forUpdate())
             ->get();
+        $ids = $group->modelKeys();
+        // Scoped to the workspace so the read is a bounded lookup on
+        // (workspace_id, client_time_entry_id) - unscoped, the locking scan
+        // reached other tenants' rows - and the composite key to the time
+        // entry keeps every allocation in its entry's workspace. A legacy row
+        // written past that key is still found, by an ordinary read: nothing
+        // writes such rows now, so no snapshot can be behind them.
+        $allocated = $ids === [] ? [] : array_values(array_unique(array_map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0, [
+            ...DB::table('client_invoice_line_time_entries')
+                ->where('workspace_id', $workspace->id)
+                ->whereIn('client_time_entry_id', $ids)
+                ->orderBy('id')
+                ->tap(Locks::forShare())
+                ->pluck('client_time_entry_id')
+                ->all(),
+            ...DB::table('client_invoice_line_time_entries')
+                ->where('workspace_id', '!=', $workspace->id)
+                ->whereIn('client_time_entry_id', $ids)
+                ->pluck('client_time_entry_id')
+                ->all(),
+        ])));
 
         // Validate after taking the same row locks recombination relies on, so
         // a concurrent edit cannot move a fragment to another project's chain
@@ -104,19 +130,20 @@ final class AllocationService
                 ->whereKey($group->modelKeys()),
         );
 
-        return $group;
+        return [$group, $allocated];
     }
 
     /**
      * @param  Collection<int, ClientTimeEntry>  $group
+     * @param  list<int>  $allocated  ids of the group's billed rows, from {@see self::group()}
      */
-    private function canMerge(Collection $group): bool
+    private function canMerge(Collection $group, array $allocated): bool
     {
         if ($group->count() < 2) {
             return false;
         }
 
-        if ($group->contains(fn (ClientTimeEntry $entry): bool => $entry->invoiceLines->isNotEmpty())) {
+        if ($group->contains(fn (ClientTimeEntry $entry): bool => in_array((int) $entry->id, $allocated, true))) {
             return false;
         }
 
@@ -185,10 +212,11 @@ final class AllocationService
      * Fold a group into its lowest-id member and delete the rest.
      *
      * @param  Collection<int, ClientTimeEntry>  $group
+     * @param  list<int>  $allocated
      */
-    private function merge(Collection $group): ClientTimeEntry
+    private function merge(Collection $group, array $allocated): ClientTimeEntry
     {
-        if (! $this->canMerge($group)) {
+        if (! $this->canMerge($group, $allocated)) {
             throw new InvalidArgumentException('Cannot merge fragments: one is billed, or they no longer agree.');
         }
 

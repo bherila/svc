@@ -81,10 +81,17 @@ final class ConsultantTimeReleaser
             // generation takes the numbering rows before it touches time, and
             // locking entries here, ahead of them, would walk that order
             // backwards. The status in the WHERE is what makes it safe - an
-            // entry someone else moved meanwhile is simply not written.
+            // entry someone else moved meanwhile is simply not written. The
+            // version too: the candidates are read through this transaction's
+            // snapshot, and the rate written below is decided from that copy.
+            // An approver who set an explicit rate and unapproved the entry
+            // since leaves the status as it was, and matching on the status
+            // alone overwrote that rate with the agreement's (#718). A moved
+            // entry waits for the next generation.
             $released += ClientTimeEntry::query()
                 ->where('workspace_id', $company->workspace_id)
                 ->whereKey($entry->id)
+                ->where('lock_version', $entry->lock_version)
                 ->where('status', 'draft')
                 ->whereNull('client_disputed_at')
                 ->where(fn ($outcome) => $outcome->whereNull('client_dispute_settlement')

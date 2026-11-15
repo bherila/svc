@@ -693,6 +693,36 @@ waiting for a payment, so invoice reconciliation's retained billing locks cannot
 cycle. `SquarePendingSettlement` follows the billing resources and precedes the final Square-link
 read in the lock registry.
 
+### Generation writes from its snapshot (#718)
+
+Cadence generation reads time, expenses and earlier invoices through its
+transaction's snapshot and then writes rows from what it read. A time or
+expense writer takes the row's lock, not the agreement's, so it can commit in
+between - before generation's own locks, and before a caller's older snapshot
+was even taken. Each write that is derived from such a read now confirms the
+row is still the one it read, or reads it with a lock:
+
+- **Splitting and linking time** (`TimeEntrySplitter::splitEntry`,
+  `InvoiceLineComposer::attach`, `pricedEntry`) lock the row and refuse with the
+  retryable `TimeChangedDuringBilling` when its minutes or version differ from
+  the copy that was priced. A split otherwise wrote the old minutes back over a
+  committed edit, and a whole entry was charged at minutes it no longer had.
+- **Recombining fragments** (`AllocationService::group`) decides a fragment is
+  billed from its allocation rows read with a share lock, scoped to the
+  workspace so the read is a bounded lookup. An eager load through the snapshot
+  let a fragment billed since look free and be merged away with its allocation.
+- **Claiming expenses** (`ExpenseInvoiceAllocations::rebuild`) prices the
+  claimed expenses from a locking re-read, not the snapshot.
+- **Releasing consultant time** (`ConsultantTimeReleaser`) and **deferring late
+  work** (`LateWork::deferFromThePool`) are compare-and-sets that now also
+  match the version the decision was made at; a moved row waits for the next
+  generation.
+
+`CadenceGenerationSnapshotTest` holds a generator at its first ordinary read,
+commits each change from a second session, and checks the outcome. Ledger
+quantities that are not tied to a linked row - re-carried deferred work and the
+balance columns - are not yet re-derived at issue; see #718.
+
 ### Deferred buy-down reservation
 
 `DeferredBuyDownAction::create` follows the enforced registry, whose agreement

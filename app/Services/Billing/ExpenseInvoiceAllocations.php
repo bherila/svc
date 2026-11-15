@@ -84,7 +84,11 @@ final class ExpenseInvoiceAllocations
             }
         }
         // All these rows are already locked; re-read eligibility after release.
-        $expenses = $this->eligible($company, $agreement, $through, $invoice->currency)->whereKey($locked->modelKeys())->orderBy('id')->get();
+        // A locking read, so it returns the rows as they are: an ordinary read
+        // returns this transaction's snapshot, which can predate the lock, and
+        // an expense edited since (unapproved, cut from $150 to $100, approved
+        // again) was billed at the amount it no longer had (#718).
+        $expenses = $this->eligible($company, $agreement, $through, $invoice->currency)->whereKey($locked->modelKeys())->orderBy('id')->tap(Locks::forShare())->get();
         foreach ($expenses as $expense) {
             $terms = ExpenseInvoiceTerms::from($expense);
             $line = ClientInvoiceLine::query()->create([
