@@ -8,12 +8,16 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\TimeEntrySplitter;
+use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Concurrency\LockMode;
 use App\Support\Concurrency\LockOrderRecorder;
 use App\Support\Concurrency\LockResource;
+use Closure;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 #[CoversClass(ClientCompany::class)]
@@ -22,6 +26,7 @@ use Tests\TestCase;
 #[CoversClass(User::class)]
 #[CoversClass(Workspace::class)]
 #[CoversClass(TimeEntrySplitter::class)]
+#[CoversClass(TimeChangedDuringBilling::class)]
 #[CoversClass(LockMode::class)]
 #[CoversClass(LockOrderRecorder::class)]
 #[CoversClass(LockResource::class)]
@@ -266,6 +271,48 @@ class TimeEntrySplitterTest extends TestCase
         $this->assertSame('Synthetic reply', $overflow->client_dispute_reply);
         $this->assertSame('2024-02-03 10:00:00', $overflow->client_dispute_settled_at?->format('Y-m-d H:i:s'));
         $this->assertSame($user->id, $overflow->client_dispute_settled_by_user_id);
+    }
+
+    /** @return iterable<string, array{Closure(ClientTimeEntry): void}> */
+    public static function movedRows(): iterable
+    {
+        yield 'its minutes changed' => [static fn (ClientTimeEntry $entry) => ClientTimeEntry::query()->whereKey($entry->id)->update(['minutes' => 150])];
+        yield 'only its version moved' => [static fn (ClientTimeEntry $entry) => ClientTimeEntry::query()->whereKey($entry->id)->update(['lock_version' => DB::raw('lock_version + 1')])];
+        // A raw update, so the version stays: only the deletion tells.
+        yield 'it was deleted' => [static fn (ClientTimeEntry $entry) => DB::table('client_time_entries')->where('id', $entry->id)->update(['deleted_at' => now()])];
+        yield 'it no longer exists' => [static fn (ClientTimeEntry $entry) => DB::table('client_time_entries')->where('id', $entry->id)->delete()];
+    }
+
+    /**
+     * The split point was priced from the copy the caller holds; a row that
+     * moved since must not be split from it (#718), and nothing is written.
+     *
+     * @param  Closure(ClientTimeEntry): void  $move
+     */
+    #[DataProvider('movedRows')]
+    public function test_a_split_refuses_a_row_that_moved_since_it_was_read(Closure $move): void
+    {
+        $entry = $this->createTimeEntry($this->createUser()->id, 180, '2026-08-14');
+        $move($entry);
+        $before = DB::table('client_time_entries')->orderBy('id')->get()->all();
+
+        try {
+            $this->splitter->splitEntry($entry, 60);
+            $this->fail('A moved row was split.');
+        } catch (TimeChangedDuringBilling) {
+        }
+
+        $this->assertEquals($before, DB::table('client_time_entries')->orderBy('id')->get()->all());
+    }
+
+    public function test_the_current_row_check_passes_an_unchanged_row_and_refuses_a_moved_one(): void
+    {
+        $entry = $this->createTimeEntry($this->createUser()->id, 180, '2026-08-14');
+        TimeEntrySplitter::assertCurrent($entry);
+
+        ClientTimeEntry::query()->whereKey($entry->id)->update(['minutes' => 120]);
+        $this->expectException(TimeChangedDuringBilling::class);
+        TimeEntrySplitter::assertCurrent($entry);
     }
 
     public function test_split_entry_throws_on_invalid_split_point(): void

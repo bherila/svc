@@ -257,7 +257,7 @@ class TimeEntrySplitter
             ->where('workspace_id', $entry->workspace_id)
             ->whereKey($entry->id)
             ->tap(Locks::forUpdate())
-            ->first(['id', 'minutes', 'lock_version', 'deleted_at']);
+            ->first(['minutes', 'lock_version', 'deleted_at']);
         if (! $current instanceof ClientTimeEntry
             || $current->deleted_at !== null
             || self::intOf($current->getAttribute('minutes')) !== self::intOf($entry->getOriginal('minutes'))
@@ -266,7 +266,11 @@ class TimeEntrySplitter
         }
     }
 
-    /** A stored integer column as an int; anything else compares unequal to it. */
+    /**
+     * A stored integer column as an int; anything else compares unequal to it.
+     *
+     * @infection-ignore-all Removing the cast is equivalent on both drivers the suite runs: SQLite and MariaDB return the same type for the stored row and the loaded copy, so they compare equal either way (checked on both, #736). It stays so a driver that returns numeric strings cannot make an unchanged row look moved.
+     */
     private static function intOf(mixed $value): ?int
     {
         return is_numeric($value) ? (int) $value : null;
