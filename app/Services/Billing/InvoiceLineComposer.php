@@ -17,6 +17,7 @@ use App\Support\Billing\FlatHourlyGroup;
 use App\Support\Billing\FlatHourlyPricing;
 use App\Support\Billing\HoursQuantity;
 use App\Support\Billing\InvoiceLineType;
+use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Concurrency\Locks;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -475,10 +476,7 @@ class InvoiceLineComposer
         }
 
         foreach ($entrySplitPlan as $entryId => $splits) {
-            $entry = ClientTimeEntry::query()
-                ->where('workspace_id', $company->workspace_id)
-                ->where('client_company_id', $company->id)
-                ->find($entryId);
+            $entry = $this->pricedEntry($company, $entryId);
 
             // Refused rather than skipped, and the earlier reasoning for
             // skipping was wrong on a point of fact. It argued that stopping
@@ -547,6 +545,41 @@ class InvoiceLineComposer
     }
 
     /**
+     * The entry as these fragments priced it, provided it is still that row.
+     *
+     * The fragments were measured from this transaction's ordinary reads -
+     * its snapshot, which a caller may have opened before generation's locks,
+     * and which a time writer (who takes the row's lock, not the agreement's)
+     * can have moved past since. The row is read both ways: through the
+     * snapshot, as priced, and with its lock, as it is now. When they differ
+     * the line would charge minutes the work no longer has, or a split would
+     * write them back, so nothing is linked (#718).
+     */
+    private function pricedEntry(ClientCompany $company, int $entryId): ?ClientTimeEntry
+    {
+        $priced = ClientTimeEntry::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->find($entryId);
+        $current = ClientTimeEntry::query()
+            ->where('workspace_id', $company->workspace_id)
+            ->where('client_company_id', $company->id)
+            ->whereKey($entryId)
+            ->tap(Locks::forUpdate())
+            ->first(['id', 'minutes', 'lock_version']);
+        if ($priced === null && $current === null) {
+            return null;
+        }
+        if ($priced === null || $current === null
+            || (int) $current->minutes !== (int) $priced->minutes
+            || (int) $current->lock_version !== (int) $priced->lock_version) {
+            throw new TimeChangedDuringBilling;
+        }
+
+        return $priced;
+    }
+
+    /**
      * Bill one entry on one line.
      *
      * The predecessor stored this as a column on the entry. Here it is a pivot
@@ -555,6 +588,10 @@ class InvoiceLineComposer
      */
     private function attach(ClientInvoiceLine $line, ClientTimeEntry $entry): void
     {
+        // The line was priced from this copy of the row; linking it once the
+        // row has moved would charge minutes the work no longer has (#718).
+        // Every path that bills time on a line comes through here.
+        TimeEntrySplitter::assertCurrent($entry);
         $line->timeEntries()->syncWithoutDetaching([
             $entry->id => ['workspace_id' => $line->workspace_id],
         ]);

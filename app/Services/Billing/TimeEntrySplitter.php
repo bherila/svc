@@ -5,6 +5,8 @@ namespace App\Services\Billing;
 use App\Models\ClientTimeEntry;
 use App\Services\Billing\Balances\AllocationPlan;
 use App\Services\Billing\Balances\TimeEntryFragment;
+use App\Support\Billing\TimeChangedDuringBilling;
+use App\Support\Concurrency\Locks;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -136,6 +138,11 @@ class TimeEntrySplitter
 
         return DB::transaction(function () use ($entry, $splitAtMinutes) {
             BillingMaintenance::share($entry->workspace_id);
+            // The split point was priced from this copy of the row, which a
+            // caller may have read through an older snapshot. The row as it is
+            // now, under its lock: a time edit committed since would be
+            // overwritten below and its old minutes charged (#718).
+            self::assertCurrent($entry);
             $overflowMinutes = $entry->minutes_worked - $splitAtMinutes;
 
             // Create overflow entry.
@@ -236,5 +243,26 @@ class TimeEntrySplitter
             fn ($sum, $fragment) => $sum + $fragment->getHours(),
             0.0
         );
+    }
+
+    /**
+     * Refuse when the row has changed since the caller read it: its version
+     * moves with every application write, and the minutes are compared too
+     * because they are what a split or merge rewrites.
+     */
+    public static function assertCurrent(ClientTimeEntry $entry): void
+    {
+        $current = ClientTimeEntry::query()
+            ->withTrashed()
+            ->where('workspace_id', $entry->workspace_id)
+            ->whereKey($entry->id)
+            ->tap(Locks::forUpdate())
+            ->first(['id', 'minutes', 'lock_version', 'deleted_at']);
+        if (! $current instanceof ClientTimeEntry
+            || $current->deleted_at !== null
+            || (int) $current->minutes !== (int) $entry->getOriginal('minutes')
+            || (int) $current->lock_version !== (int) $entry->getOriginal('lock_version')) {
+            throw new TimeChangedDuringBilling;
+        }
     }
 }
