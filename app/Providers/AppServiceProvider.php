@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Auth\ProviderEmailVerification;
 use App\Database\CharacterUuidMariaDbConnection;
 use App\Models\ClientCompany;
 use App\Models\ClientProject;
@@ -74,6 +75,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // Read once per request: every write goes through the service, which clears it.
         $this->app->scoped(WorkspacePaymentConnections::class);
+        // The sign-in callback's provider claims: the listener writes what the accounts read.
+        $this->app->scoped(ProviderEmailVerification::class);
         // Whether any workspace has its own Square connection is a database
         // question, so it is bound here and asked by the flags only when bound.
         $this->app->bind(AgentDeploymentFlags::SQUARE_CONNECTIONS_PROBE, fn ($app): Closure => static fn (): bool => $app->make(WorkspacePaymentConnections::class)->anyActive(PaymentProcessor::Square));

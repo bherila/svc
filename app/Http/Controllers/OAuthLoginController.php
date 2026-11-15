@@ -2,13 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\OAuthAccounts;
+use App\Auth\ProviderEmailVerification;
+use App\Auth\UnverifiedProviderEmail;
 use App\Models\User;
 use App\Services\Access\PortalInvitations;
 use App\Services\Navigation\WorkspaceReturnPoint;
 use BWH\Auth\Http\Controllers\RelyingPartyLoginController;
+use BWH\Auth\OAuth\OAuthClient;
 use BWH\Auth\OAuth\OAuthIdentity;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Sign-in and sign-out through the identity provider. The flow, the account rules and the
@@ -20,6 +26,24 @@ use Illuminate\Http\Request;
  */
 final class OAuthLoginController extends RelyingPartyLoginController
 {
+    /**
+     * The package's callback, with the provider's identity response watched for an
+     * `email_verified` claim. An address the provider says is unverified is refused before any
+     * account is created, linked or updated ({@see OAuthAccounts}), and before any
+     * session exists; the person sees why.
+     */
+    public function callback(Request $request, OAuthClient $oauth): Response
+    {
+        try {
+            return app(ProviderEmailVerification::class)->during(fn (): Response => parent::callback($request, $oauth));
+        } catch (UnverifiedProviderEmail $refusal) {
+            Log::warning('OAuth sign-in refused: the provider reports the address unverified.', ['provider' => $refusal->provider]);
+            $this->auditLoginFailed($request, null, null, 'Identity email not verified by provider', 'oauth');
+
+            throw $refusal;
+        }
+    }
+
     /**
      * Back where they left off, when they may still go there. `WorkspaceReturnPoint`
      * revalidates against this person's current access before offering a workspace, so

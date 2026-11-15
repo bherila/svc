@@ -43,7 +43,26 @@ whichever account currently holds an address:
 This is safe only because the identity provider confirms mailbox control before an
 email change takes effect, as the owner has confirmed it does. A provider (or a second
 provider added later) that lets a person set or change an address without proving they
-control it would let them claim every grant above for that address. Before trusting
-such a provider, SVC must require an `email_verified` claim on the identity, refuse or
-leave unverified any sign-in without it, and bind these grants only to verified
-addresses.
+control it would let them claim every grant above for that address.
+
+### When the provider sends `email_verified`
+
+If the provider's identity (userinfo) response carries an `email_verified` claim, SVC
+honours it (`App\Auth\ProviderEmailVerification`, checked by `App\Auth\OAuthAccounts`):
+
+- `true`, or the string `"true"` in any case, signs in as before;
+- any other value - `false`, `"false"`, `"0"`, `0`, `""`, `null` or anything unrecognised -
+  refuses the sign-in with a 403 that tells the person to verify the address with the
+  provider. The refusal happens before any write: no account is created, no subject is
+  linked, and an existing account's name, address and `email_verified_at` are left as they
+  were. No session is started, and the refusal is logged and audited as a failed sign-in.
+
+If the claim is **absent**, SVC keeps the behaviour above and trusts the provider's
+address. That is the case today: the provider SVC uses (`bherila/auth-manager`) sends
+`sub`, `name`, `email`, `credential_version`, `apps` and the authentication context, but
+no `email_verified`, so this assumption still carries the grants listed above. Sending the
+claim from the provider would let SVC enforce it with no change here.
+
+Before trusting a provider that does not verify address changes, SVC must go further:
+require the claim (refuse or leave unverified any sign-in without it) and bind these
+grants only to verified addresses.

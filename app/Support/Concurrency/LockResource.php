@@ -158,6 +158,13 @@ enum LockResource: string
     // Prepared bytes publish only after the tenant parent and receipt are locked.
     case ClientAttachment = 'client_attachments';
 
+    // A workspace's manual client-email budget: `invoices.send` and a manual
+    // payment reminder lock it under the invoice lock, before counting the
+    // workspace's recent deliveries and reminders and inserting their own.
+    // Not the workspace row, which the agent receipt insert's foreign key
+    // check has already share-locked in both transactions.
+    case ClientEmailBudgetLock = 'client_email_budget_locks';
+
     // Durable email claims are taken in short transactions after the billing
     // mutation commits. Client-delivery result persistence locks the invoice
     // and then its delivery so those two local facts commit atomically; the

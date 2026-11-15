@@ -583,7 +583,7 @@ final class InvoiceEmailService
                 }
                 if ($origin === 'manual') {
                     $this->assertNotARepeat($locked, $draft);
-                    if (! $this->budget->allows($locked->workspace_id, count($draft->recipients))) {
+                    if (! $this->budget->admit($locked->workspace_id, count($draft->recipients))) {
                         throw new DomainException('This workspace has reached its limit of '.$this->budget->limit().' recipients emailed by hand in the last 24 hours. Try again later.');
                     }
                 }

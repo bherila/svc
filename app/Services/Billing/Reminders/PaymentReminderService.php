@@ -85,7 +85,7 @@ final class PaymentReminderService
             if ($decision->refusal !== null) {
                 throw PaymentReminderRefused::because($decision->refusal);
             }
-            if (! $this->budget->allows($workspace->id, count($facts->recipients))) {
+            if (! $this->budget->admit($workspace->id, count($facts->recipients))) {
                 throw PaymentReminderRefused::because(PaymentReminderRefusal::DailyRecipientLimit);
             }
 
