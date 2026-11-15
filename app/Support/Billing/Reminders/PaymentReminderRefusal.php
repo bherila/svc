@@ -18,6 +18,10 @@ enum PaymentReminderRefusal: string
     case SquareNotOpen = 'square_not_open';
     case PaidOutsideSquare = 'paid_outside_square';
 
+    // A person asking.
+    case RecentlyReminded = 'recently_reminded';
+    case DailyRecipientLimit = 'daily_recipient_limit';
+
     // The automatic cadence only.
     case CadenceOff = 'cadence_off';
     case NoDueDate = 'no_due_date';
@@ -40,6 +44,8 @@ enum PaymentReminderRefusal: string
             self::SquarePageMissing => 'The linked Square invoice has no Square payment page in SVC\'s Square mirror. Sync Square and try again; SVC never sends its own payment link for an invoice Square collects.',
             self::SquareNotOpen => 'Square does not show the linked invoice as unpaid or partially paid, so there is nothing to pay on its Square page.',
             self::PaidOutsideSquare => 'A payment recorded outside Square is not reflected in Square\'s balance, so its payment page would ask for too much. Close or adjust the invoice in Square first.',
+            self::RecentlyReminded => 'A reminder for this invoice was sent within the last '.PaymentReminderPolicy::MANUAL_COOLDOWN_MINUTES.' minutes. Wait before reminding the client again.',
+            self::DailyRecipientLimit => 'This workspace has reached its limit of recipients emailed by hand in the last 24 hours. Try again later.',
             self::CadenceOff => 'Automatic payment reminders are off for this client.',
             self::NoDueDate => 'The invoice has no due date, so no reminder step falls due.',
             self::SquareAutopay => 'Square charges the card on file for this invoice automatically, so SVC does not remind about it on a schedule.',
@@ -58,7 +64,7 @@ enum PaymentReminderRefusal: string
         return match ($this) {
             self::InFlight => true,
             self::NotOpen, self::NothingDue, self::NoRecipients, self::SquareNotLinked, self::SquarePageMissing,
-            self::SquareNotOpen, self::PaidOutsideSquare, self::CadenceOff, self::NoDueDate, self::SquareAutopay,
+            self::SquareNotOpen, self::PaidOutsideSquare, self::RecentlyReminded, self::DailyRecipientLimit, self::CadenceOff, self::NoDueDate, self::SquareAutopay,
             self::SquareSendsReminders, self::NotYetDue, self::StepHandled, self::BeforeCadenceEnabled,
             self::BeforeIssue, self::OutsideSendingHours => false,
         };

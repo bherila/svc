@@ -390,7 +390,7 @@ export interface paths {
         /** @description Manager-only bounded billing schedules with opaque current revisions. */
         get: operations['billing_schedules.list'];
         put?: never;
-        /** @description Create a schedule without issuing. Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
+        /** @description Create a schedule without issuing. next_run_on may not precede the agreement start or fall more than two years before today (422). Refuses a first period overlapping a successor agreement with 422; no automatic proration. expected_version is the parent agreement revision. Workspace managers only. */
         post: operations['billing_schedules.create'];
         delete?: never;
         options?: never;
@@ -407,7 +407,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
+        /** @description Generate and issue due invoices through today using the schedule revision. Explicit confirmation required. Normal automatic client delivery settings apply. Atomic preflight and idempotent replay. Bills at most 24 periods per call; when the returned schedule next_run_on is still on or before today, call again to bill the rest. Refuses successor agreement coverage overlaps with 422 before writing any invoice. */
         post: operations['billing_schedules.generate'];
         delete?: never;
         options?: never;
@@ -1782,7 +1782,7 @@ export interface paths {
         /** @description Workspace managers only. Whether a payment reminder may be sent for the invoice now, to whom and with which pay link, why not when it may not, where the client's automatic cadence stands for it, and the latest 50 reminders, newest first, with who or what sent each and its result. */
         get: operations['invoices.reminders.list'];
         put?: never;
-        /** @description Workspace managers only. Email the client a payment reminder for an issued or partially paid invoice with a balance, now, from SVC's usual invoice sender to the client's billing address and portal users. An invoice Square collects carries Square's own payment page and is refused with 422 when there is none usable (not linked, not mirrored, not open in Square, or paid partly outside Square); SVC never sends its own payment link for it. Any other invoice links to the client portal when the client could open it there, and carries the invoice PDF. Another reminder leaving for the same invoice is a 409. Requires the invoice's current expected_version and confirm: true. The reminder is registered with this request's receipt and sent once it commits; the response is the logged reminder with its result (sent, failed or cancelled). Repeating the same idempotency key returns the same reminder and sends nothing more. */
+        /** @description Workspace managers only. Email the client a payment reminder for an issued or partially paid invoice with a balance, now, from SVC's usual invoice sender to the client's billing address and portal users. An invoice Square collects carries Square's own payment page and is refused with 422 when there is none usable (not linked, not mirrored, not open in Square, or paid partly outside Square); SVC never sends its own payment link for it. Any other invoice links to the client portal when the client could open it there, and carries the invoice PDF. Another reminder leaving for the same invoice is a 409. A reminder within 60 minutes of the last one sent for the invoice is refused with 422 (recently_reminded), as is one past the workspace's daily limit of recipients emailed by hand (daily_recipient_limit). Requires the invoice's current expected_version and confirm: true. The reminder is registered with this request's receipt and sent once it commits; the response is the logged reminder with its result (sent, failed or cancelled). Repeating the same idempotency key returns the same reminder and sends nothing more. */
         post: operations['invoices.send_reminder'];
         delete?: never;
         options?: never;
@@ -1816,7 +1816,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome. */
+        /** @description Email an issued invoice to explicit recipients, only with confirm: true and the current expected_version, with the invoice screen's compose fields: an optional subject (default: the invoice's own), an optional covering message, and bcc_self to blind-copy the signed-in user's own address - no other blind copy can be named. Refused with 422 when it repeats a send of the same revision to the same recipients with the same subject and message within 15 minutes, or when the workspace has emailed its daily limit of recipients by hand (300 in 24 hours by default). The delivery is registered with this request's receipt and sent once it commits. The additive delivery field reports the exact registered delivery, or null for a legacy receipt with no recorded delivery identity. A completed mutation is not proof of email acceptance: pending/sending are unresolved, sent means accepted by the mailer, and failed means preparation failed before handoff. Retry an uncertain response with the same key and unchanged body; repeating that key never sends again. Only a proven failed delivery permits an explicit new attempt with a new key and current invoice version. Never automatically resend a null, pending or sending outcome. */
         post: operations['invoices.send'];
         delete?: never;
         options?: never;
@@ -6095,6 +6095,8 @@ export interface components {
                 | 'square_page_missing'
                 | 'square_not_open'
                 | 'paid_outside_square'
+                | 'recently_reminded'
+                | 'daily_recipient_limit'
                 | 'cadence_off'
                 | 'no_due_date'
                 | 'square_autopay'

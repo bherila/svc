@@ -530,7 +530,9 @@ foreach ([
         'workspace_id' => $workspace->id, 'client_invoice_id' => $reminderInvoice->id, 'channel' => 'email',
         'recipients' => [str_repeat('synthetic-accounts-payable', 4).'@synthetic-layout.example.test', 'billing-notifications@synthetic-layout.example.test'],
         'subject' => 'Payment reminder: invoice '.$reminderInvoice->invoice_number, 'currency' => 'USD', 'amount_due' => 12_345,
-        'due_on' => $reminderInvoice->due_date, 'attempt_number' => 1, 'queued_at' => CarbonImmutable::now('UTC'), 'sent_at' => CarbonImmutable::now('UTC'),
+        // Two hours back: a reminder sent within the manual cooldown would hide
+        // the Send reminder action this screen exercises.
+        'due_on' => $reminderInvoice->due_date, 'attempt_number' => 1, 'queued_at' => CarbonImmutable::now('UTC')->subHours(2), 'sent_at' => CarbonImmutable::now('UTC')->subHours(2),
     ]);
 }
 

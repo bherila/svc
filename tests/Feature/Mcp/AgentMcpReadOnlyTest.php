@@ -407,6 +407,49 @@ final class AgentMcpReadOnlyTest extends TestCase
         $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
     }
 
+    public function test_one_aggregate_budget_per_credential_spans_every_capability(): void
+    {
+        config(['agent_api.mcp_rate_limits' => ['mcp-read' => 120, 'mcp-write' => 20], 'agent_api.mcp_total_rate_limit' => 2]);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Aggregate Limited Workspace', 'slug' => 'aggregate-limited-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::IDENTITY_READ, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $call = static fn (int $id, string $name, array $arguments): array => ['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => ['name' => $name, 'arguments' => $arguments]];
+
+        $this->mcp($call(2, 'projects.list', ['workspace_id' => $workspace->public_id]), $session)->assertOk()->assertJsonPath('result.isError', false);
+        $this->mcp($call(3, 'context.get', []), $session)->assertOk()->assertJsonPath('result.isError', false);
+        // Each tool is far below its own ceiling; the credential's total is spent.
+        foreach ([[4, 'projects.list', ['workspace_id' => $workspace->public_id]], [5, 'context.get', []]] as [$id, $name, $arguments]) {
+            $limited = $this->mcp($call($id, $name, $arguments), $session)->assertOk()->json('result');
+            $this->assertTrue($limited['isError'], $name);
+            $this->assertSame('This operation is temporarily rate limited. Please retry later.', $limited['content'][0]['text']);
+        }
+    }
+
+    public function test_a_json_rpc_batch_over_the_bound_is_refused_before_anything_runs(): void
+    {
+        config(['agent_api.mcp_max_batch_size' => 3]);
+        Event::fake([McpCapabilityInvoked::class]);
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create(['name' => 'Batch Workspace', 'slug' => 'batch-workspace']);
+        WorkspaceMembership::query()->create(['workspace_id' => $workspace->id, 'user_id' => $user->id, 'role' => 'admin']);
+        $this->actingAsMcp($user, [AgentApiScopes::MCP_USE, AgentApiScopes::PROJECTS_READ]);
+        $session = $this->initialize();
+        $batch = array_map(static fn (int $id): array => ['jsonrpc' => '2.0', 'id' => $id, 'method' => 'tools/call', 'params' => ['name' => 'projects.list', 'arguments' => ['workspace_id' => $workspace->public_id]]], range(10, 13));
+
+        $this->postJson('/api/v1/mcp', $batch, ['Mcp-Protocol-Version' => '2025-03-26', 'Mcp-Session-Id' => $session])
+            ->assertStatus(400)
+            ->assertExactJson(['jsonrpc' => '2.0', 'id' => null, 'error' => ['code' => -32600, 'message' => 'JSON-RPC batch size 4 exceeds the maximum allowed batch size of 3.']]);
+        Event::assertNotDispatched(McpCapabilityInvoked::class);
+
+        // Within the bound the middleware stays out of the way, and one message is never a batch.
+        $within = $this->postJson('/api/v1/mcp', array_slice($batch, 0, 3), ['Mcp-Protocol-Version' => '2025-03-26', 'Mcp-Session-Id' => $session]);
+        $this->assertStringNotContainsString('exceeds the maximum allowed batch size', (string) $within->getContent());
+        $this->mcp($batch[0], $session)->assertOk()->assertJsonPath('result.isError', false);
+        Event::assertDispatched(McpCapabilityInvoked::class);
+    }
+
     public function test_mcp_capability_rate_limits_apply_to_resources_and_prompts(): void
     {
         config([

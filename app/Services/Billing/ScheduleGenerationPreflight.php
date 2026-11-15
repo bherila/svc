@@ -88,8 +88,8 @@ final class ScheduleGenerationPreflight
      *
      * A schedule whose `next_run_on` sits years in the past has hundreds of
      * periods due, and each is a query. `generateDue()` would work through all
-     * of them, so the cap is not a claim that it would not - it is a promise
-     * that the audit cannot itself become the incident.
+     * of them, a batch per run, so the cap is not a claim that it would not -
+     * it is a promise that the audit cannot itself become the incident.
      *
      * A schedule that hits it is reported as *truncated*, and a report with any
      * truncation is inconclusive rather than clean: its unexamined periods are
@@ -118,12 +118,20 @@ final class ScheduleGenerationPreflight
      * operator sizing a deployment and the wrong one for a tenant-facing
      * screen; such a screen passes its own workspace and gets its own day.
      *
+     * `$periodBudget` bounds the whole run rather than one schedule: once that
+     * many periods have been classified across all schedules, every later due
+     * schedule is reported truncated without a query. A per-schedule cap alone
+     * still multiplies by the number of schedules, so a tenant-facing request
+     * passes a budget too.
+     *
      * @param  int|null  $periodCap  periods per schedule before it is reported truncated; defaults to {@see self::PERIOD_CAP}
+     * @param  int|null  $periodBudget  periods across all schedules before the rest are reported truncated; null for no total budget
      */
     public function run(
         ?Workspace $workspace = null,
         ?CarbonImmutable $through = null,
         ?int $periodCap = null,
+        ?int $periodBudget = null,
     ): ScheduleGenerationPreflightReport {
         $through ??= $this->clock->today($workspace);
         $cap = $periodCap ?? self::PERIOD_CAP;
@@ -150,7 +158,7 @@ final class ScheduleGenerationPreflight
         // schedule without consulting the resolver at all, so an invoice that
         // would halt one halts nothing.
         $this->schedules($workspace)->chunkById(200, function (Collection $chunk) use (
-            $through, $cap, &$refusals, &$defects, &$schedules, &$due, &$periods, &$refused, &$pending, &$defective, &$truncated
+            $through, $cap, $periodBudget, &$refusals, &$defects, &$schedules, &$due, &$periods, &$refused, &$pending, &$defective, &$truncated
         ): void {
             $scopes = array_values($chunk->map(fn (ClientBillingSchedule $schedule): array => [
                 'workspace_id' => $schedule->workspace_id, 'client_company_id' => $schedule->client_company_id,
@@ -158,7 +166,8 @@ final class ScheduleGenerationPreflight
             $handovers = $this->handovers->forCompanies($scopes);
             foreach ($chunk as $schedule) {
                 $schedules++;
-                $outcome = $this->classifySchedule($schedule, $through, $cap, $handovers[$schedule->client_agreement_id] ?? null);
+                $scheduleCap = $periodBudget === null ? $cap : max(0, min($cap, $periodBudget - $periods));
+                $outcome = $this->classifySchedule($schedule, $through, $scheduleCap, $handovers[$schedule->client_agreement_id] ?? null);
 
                 $periods += $outcome['periods'];
                 if ($outcome['due']) {
