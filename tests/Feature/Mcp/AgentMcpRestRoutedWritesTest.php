@@ -227,7 +227,8 @@ final class AgentMcpRestRoutedWritesTest extends TestCase
     {
         [$workspace, $project, $manager] = $this->fixture();
         $this->actingAsMcp($manager, [AgentApiScopes::MCP_USE, AgentApiScopes::TASKS_WRITE]);
-        $key = sha1((string) $manager->getAuthIdentifier());
+        // The agent API's bucket (RateLimits::AGENT_API_THROTTLE): REST and MCP share it, and nothing else does.
+        $key = 'agent-api'.sha1((string) $manager->getAuthIdentifier());
         RateLimiter::clear($key);
 
         $session = $this->initialize();

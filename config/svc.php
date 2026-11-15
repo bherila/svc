@@ -100,6 +100,8 @@ return [
         'portal-writes' => env('SVC_RATE_LIMIT_PORTAL_WRITES'),
         'payment-intents' => env('SVC_RATE_LIMIT_PAYMENT_INTENTS'),
         'invitations' => env('SVC_RATE_LIMIT_INVITATIONS'),
+        'credentials' => env('SVC_RATE_LIMIT_CREDENTIALS'),
+        'web-writes' => env('SVC_RATE_LIMIT_WEB_WRITES'),
         'csp-reports' => env('SVC_RATE_LIMIT_CSP_REPORTS'),
         'payment-keys' => env('SVC_RATE_LIMIT_PAYMENT_KEYS'),
         'documents' => env('SVC_RATE_LIMIT_DOCUMENTS'),

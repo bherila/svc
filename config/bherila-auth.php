@@ -134,7 +134,9 @@ return [
         'credentials' => [
             'enabled' => true,
             'prefix' => 'account/api-credentials',
-            'middleware' => ['web', 'auth'],
+            // The credentials limiter gives the package's revoke routes, which carry no
+            // throttle of their own, a per-person ceiling (RateLimits::DEFAULTS).
+            'middleware' => ['web', 'auth', 'throttle:credentials'],
             'token_lifetimes' => ['P30D', 'P90D', 'P365D'],
             'token_name_prefix' => 'api-token: ',
             'personal_client_name' => 'SVC personal access tokens',

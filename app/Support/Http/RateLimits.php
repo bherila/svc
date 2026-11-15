@@ -32,7 +32,22 @@ final class RateLimits
         'csp-reports' => 120,
         // Public service-package pages, read without signing in; per address.
         'public-packages' => 120,
+        // A person's own REST and MCP credentials: listing, issuing, revoking and their settings.
+        'credentials' => 30,
+        // Browser-only writes that are not agent operations (preferences, shared-project
+        // participation, reviewer grants, cross-workspace approvals, signing an agreement, the
+        // edition switch). Per person.
+        'web-writes' => 60,
     ];
+
+    /**
+     * The agent API's one outer throttle, as `throttle`'s own parameters: attempts, minutes and
+     * bucket prefix. REST (through ThrottleOuterAgentRequests) and MCP share it on purpose, so a
+     * principal has one budget whichever transport it uses (#459). The prefix keeps that budget
+     * apart from every other numeric throttle keyed on the same person: an agent principal's id
+     * is its user's id, so without one a browser search spent the agent's allowance.
+     */
+    public const string AGENT_API_THROTTLE = '60,1,agent-api';
 
     /**
      * Name => default attempts per minute, for routes whose every request does work a person

@@ -43,10 +43,12 @@ Route::inertia('/', 'welcome')->name('home');
 // MCP, which is where the MCP endpoint's 401 challenge points. Browser
 // agents get CORS here from oauth_server.cors; MCP's own origin and host
 // validation stays on the MCP endpoint, not on public discovery.
-AgentOAuthServer::routes([PublishApiDocumentation::class]);
+// Registration gets a bucket of its own: unprefixed, its ten-an-hour ceiling would be spent by
+// any other numeric throttle keyed on the same address.
+AgentOAuthServer::routes([PublishApiDocumentation::class], 'throttle:10,60,oauth-register');
 
 Route::withoutMiddleware(['web'])->group(function (): void {
-    Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1')->name('openapi.document');
+    Route::get('/api/openapi.json', OpenApiDocumentController::class)->middleware('throttle:60,1,openapi')->name('openapi.document');
 });
 
 // Sign-in and sign-out are per address and generous: the limiter stops a loop or a probe,
@@ -70,16 +72,17 @@ Route::middleware('auth')->group(function (): void {
     // The caller's own display preferences (how time is read). No id in the
     // path: it can only ever write the signed-in person's row.
     Route::patch('/account/preferences', [AccountPreferencesController::class, 'update'])
+        ->middleware('throttle:web-writes')
         ->name('account.preferences.update');
 
     // The "Show all tools" setting of one of the signed-in person's own MCP
     // credentials. The credential is looked up among that person's live
     // credentials, so it can only ever write their own; it grants nothing.
     Route::put('/account/mcp-credentials/connections/{client}', [McpCredentialSettingsController::class, 'connection'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:credentials')
         ->name('mcp.credentials.connections.update');
     Route::put('/account/mcp-credentials/tokens/{token}', [McpCredentialSettingsController::class, 'token'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:credentials')
         ->name('mcp.credentials.tokens.update');
 
     // What the command palette asks as you type. Throttled rather than
@@ -87,7 +90,7 @@ Route::middleware('auth')->group(function (): void {
     // is not where a rate limit belongs.
     Route::get('/search', SearchController::class)
         ->withoutMiddleware(HandleInertiaRequests::class)
-        ->middleware('throttle:120,1')
+        ->middleware('throttle:120,1,search')
         ->name('search');
 
     // What the palette shows before anything is typed - the viewer's commands
@@ -95,11 +98,11 @@ Route::middleware('auth')->group(function (): void {
     // record to those recents. Same posture as /search: no Inertia, throttled.
     Route::get('/palette', [PaletteController::class, 'show'])
         ->withoutMiddleware(HandleInertiaRequests::class)
-        ->middleware('throttle:120,1')
+        ->middleware('throttle:120,1,palette')
         ->name('palette');
     Route::post('/palette/recents', [PaletteController::class, 'record'])
         ->withoutMiddleware(HandleInertiaRequests::class)
-        ->middleware('throttle:120,1')
+        ->middleware('throttle:120,1,palette-recents')
         ->name('palette.recents');
 
     // A payment's permanent address for an external finance system: the
@@ -107,7 +110,7 @@ Route::middleware('auth')->group(function (): void {
     // shows it today. Anything this reader may not open is the same 404 as a
     // payment that does not exist. Throttled so it cannot be used to probe.
     Route::get('/finance-links/payments/{payment}', FinancePaymentLinkController::class)
-        ->middleware('throttle:60,1')
+        ->middleware('throttle:60,1,finance-links')
         ->name('finance-links.payments.show');
 
     // Opening a workspace, as its own step. Which client to open depends on

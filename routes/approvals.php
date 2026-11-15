@@ -13,15 +13,15 @@ Route::middleware(['web', 'auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/reviewers', [ReviewerGrantController::class, 'show'])
         ->middleware(ResolveWorkspaceNavigation::class)
         ->name('workspaces.reviewers');
-    Route::post('/workspaces/{workspace}/reviewers', [ReviewerGrantController::class, 'store'])->name('workspaces.reviewers.store');
+    Route::post('/workspaces/{workspace}/reviewers', [ReviewerGrantController::class, 'store'])->middleware('throttle:web-writes')->name('workspaces.reviewers.store');
     Route::delete('/workspaces/{workspace}/reviewers/{grant}', [ReviewerGrantController::class, 'destroy'])
-        ->whereUuid('grant')->name('workspaces.reviewers.destroy');
+        ->whereUuid('grant')->middleware('throttle:web-writes')->name('workspaces.reviewers.destroy');
 
     // The reviewer's side. Reached outside any workspace: a reviewer may belong to none, and the
     // page is built from the signed-in person's own memberships and grants.
     Route::get('/approvals', [CrossWorkspaceApprovalController::class, 'index'])->name('approvals.index');
     Route::post('/approvals/{source}/{id}/approve', [CrossWorkspaceApprovalController::class, 'approve'])
-        ->whereIn('source', ['company', 'grant'])->whereUuid('id')->name('approvals.approve');
+        ->whereIn('source', ['company', 'grant'])->whereUuid('id')->middleware('throttle:web-writes')->name('approvals.approve');
     Route::post('/approvals/{source}/{id}/dispute', [CrossWorkspaceApprovalController::class, 'dispute'])
-        ->whereIn('source', ['company', 'grant'])->whereUuid('id')->name('approvals.dispute');
+        ->whereIn('source', ['company', 'grant'])->whereUuid('id')->middleware('throttle:web-writes')->name('approvals.dispute');
 });

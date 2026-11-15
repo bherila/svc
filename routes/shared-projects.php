@@ -20,10 +20,10 @@ Route::middleware('auth')->group(function (): void {
     // Who takes part is a person's decision: browser-only, never REST or MCP.
     Route::prefix('/workspaces/{workspace}/shared-projects/{sharedProject}')->whereUuid('sharedProject')->group(function (): void {
         Route::post('/invitations', [SharedProjectController::class, 'invite'])->middleware('throttle:invitations')->name('shared-projects.invitations.store');
-        Route::delete('/invitations/{invitation}', [SharedProjectController::class, 'revokeInvitation'])->whereUuid('invitation')->name('shared-projects.invitations.destroy');
-        Route::delete('/participants/{participation}', [SharedProjectController::class, 'revokeParticipant'])->whereUuid('participation')->name('shared-projects.participants.destroy');
-        Route::post('/leave', [SharedProjectController::class, 'leave'])->name('shared-projects.leave');
-        Route::put('/local-project', [SharedProjectController::class, 'link'])->name('shared-projects.local-project.update');
+        Route::delete('/invitations/{invitation}', [SharedProjectController::class, 'revokeInvitation'])->whereUuid('invitation')->middleware('throttle:web-writes')->name('shared-projects.invitations.destroy');
+        Route::delete('/participants/{participation}', [SharedProjectController::class, 'revokeParticipant'])->whereUuid('participation')->middleware('throttle:web-writes')->name('shared-projects.participants.destroy');
+        Route::post('/leave', [SharedProjectController::class, 'leave'])->middleware('throttle:web-writes')->name('shared-projects.leave');
+        Route::put('/local-project', [SharedProjectController::class, 'link'])->middleware('throttle:web-writes')->name('shared-projects.local-project.update');
     });
 
     // An invitation is addressed to a person, not a workspace: no workspace in the path.

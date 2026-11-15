@@ -30,5 +30,6 @@ Route::middleware(['web', 'auth'])->group(function (): void {
         ->name('portal.approvals.dispute');
 
     Route::post('/workspaces/{workspace}/agreements/{clientAgreement}/sign', [AgreementController::class, 'sign'])
+        ->middleware('throttle:web-writes')
         ->name('svc.engagement.agreements.sign');
 });
