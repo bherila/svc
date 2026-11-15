@@ -9,6 +9,8 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class OAuthLoginTest extends TestCase
@@ -281,5 +283,110 @@ class OAuthLoginTest extends TestCase
 
         $this->assertDatabaseMissing('users', ['oauth_subject' => 'attacker-subject']);
         $this->assertGuest();
+    }
+
+    public function test_callback_signs_in_when_the_provider_verified_the_address(): void
+    {
+        $this->signInWithEmailVerified('person-verified', 'verified@example.test', true)
+            ->assertRedirect(route('workspaces.index'));
+
+        $this->assertAuthenticated();
+        $this->assertNotNull(User::query()->where('oauth_subject', 'person-verified')->sole()->email_verified_at);
+    }
+
+    public function test_callback_accepts_a_string_true_email_verified_claim(): void
+    {
+        $this->signInWithEmailVerified('person-string-true', 'string-true@example.test', 'TRUE')
+            ->assertRedirect(route('workspaces.index'));
+
+        $this->assertAuthenticated();
+    }
+
+    public function test_callback_keeps_trusting_the_provider_when_email_verified_is_absent(): void
+    {
+        $user = User::factory()->create(['email' => 'old-absent@example.test']);
+        $user->forceFill(['oauth_provider' => 'test-provider', 'oauth_subject' => 'person-absent'])->save();
+
+        // The provider this deployment uses sends no `email_verified` claim. Its address is
+        // trusted as SECURITY.md records, and a returning sign-in still refreshes it.
+        $this->signInWithEmailVerified('person-absent', 'new-absent@example.test', null)
+            ->assertRedirect(route('workspaces.index'));
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertSame('new-absent@example.test', $user->refresh()->email);
+    }
+
+    /**
+     * @return iterable<string, array{mixed}>
+     */
+    public static function unverifiedClaims(): iterable
+    {
+        yield 'false' => [false];
+        yield 'string false' => ['false'];
+        yield 'string zero' => ['0'];
+        yield 'empty string' => [''];
+        yield 'integer zero' => [0];
+        yield 'null' => [null];
+    }
+
+    #[DataProvider('unverifiedClaims')]
+    public function test_callback_does_not_provision_an_account_from_an_unverified_address(mixed $claim): void
+    {
+        $this->signInWithEmailVerified('person-unverified', 'unverified@example.test', $claim, present: true)
+            ->assertForbidden()
+            ->assertSee('has not verified the email address');
+
+        $this->assertGuest();
+        $this->assertDatabaseMissing('users', ['oauth_subject' => 'person-unverified']);
+        $this->assertDatabaseMissing('users', ['email' => 'unverified@example.test']);
+    }
+
+    public function test_callback_does_not_update_a_linked_account_from_an_unverified_address(): void
+    {
+        $user = User::factory()->create(['email' => 'kept@example.test', 'name' => 'Kept Name']);
+        $user->forceFill(['oauth_provider' => 'test-provider', 'oauth_subject' => 'person-changed'])->save();
+
+        // An address changed at the provider without proof of the mailbox must not reach the
+        // account, where it would claim every grant bound to that address.
+        $this->signInWithEmailVerified('person-changed', 'claimed@example.test', false)
+            ->assertForbidden();
+
+        $this->assertGuest();
+        $user->refresh();
+        $this->assertSame('kept@example.test', $user->email);
+        $this->assertSame('Kept Name', $user->name);
+    }
+
+    public function test_an_unverified_refusal_answers_json_clients_with_the_reason(): void
+    {
+        $this->signInWithEmailVerified('person-json', 'json@example.test', 'false', json: true)
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Your identity provider has not verified the email address on your account. Verify it with the provider, then sign in again.');
+    }
+
+    /**
+     * Complete the callback with an identity response carrying `email_verified` as given; a
+     * null claim is left out of the response unless `present` says it is sent as null.
+     */
+    private function signInWithEmailVerified(string $subject, string $email, mixed $claim, bool $present = false, bool $json = false): TestResponse
+    {
+        $identity = ['sub' => $subject, 'name' => 'Synthetic '.$subject, 'email' => $email];
+        if ($claim !== null || $present) {
+            $identity['email_verified'] = $claim;
+        }
+
+        Http::fake([
+            'https://identity.example.test/oauth/token' => Http::response(['access_token' => 'access-token']),
+            'https://identity.example.test/api/oauth/user' => Http::response($identity),
+        ]);
+
+        $request = $this->withSession([
+            'oauth.login.state' => 'expected-state',
+            'oauth.login.code_verifier' => 'expected-verifier',
+        ]);
+
+        return $json
+            ? $request->getJson('/oauth/callback?state=expected-state&code=authorization-code')
+            : $request->get('/oauth/callback?state=expected-state&code=authorization-code');
     }
 }
