@@ -2,11 +2,12 @@
 
 namespace App\Auth;
 
+use BWH\Auth\OAuth\OAuthIdentity;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * A sign-in refused because the identity provider says the address it asserts is not verified
- * ({@see ProviderEmailVerification}). Nothing was created, linked or updated.
+ * ({@see OAuthIdentity::$emailVerified}). Nothing was created, linked or updated.
  *
  * Carries no address or subject: the provider name is all a log needs.
  */

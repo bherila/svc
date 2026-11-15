@@ -45,6 +45,7 @@ final class AuthenticateFirstPartySession
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                AuthenticateBrowserSession::class,
                 PreventRequestForgery::class,
             ])
             ->then(function (Request $request) use ($next): Response {
