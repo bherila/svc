@@ -55,6 +55,7 @@ use App\Services\AgentApi\Operations\ServicePackageOperations;
 use App\Services\AgentApi\Operations\TaskPlanningOperations;
 use App\Support\AgentApi\AgentApiScopes;
 use App\Support\Finance\ReconciliationTarget;
+use App\Support\Http\RateLimits;
 use App\Support\Square\SquareIdentifiers;
 use Bherila\McpLaravelBridge\Http\McpHttpSecurityMiddleware;
 use BWH\Auth\Http\Middleware\ExpectOAuthResource;
@@ -100,7 +101,7 @@ $workspaceOperation = static fn (string $operationId, array $action): RoutingRou
 // the MCP endpoint.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':rest', AuthenticateFirstPartySession::class, 'auth:api', ThrottleOuterAgentRequests::class.':'.RateLimits::AGENT_API_THROTTLE, NoStoreAgentResponse::class])
     ->group(function () use ($operation, $workspaceOperation): void {
         $workspaceOperation('shared_projects.list', [AgentSharedProjectController::class, 'index']);
         $workspaceOperation('shared_projects.get', [AgentSharedProjectController::class, 'show'])->whereUuid('project');
@@ -438,7 +439,7 @@ Route::prefix('v1')
 // the website's session: nothing in the browser reconciles.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', ThrottleOuterAgentRequests::class.':60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':rest', 'auth:sanctum,api', ThrottleOuterAgentRequests::class.':'.RateLimits::AGENT_API_THROTTLE, NoStoreAgentResponse::class])
     ->group(function () use ($workspaceOperation): void {
         // A workspace the caller cannot see answers 404 before anything else,
         // as on every other workspace route: nothing - not even a failed
@@ -458,7 +459,7 @@ Route::prefix('v1')
 // No website-session or Sanctum fallback: the bearer itself is the target.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectSelfRevokingOAuthResource::class, 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectSelfRevokingOAuthResource::class, 'auth:api', 'throttle:'.RateLimits::AGENT_API_THROTTLE, NoStoreAgentResponse::class])
     ->group(function () use ($operation): void {
         $operation('oauth.token.revoke', [AgentConnectionController::class, 'revokeToken']);
     });
@@ -468,14 +469,14 @@ Route::prefix('v1')
 // belongs to the MCP audience, not REST's. The session holds no `mcp:use`.
 Route::prefix('v1')
     ->name('agent-api.v1.')
-    ->middleware([ExpectOAuthResource::class.':mcp', 'auth:api', 'throttle:60,1', NoStoreAgentResponse::class])
+    ->middleware([ExpectOAuthResource::class.':mcp', 'auth:api', 'throttle:'.RateLimits::AGENT_API_THROTTLE, NoStoreAgentResponse::class])
     ->group(function () use ($operation): void {
         $operation('connections.revoke', [AgentConnectionController::class, 'destroy']);
     });
 
 Route::options('/v1/mcp', static fn () => response()->noContent())
-    ->middleware([McpHttpSecurityMiddleware::class, 'throttle:60,1'])
+    ->middleware([McpHttpSecurityMiddleware::class, 'throttle:'.RateLimits::AGENT_API_THROTTLE])
     ->name('agent-api.v1.mcp.options');
 Route::match(['POST', 'DELETE'], '/v1/mcp', AgentMcpController::class)
-    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class.':mcp', 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:60,1', LimitMcpBatchSize::class, NoStoreAgentResponse::class])
+    ->middleware([McpHttpSecurityMiddleware::class, ExpectOAuthResource::class.':mcp', 'auth:api', CheckToken::using(AgentApiScopes::MCP_USE), 'throttle:'.RateLimits::AGENT_API_THROTTLE, LimitMcpBatchSize::class, NoStoreAgentResponse::class])
     ->name('agent-api.v1.mcp');

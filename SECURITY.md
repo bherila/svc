@@ -66,3 +66,48 @@ claim from the provider would let SVC enforce it with no change here.
 Before trusting a provider that does not verify address changes, SVC must go further:
 require the claim (refuse or leave unverified any sign-in without it) and bind these
 grants only to verified addresses.
+
+## Security assumption: only `main` deploys, because the repository settings say so
+
+`tests.yml` (production, Environment `web1`), `deployment-diagnostic.yml` (`web1`),
+`pilot-deploy.yml` (`pilot`) and `staging-deploy.yml` (`staging`) each run their credentialed
+job only for `refs/heads/main`, and `WorkflowCredentialCensusTest` keeps every credentialed job
+that way. But workflow files belong to the branch: anyone who can push a branch can edit that
+branch's copy, and no test can see it. The control is a repository setting: each of those
+Environments' **Deployment branches** must be restricted to `main`, and pushes to `main` to its
+maintainers.
+
+`staging-deploy.yml` may deploy an earlier main commit than the one dispatched. The gate
+(`scripts/deploy/staging/gate.mjs`) runs from the dispatched main head, before any secret is
+exposed, and accepts the commit only if the GitHub compare API reports it as an ancestor of
+`main` and the Actions API reports a successful `ci` job in a main push run of `tests.yml` for
+it. Both answers are trusted as GitHub gives them to the job's own read-only token.
+
+## Security assumption: unthrottled routes are bounded elsewhere
+
+`RouteThrottleCensusTest` allows a write route with no application throttle only with a
+reason. The ones that rest on something outside SVC:
+
+- **Processor webhooks** (`api/webhooks/stripe*`, `api/webhooks/square*`) are never throttled,
+  because the processor retries and a 429 would delay or drop a genuine event. An unsigned
+  request costs a connection lookup and a signature check before it is refused, so a flood of
+  them is bounded only by the web server and the CDN in front of it.
+- **Passport's** `oauth/token` (a bare `throttle`, 60 a minute per address),
+  `oauth/token/refresh` and `oauth/authorize` approve and deny, and **bherila/auth-laravel's**
+  credential and delegated-access routes, keep the middleware their packages give them. SVC adds
+  `throttle:credentials` to the package's credential group through
+  `bherila-auth.oauth_server.credentials.middleware`.
+
+Guest buckets (`sign-in`, `public-packages`, `oauth-register`, Passport's token endpoint) key on
+the client address that `bherila-auth.trusted_proxies` resolves: `X-Forwarded-For` is honoured
+only from the configured proxies (Cloudflare's published ranges by default, checked by
+`cloudflare-ranges.yml`). A proxy in front of SVC that is not in that list makes every guest
+behind it one bucket.
+
+## Security assumption: signed URLs are bearer tokens and `APP_KEY` stays secret
+
+`signed:relative` routes, such as an expense receipt's content, accept any URL signed with
+`APP_KEY` until it expires; nothing else checks who presents it. The `local` disk's root
+(`storage/app/private`) holds the OAuth signing keys, so it is not served (`serve => false`):
+nothing issues temporary URLs for it, and serving it would register signed `GET` and `PUT
+storage/{path}` routes over that root.

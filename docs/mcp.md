@@ -120,7 +120,9 @@ id, including another of the same person's connections, is a 404 that revokes no
 dynamic client whose ceiling is null must re-register and re-authorize; null is
 never interpreted as unrestricted access.
 
-The current route also has Laravel's `throttle:60,1` limiter. Browser requests
+The current route also has Laravel's `throttle:60,1,agent-api` limiter
+(`RateLimits::AGENT_API_THROTTLE`), one bucket per principal shared with the REST
+API and with nothing else. Browser requests
 with an `Origin` must exactly match `AGENT_API_MCP_ALLOWED_ORIGINS`; native
 clients without an Origin are permitted. Browser origins never expand the service
 Host allowlist, which defaults to `APP_URL` and the configured OAuth resource and
@@ -844,7 +846,7 @@ Laravel with ephemeral OAuth keys and generated `.test`-only data, then runs
 the client through handshake, discovery, and `context.get`. Tool, resource,
 resource-template, and prompt execution are centrally throttled by reviewed `mcp-read`
 (120/minute) and `mcp-write` (20/minute) buckets, keyed to the authenticated
-credential and capability; the route's `throttle:60,1` remains the broad outer
+credential and capability; the route's `throttle:60,1,agent-api` remains the broad outer
 limit. A capability call
 fails closed with a safe retry-later error if its limiter backend is
 unavailable. Capability execution is also limited to four concurrent requests

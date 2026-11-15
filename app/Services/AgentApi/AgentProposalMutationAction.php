@@ -29,7 +29,6 @@ final class AgentProposalMutationAction
                 $this->access->requireManager($actor, $workspace);
                 $rules += (new StoreProposalRequest)->rules();
                 $rules += ['company_id' => ['required', 'uuid'], 'project_id' => ['sometimes', 'nullable', 'uuid']];
-                $rules['items.*'] = ['array:description,quantity,unit_amount,cadence,sort_order'];
             } else {
                 $rules += ['confirm' => ['required', 'boolean', 'accepted']];
                 if ($operation === 'proposals.accept') {

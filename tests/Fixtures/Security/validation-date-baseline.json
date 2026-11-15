@@ -1,0 +1,27 @@
+{
+    "_comment": [
+        "Open-ended date rules frozen when ValidationBoundsCensusTest was ported (tests/Unit/Security).",
+        "Each needs a domain bound nobody has chosen yet. The list may only shrink: a new open-ended date fails the census,",
+        "and an entry that no longer matches a finding fails too. Bound a rule, then delete its line. Keep the list sorted.",
+        "Most worth bounding first: agreement starts_on/ends_on and billing-schedule next_run_on, which seed period walks."
+    ],
+    "entries": [
+        "app/Http/Controllers/Api/V1/AgentBillingScheduleController.php::next_run_on",
+        "app/Http/Controllers/Api/V1/AgentClientController.php::ends_on",
+        "app/Http/Controllers/Api/V1/AgentInvoiceMutationController.php::due_date",
+        "app/Http/Controllers/Api/V1/AgentInvoiceMutationController.php::due_date",
+        "app/Http/Controllers/Api/V1/AgentInvoiceMutationController.php::scheduled_issue_date",
+        "app/Http/Controllers/Api/V1/AgentPackageController.php::effective_on",
+        "app/Http/Controllers/Packages/PackageAdminController.php::effective_on",
+        "app/Http/Requests/Billing/StoreBillingScheduleRequest.php::next_run_on",
+        "app/Http/Requests/Engagement/StoreAgreementRequest.php::starts_on",
+        "app/Http/Requests/Engagement/StoreProposalRequest.php::valid_until",
+        "app/Http/Requests/Engagement/UpdateAgreementRequest.php::ends_on",
+        "app/Http/Requests/Engagement/UpdateAgreementRequest.php::starts_on",
+        "app/Services/AgentApi/AgentClientMutationAction.php::ends_on",
+        "app/Services/AgentApi/AgentExpenseMutationAction.php::spent_on",
+        "app/Services/AgentApi/CorrectPaymentAction.php::body.received_on",
+        "app/Support/Billing/ReceivedPaymentData.php::received_on",
+        "app/Support/Finance/ReconciliationAllocation.php::reconciled_on"
+    ]
+}

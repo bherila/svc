@@ -248,7 +248,8 @@ final class FinanceReconciliationOperationsTest extends TestCase
     {
         [$owner, $workspace, $payment] = $this->payment('Throttle');
         $this->actingAsMcp($owner, ['mcp:use', 'finance:read', 'finance:reconcile']);
-        $key = sha1((string) $owner->getAuthIdentifier());
+        // The agent API's bucket (RateLimits::AGENT_API_THROTTLE), shared by REST and MCP.
+        $key = 'agent-api'.sha1((string) $owner->getAuthIdentifier());
         RateLimiter::clear($key);
 
         $headers = $this->initialize();

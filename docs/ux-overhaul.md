@@ -1080,13 +1080,19 @@ Inventory of unauthenticated and portal routes, and what was done:
 | every `portal/*` write (POST, DELETE) | none | plus `portal-writes`, 60/min per person |
 | `POST .../invoices/{id}/stripe-payment-intent` | none | `payment-intents`, 30/min per person |
 | shared project invitation invite/accept/decline | none | `invitations`, 30/min per person |
-| `/oauth/token`, `/oauth/register`, `/oauth/authorize` | package/Passport throttle; register 10 per 60 min | unchanged |
-| REST (`api/v1/*`) and MCP (`api/v1/mcp`) | `throttle:60,1` | unchanged |
+| `/oauth/token`, `/oauth/register`, `/oauth/authorize` | package/Passport throttle; register 10 per 60 min | register keeps 10 per 60 min in its own `oauth-register` bucket; token and authorize unchanged (Passport's) |
+| REST (`api/v1/*`) and MCP (`api/v1/mcp`) | `throttle:60,1` | 60/min per principal in the `agent-api` bucket (`RateLimits::AGENT_API_THROTTLE`), shared by REST and MCP and by nothing else |
 | `api/webhooks/brevo` | `brevo-webhooks`, 600/min | unchanged |
 | `api/webhooks/stripe*`, `api/webhooks/square*` | none | **none, on purpose** |
-| `/search`, `/palette*`, MCP credential settings | already throttled | unchanged |
+| `/search`, `/palette*`, MCP credential settings | already throttled | `/search` and `/palette*` keep 120/min in buckets of their own; credential settings and the `account/api-credentials` routes take `credentials`, 30/min per person |
+| browser-only writes (preferences, shared-project participation, reviewer grants, cross-workspace approvals, signing an agreement, the edition switch) | none | `web-writes`, 60/min per person |
 | `POST /application-access`, `/.well-known/*`, `/up`, `/sanctum/csrf-cookie` | none | none (see below) |
 
+- Before the route throttle census the unprefixed numeric throttles (`throttle:60,1`, `throttle:120,1`,
+  `throttle:30,1`) all keyed on the person alone, and an agent principal's id is its
+  user's id, so they shared one bucket: browser searches spent the agent API's
+  allowance. `tests/Feature/Security/RouteThrottleCensusTest.php` now refuses an
+  unprefixed numeric throttle and an unthrottled write.
 - Every ceiling is several times what a person doing ordinary work reaches, and
   is tunable with `SVC_RATE_LIMIT_*` (`config/svc.php` `rate_limits`); a value
   that is not a positive number falls back to the default.

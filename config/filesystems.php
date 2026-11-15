@@ -33,7 +33,10 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Off: nothing issues temporary URLs for this disk, and serving it would register
+            // signed GET and PUT storage/{path} routes over a root that holds the OAuth signing
+            // keys (storage/app/private/oauth), guarded only by APP_KEY.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

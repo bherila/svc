@@ -165,6 +165,35 @@ final class RateLimitsTest extends TestCase
         }
     }
 
+    /**
+     * An agent principal's id is its user's id, so an unprefixed numeric throttle on a
+     * browser route would draw on the agent API's bucket. Each has its own.
+     */
+    public function test_browser_throttles_do_not_spend_the_agent_api_budget(): void
+    {
+        $person = User::factory()->create();
+        $signature = sha1((string) $person->getAuthIdentifier());
+        RateLimiter::clear('agent-api'.$signature);
+
+        $this->actingAs($person)->getJson('/search?q=synthetic');
+        $this->actingAs($person)->getJson('/palette');
+
+        $this->assertSame(1, RateLimiter::attempts('search'.$signature));
+        $this->assertSame(1, RateLimiter::attempts('palette'.$signature));
+        $this->assertSame(0, RateLimiter::attempts('agent-api'.$signature));
+        $this->assertSame(0, RateLimiter::attempts($signature), 'No route keeps the shared unprefixed bucket.');
+    }
+
+    public function test_browser_only_writes_and_credential_routes_carry_their_limiter(): void
+    {
+        foreach (['account.preferences.update', 'shared-projects.leave', 'shared-projects.local-project.update', 'shared-projects.participants.destroy', 'shared-projects.invitations.destroy', 'workspaces.reviewers.store', 'workspaces.reviewers.destroy', 'approvals.approve', 'approvals.dispute', 'svc.engagement.agreements.sign', 'workspaces.edition.full'] as $name) {
+            $this->assertContains('throttle:web-writes', Route::getRoutes()->getByName($name)?->gatherMiddleware() ?? [], $name);
+        }
+        foreach (['mcp.credentials.connections.update', 'mcp.credentials.tokens.update', 'bherila-auth.credentials.tokens.destroy', 'bherila-auth.credentials.apps.destroy', 'bherila-auth.credentials.connections.destroy'] as $name) {
+            $this->assertContains('throttle:credentials', Route::getRoutes()->getByName($name)?->gatherMiddleware() ?? [], $name);
+        }
+    }
+
     public function test_shared_project_invitation_decisions_answer_429_after_the_ceiling(): void
     {
         config(['svc.rate_limits.invitations' => 2]);

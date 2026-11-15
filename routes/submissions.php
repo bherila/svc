@@ -22,5 +22,6 @@ Route::middleware(['web', 'auth'])->group(function (): void {
         ->name('workspaces.timesheet.export');
     // A light workspace's owner turning on the rest of SVC. One way, in the browser.
     Route::post('/workspaces/{workspace}/edition/full', [WorkspaceEditionController::class, 'full'])
+        ->middleware('throttle:web-writes')
         ->name('workspaces.edition.full');
 });
