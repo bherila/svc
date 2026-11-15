@@ -257,11 +257,16 @@ describe('RevenueChart', () => {
             '/workspaces/workspace-1/all/invoices?month=2025-11',
         );
         expect(within(rows[13]).getByText('(this month)')).toBeInTheDocument();
-        expect(
-            within(rows[1]).getByText(
-                /Synthetic Second Client \$400\.00, 3 others \$15\.00/,
-            ),
-        ).toBeInTheDocument();
+        // One line per client and one for the rest, so a long name wraps
+        // within its own line and never splits an amount.
+        const clients = within(rows[1])
+            .getAllByRole('listitem')
+            .map((item) => item.textContent);
+        expect(clients).toContain('Synthetic Second Client $400.00');
+        expect(clients.at(-1)).toBe('3 others $15.00');
+        expect(within(rows[1]).getByText('$400.00')).toHaveClass(
+            'whitespace-nowrap',
+        );
     });
 
     it('shows the table on request, and says so', () => {

@@ -1,29 +1,30 @@
-# Staging deployment: an isolated svc-staging site for validating a branch or pull request
-# (webhooks, autopay, the scheduler, CSP) before it reaches production.
+# Staging deployment: an isolated svc-staging site for validating reviewed main (webhooks,
+# autopay, the scheduler, CSP) before it reaches production.
+#
+# MAIN ONLY. The job runs only for a manual dispatch on main, and the gate script (run from the
+# dispatched main head, before any secret is exposed) refuses any commit that is not on main or has
+# no successful main CI run. Branches, tags and pull request heads cannot be deployed.
 #
 # INERT BY DEFAULT. The host, database and subdomain are not decided yet, so nothing here
 # deploys until the owner creates the GitHub Environment "staging" and fills in every
 # STAGING_* variable and secret (docs/runbooks/staging.md lists them). Until then a run stops at
-# the preflight step and prints exactly what is missing. The push trigger watches a `staging`
-# branch that does not exist until someone creates it.
+# the preflight step and prints exactly what is missing.
 #
 # ISOLATION. This workflow reads only vars.STAGING_* and secrets.STAGING_* of the "staging"
 # environment. It never references a production or pilot secret or variable, uses its own
 # deploy directory, env file, database, APP_KEY, Stripe TEST keys and OAuth client, and it runs no
-# production data command. Add required reviewers or a deployment-branch rule to the environment
-# in GitHub settings to control who can start it.
+# production data command. Limit the environment's deployment branches to main, and add required
+# reviewers, in GitHub settings to control who can start it.
 name: Staging Deployment
 
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Branch, tag, pull request head (refs/pull/N/head) or full SHA to deploy
+      sha:
+        description: Full SHA of a main commit with successful main CI (empty deploys the dispatched main head)
         type: string
-        required: true
-  push:
-    branches:
-      - staging
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -36,13 +37,15 @@ concurrency:
 jobs:
   deploy:
     name: Deploy SVC to staging
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     environment: staging
     steps:
+      # The dispatched main head: the gate below runs from reviewed code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup Node
@@ -50,7 +53,21 @@ jobs:
         with:
           node-version: '24'
 
-      # First, before anything is built or any host is contacted.
+      # First, before any secret is exposed, anything is built or any host is contacted.
+      - name: Require a main commit and its successful main CI
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_REQUESTED_SHA: ${{ inputs.sha }}
+        run: node scripts/deploy/staging/gate.mjs
+
+      - name: Check out the verified main commit
+        if: ${{ steps.gate.outputs.sha != github.sha }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.gate.outputs.sha }}
+          persist-credentials: false
+
       - name: Preflight - list missing staging configuration
         # Secrets are exposed to this one step only, never to the build.
         env:
@@ -79,16 +96,6 @@ jobs:
           STAGING_OAUTH_CLIENT_SECRET: ${{ secrets.STAGING_OAUTH_CLIENT_SECRET }}
         run: node scripts/deploy/staging/preflight.mjs
 
-      - name: Require this exact commit's successful CI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          STAGING_SHA=$(git rev-parse HEAD)
-          export STAGING_SHA
-          echo "Deploying $STAGING_SHA"
-          node scripts/deploy/staging/gate.mjs
-
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         with:
@@ -97,8 +104,12 @@ jobs:
           coverage: none
 
       - name: Build this exact source revision
+        env:
+          STAGING_SHA: ${{ steps.gate.outputs.sha }}
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$STAGING_SHA"
+          echo "Deploying $STAGING_SHA"
           corepack enable
           corepack prepare pnpm@12.15.0 --activate
           composer install --no-dev --no-interaction --optimize-autoloader

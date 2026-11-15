@@ -209,9 +209,9 @@ final class BillingMaintenanceConcurrencyTest extends TestCase
 
                 return;
             }
-            // The server caches its transaction tables until they have been idle
-            // for 100ms. Reuse the existing probes' one-second observation gap.
-            usleep(1_000_000);
+            // Leave more than 100ms idle for the server's transaction-table cache,
+            // without spending half the writer's two-second wait on each poll.
+            usleep(200_000);
         } while ($second->isRunning() && microtime(true) < $deadline);
         $this->fail('No real lock wait was observed: '.$first->getOutput().$first->getErrorOutput().$second->getOutput().$second->getErrorOutput());
     }

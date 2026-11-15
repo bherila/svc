@@ -21,6 +21,7 @@ use App\Support\Billing\Reminders\PaymentReminderStep;
 use App\Support\Billing\Reminders\SquareReminderFacts;
 use App\Support\Square\SquareHostedPage;
 use App\Support\WorkspaceClock;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -67,8 +68,9 @@ final class PaymentReminderRepository
             ->first();
         $invoice->setRelation('clientCompany', $company);
         // Bounded whatever the history: the automatic claims are at most one
-        // per cadence step, and in flight is an existence check. A person may
-        // remind as often as they decide to, and none of that is loaded here.
+        // per cadence step, in flight is an existence check, and the last
+        // reminder sent is one aggregate - what a person's next reminder waits
+        // on (`PaymentReminderPolicy::MANUAL_COOLDOWN_MINUTES`).
         $claims = InvoiceReminderLog::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_invoice_id', $invoice->id)
@@ -100,7 +102,21 @@ final class PaymentReminderRepository
                     ->orWhere(fn (Builder $unclaimed): Builder => $unclaimed->whereNull('claimed_at')->where('queued_at', '>=', $since)))
                 ->when($excludingReminderId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludingReminderId))
                 ->exists(),
+            lastSentAt: $this->lastSentAt($workspace, $invoice, $excludingReminderId)?->setTimezone($now->getTimezone()),
         );
+    }
+
+    private function lastSentAt(Workspace $workspace, ClientInvoice $invoice, ?int $excludingReminderId): ?CarbonImmutable
+    {
+        $sentAt = InvoiceReminderLog::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('client_invoice_id', $invoice->id)
+            ->where('status', PaymentReminderStatus::Sent->value)
+            ->whereNotNull('sent_at')
+            ->when($excludingReminderId !== null, fn (Builder $query): Builder => $query->whereKeyNot($excludingReminderId))
+            ->max('sent_at');
+
+        return is_string($sentAt) && $sentAt !== '' ? CarbonImmutable::parse($sentAt, 'UTC') : null;
     }
 
     /**

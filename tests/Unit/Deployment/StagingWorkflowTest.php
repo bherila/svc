@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Deployment;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -27,34 +28,51 @@ final class StagingWorkflowTest extends TestCase
         }
     }
 
-    public function test_it_deploys_through_the_staging_environment_only_after_preflight_and_the_ci_gate(): void
+    public function test_it_deploys_main_through_the_staging_environment_only_after_the_main_gate_and_preflight(): void
     {
         $job = $this->job();
         $this->assertSame('staging', $job['environment']);
+        $this->assertSame("\${{ github.ref == 'refs/heads/main' }}", $job['if']);
         $this->assertArrayNotHasKey('needs', $job);
 
         $steps = $job['steps'];
         $names = array_map(static fn (array $step): string => $step['name'] ?? '', $steps);
+        $gate = array_search('Require a main commit and its successful main CI', $names, true);
+        $target = array_search('Check out the verified main commit', $names, true);
         $preflight = array_search('Preflight - list missing staging configuration', $names, true);
-        $gate = array_search("Require this exact commit's successful CI", $names, true);
+        $build = array_search('Build this exact source revision', $names, true);
         $deploy = array_search('Publish the isolated staging release', $names, true);
-        $this->assertIsInt($preflight);
-        $this->assertIsInt($gate);
-        $this->assertIsInt($deploy);
-        $this->assertTrue($preflight < $gate && $gate < $deploy);
+        foreach ([$gate, $target, $preflight, $build, $deploy] as $index) {
+            $this->assertIsInt($index);
+        }
+        $this->assertTrue($gate < $target && $target < $preflight && $preflight < $build && $build < $deploy);
+
+        // The gate runs from the dispatched main head, before any step that sees a secret.
+        $this->assertSame('${{ github.sha }}', $steps[0]['with']['ref']);
+        $this->assertStringNotContainsString('secrets.', Yaml::dump(array_slice($steps, 0, $preflight), 10));
+        $this->assertSame('gate', $steps[$gate]['id']);
+        $this->assertSame('node scripts/deploy/staging/gate.mjs', $steps[$gate]['run']);
+        $this->assertSame('${{ inputs.sha }}', $steps[$gate]['env']['STAGING_REQUESTED_SHA']);
+        $this->assertSame('${{ steps.gate.outputs.sha }}', $steps[$target]['with']['ref']);
+        $this->assertSame('${{ steps.gate.outputs.sha }}', $steps[$build]['env']['STAGING_SHA']);
+        $this->assertStringContainsString('test "$(git rev-parse HEAD)" = "$STAGING_SHA"', $steps[$build]['run']);
+        foreach ($steps as $step) {
+            $this->assertStringNotContainsString('inputs.', (string) ($step['with']['ref'] ?? ''), 'Only a verified SHA is checked out.');
+        }
+
         $this->assertSame('node scripts/deploy/staging/preflight.mjs', $steps[$preflight]['run']);
-        $this->assertStringContainsString('gate.mjs', $steps[$gate]['run']);
-        $this->assertStringNotContainsString('secrets.', Yaml::dump(array_slice($steps, $gate, $deploy - $gate), 10), 'Build steps never see secrets.');
+        $this->assertStringNotContainsString('secrets.', Yaml::dump(array_slice($steps, $preflight + 1, $deploy - $preflight - 1), 10), 'Build steps never see secrets.');
     }
 
-    public function test_it_is_manual_or_a_staging_branch_push_and_enables_the_scheduler(): void
+    public function test_it_is_a_manual_dispatch_only_and_enables_the_scheduler(): void
     {
         $workflow = Yaml::parseFile($this->root().self::FILE);
         $on = $workflow['on'] ?? $workflow[true];
-        $this->assertSame('string', $on['workflow_dispatch']['inputs']['ref']['type']);
-        $this->assertTrue($on['workflow_dispatch']['inputs']['ref']['required']);
-        $this->assertSame(['staging'], $on['push']['branches']);
-        $this->assertSame(['workflow_dispatch', 'push'], array_keys($on));
+        $this->assertSame(['workflow_dispatch'], array_keys($on), 'No push or pull request trigger deploys staging.');
+        $this->assertSame(['sha'], array_keys($on['workflow_dispatch']['inputs']));
+        $this->assertSame('string', $on['workflow_dispatch']['inputs']['sha']['type']);
+        $this->assertFalse($on['workflow_dispatch']['inputs']['sha']['required']);
+        $this->assertStringNotContainsString('inputs.ref', (string) file_get_contents($this->root().self::FILE));
 
         $deploy = $this->job()['steps'][array_search('Publish the isolated staging release', array_map(static fn (array $step): string => $step['name'] ?? '', $this->job()['steps']), true)];
         $this->assertSame('true', $deploy['with']['install-cron']);
@@ -72,6 +90,55 @@ final class StagingWorkflowTest extends TestCase
         }
         $this->assertNotContains('deploy-staging', $tests['jobs']['ci']['needs']);
         $this->assertStringNotContainsString('staging-deploy', (string) file_get_contents($this->root().'/.github/workflows/tests.yml'));
+    }
+
+    public function test_the_gate_accepts_the_dispatched_main_head_or_an_earlier_main_commit_with_green_main_ci(): void
+    {
+        $this->requireNode();
+        $result = $this->gate();
+        $this->assertTrue($result->isSuccessful(), $result->getErrorOutput());
+        $this->assertSame(str_repeat('a', 40), $result->getOutput());
+
+        $older = str_repeat('b', 40);
+        $result = $this->gate(['env' => ['STAGING_REQUESTED_SHA' => $older], 'compare' => ['status' => 'ahead', 'ahead_by' => 3]]);
+        $this->assertTrue($result->isSuccessful(), $result->getErrorOutput());
+        $this->assertSame($older, $result->getOutput());
+    }
+
+    /** @return array<string, array{array<string, mixed>}> */
+    public static function refusedStagingRequests(): array
+    {
+        $other = str_repeat('c', 40);
+
+        return [
+            'push trigger' => [['env' => ['GITHUB_EVENT_NAME' => 'push']]],
+            'pull request trigger' => [['env' => ['GITHUB_EVENT_NAME' => 'pull_request']]],
+            'dispatch from a branch' => [['env' => ['GITHUB_REF' => 'refs/heads/feature']]],
+            'dispatch from a pull request ref' => [['env' => ['GITHUB_REF' => 'refs/pull/7/merge']]],
+            'branch name instead of a SHA' => [['env' => ['STAGING_REQUESTED_SHA' => 'feature']]],
+            'pull request head ref' => [['env' => ['STAGING_REQUESTED_SHA' => 'refs/pull/7/head']]],
+            'short SHA' => [['env' => ['STAGING_REQUESTED_SHA' => 'aaaaaaa']]],
+            'uppercase SHA' => [['env' => ['STAGING_REQUESTED_SHA' => str_repeat('A', 40)]]],
+            'commit not on main' => [['env' => ['STAGING_REQUESTED_SHA' => $other], 'compare' => ['status' => 'diverged', 'behind_by' => 2, 'merge_base_commit' => ['sha' => str_repeat('d', 40)]]]],
+            'commit ahead of main' => [['env' => ['STAGING_REQUESTED_SHA' => $other], 'compare' => ['status' => 'behind', 'behind_by' => 1, 'ahead_by' => 0, 'merge_base_commit' => ['sha' => str_repeat('a', 40)]]]],
+            'merge base is another commit' => [['compare' => ['merge_base_commit' => ['sha' => $other]]]],
+            'CI ran for a pull request' => [['run' => ['event' => 'pull_request']]],
+            'CI ran on a branch' => [['run' => ['head_branch' => 'feature']]],
+            'CI ran in a fork' => [['run' => ['head_repository' => ['full_name' => 'another/fork']]]],
+            'no CI run' => [['runCount' => 0]],
+            'failed ci job' => [['jobs' => [['id' => 21, 'name' => 'ci', 'status' => 'completed', 'conclusion' => 'failure', 'head_sha' => str_repeat('a', 40)]]]],
+            'missing ci job' => [['jobs' => [['id' => 21, 'name' => 'Run Tests', 'status' => 'completed', 'conclusion' => 'success', 'head_sha' => str_repeat('a', 40)]]]],
+        ];
+    }
+
+    /** @param  array<string, mixed>  $fixture */
+    #[DataProvider('refusedStagingRequests')]
+    public function test_the_gate_refuses_anything_but_a_main_commit_with_green_main_ci(array $fixture): void
+    {
+        $this->requireNode();
+        $result = $this->gate($fixture);
+        $this->assertFalse($result->isSuccessful(), $result->getOutput());
+        $this->assertSame('', $result->getOutput());
     }
 
     public function test_preflight_names_everything_missing_and_refuses_unsafe_values(): void
@@ -108,6 +175,42 @@ final class StagingWorkflowTest extends TestCase
         [$code, $err] = $this->preflight($node, ['STAGING_MAIL_MAILER' => 'smtp'] + $good);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('STAGING_MAIL_HOST (var) is missing', $err);
+    }
+
+    private function requireNode(): void
+    {
+        if ((new ExecutableFinder)->find('node') === null) {
+            $this->markTestSkipped('node is not available.');
+        }
+    }
+
+    /** @param  array<string, mixed>  $fixture */
+    private function gate(array $fixture = []): Process
+    {
+        $source = <<<'JS'
+import {pathToFileURL} from 'node:url';
+const modulePath = process.argv[1]; process.argv[1] = 'fixture-runner';
+const gate = await import(pathToFileURL(modulePath));
+const fixture = JSON.parse(process.argv[2]);
+const env = {GITHUB_REPOSITORY:'example/application', GITHUB_SHA:'a'.repeat(40), GITHUB_REF:'refs/heads/main', GITHUB_EVENT_NAME:'workflow_dispatch', STAGING_REQUESTED_SHA:'', ...fixture.env};
+const sha = env.STAGING_REQUESTED_SHA || env.GITHUB_SHA;
+const get = async (path) => {
+    if (path.includes('/compare/')) return {status:'identical', ahead_by:0, behind_by:0, merge_base_commit:{sha}, ...fixture.compare};
+    if (path.includes('/runs?')) {
+        if (!path.includes('branch=main&event=push') || !path.includes('/workflows/tests.yml/')) throw new Error('unexpected CI query ' + path);
+        const count = fixture.runCount ?? 1;
+        return {total_count:count, workflow_runs:count ? [{id:42, head_sha:sha, head_branch:'main', event:'push', head_repository:{full_name:env.GITHUB_REPOSITORY}, ...fixture.run}] : []};
+    }
+    return {total_count:1, jobs:fixture.jobs ?? [{id:21, name:'ci', status:'completed', conclusion:'success', head_sha:sha}]};
+};
+try {process.stdout.write(await gate.verify(env, get));}
+catch (error) {process.stderr.write(error.message); process.exitCode = 1;}
+JS;
+        $process = new Process(['node', '--input-type=module', '-e', $source,
+            $this->root().'/scripts/deploy/staging/gate.mjs', json_encode((object) $fixture, JSON_THROW_ON_ERROR)]);
+        $process->run();
+
+        return $process;
     }
 
     /** @return array<string, mixed> */

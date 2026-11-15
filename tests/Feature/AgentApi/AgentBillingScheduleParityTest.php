@@ -9,6 +9,7 @@ use App\Models\ClientInvoice;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
+use App\Services\Billing\BillingScheduleService;
 use App\Support\AgentApi\AgentApiVersion;
 use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
@@ -302,6 +303,38 @@ final class AgentBillingScheduleParityTest extends TestCase
         $this->assertDatabaseCount('client_billing_schedules', 0);
         $this->assertDatabaseCount('agent_mutation_receipts', 0);
         $this->assertDatabaseHas('agent_mutation_audits', ['operation' => 'billing_schedules.create', 'outcome' => 'failed', 'error_category' => 'validation']);
+    }
+
+    public function test_create_refuses_a_first_run_before_the_agreement_or_too_far_back(): void
+    {
+        $this->agreement->forceFill(['starts_on' => '2001-01-01'])->save();
+        foreach (['0001-01-01', '2024-10-07'] as $i => $date) {
+            $this->withHeader('Idempotency-Key', 'backdated-'.$i)->postJson($this->base(), [...$this->body(), 'next_run_on' => $date])
+                ->assertUnprocessable()->assertJsonValidationErrors(['next_run_on']);
+        }
+        $this->agreement->forceFill(['starts_on' => '2026-09-15'])->save();
+        $this->withHeader('Idempotency-Key', 'before-agreement')->postJson($this->base(), [...$this->body(), 'next_run_on' => '2026-09-01'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['next_run_on']);
+        $this->assertDatabaseCount('client_billing_schedules', 0);
+        $this->assertDatabaseCount('agent_mutation_receipts', 0);
+
+        $this->agreement->forceFill(['starts_on' => '2001-01-01'])->save();
+        $this->withHeader('Idempotency-Key', 'oldest-allowed')->postJson($this->base(), [...$this->body(), 'next_run_on' => '2024-10-08'])->assertCreated();
+    }
+
+    public function test_generate_bills_at_most_one_batch_and_leaves_the_rest_due(): void
+    {
+        $this->agreement->forceFill(['starts_on' => '2020-01-01'])->save();
+        $schedule = $this->schedule(['next_run_on' => '2023-01-01']);
+        $url = $this->base().'/'.$schedule->public_id.'/generate';
+        $first = $this->withHeader('Idempotency-Key', 'batch-1')->postJson($url, ['expected_version' => AgentApiVersion::for($schedule), 'confirm' => true])->assertOk();
+        $this->assertCount(BillingScheduleService::GENERATION_BATCH_LIMIT, $first->json('data.invoices'));
+        $this->assertSame('2025-01-01', $first->json('data.schedule.next_run_on'));
+
+        $second = $this->withHeader('Idempotency-Key', 'batch-2')->postJson($url, ['expected_version' => $first->json('data.schedule.version'), 'confirm' => true])->assertOk();
+        $this->assertCount(22, $second->json('data.invoices'));
+        $this->assertSame('2026-11-01', $second->json('data.schedule.next_run_on'));
+        $this->assertDatabaseCount('client_invoices', 46);
     }
 
     /** @return array<string, mixed> */

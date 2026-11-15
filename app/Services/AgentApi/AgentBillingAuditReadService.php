@@ -37,6 +37,9 @@ final class AgentBillingAuditReadService
      */
     public const int PREFLIGHT_PERIOD_CAP = 60;
 
+    /** Periods one preflight request classifies across every schedule of the workspace. */
+    public const int PREFLIGHT_PERIOD_BUDGET = 600;
+
     /** Agent preflights per workspace in {@see PREFLIGHT_WINDOW_SECONDS}. */
     public const int PREFLIGHT_WINDOW_SECONDS = 600;
 
@@ -108,7 +111,7 @@ final class AgentBillingAuditReadService
             throw new ThrottleRequestsException("The schedule preflight ran recently. Retry in {$seconds} seconds.", null, ['Retry-After' => (string) $seconds]);
         }
 
-        return $this->schedulePreflight->run($workspace, periodCap: self::PREFLIGHT_PERIOD_CAP)->toArray();
+        return $this->schedulePreflight->run($workspace, periodCap: self::PREFLIGHT_PERIOD_CAP, periodBudget: self::PREFLIGHT_PERIOD_BUDGET)->toArray();
     }
 
     /** @return array<string, int> */

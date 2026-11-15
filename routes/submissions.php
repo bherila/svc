@@ -18,6 +18,7 @@ Route::middleware(['web', 'auth'])->group(function (): void {
         ->name('workspaces.timesheet');
     // The file, in the browser: the same rows as the page, as CSV or PDF.
     Route::get('/workspaces/{workspace}/timesheet/export', [ApprovedTimesheetController::class, 'export'])
+        ->middleware('throttle:documents')
         ->name('workspaces.timesheet.export');
     // A light workspace's owner turning on the rest of SVC. One way, in the browser.
     Route::post('/workspaces/{workspace}/edition/full', [WorkspaceEditionController::class, 'full'])

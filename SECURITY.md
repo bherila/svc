@@ -24,3 +24,26 @@ pnpm run hooks:install
 The guard is intentionally conservative. If a legitimate source artifact is
 blocked, prefer generating it during tests. Any exception should receive a
 security review before the guard is changed.
+
+## Security assumption: the identity provider verifies email changes
+
+SVC has no email verification of its own. Every sign-in stamps `email_verified_at` and
+refreshes the account's address from the email the identity provider asserts (the
+`bherila/auth-laravel` account defaults, configured through `App\Auth\OAuthAccounts`).
+Accounts resolve on the provider subject, never on email, but several grants bind to
+whichever account currently holds an address:
+
+- portal invitations applied at sign-in (`PortalInvitations::applyAtSignIn`);
+- shared-project invitation acceptance (`SharedProjectParticipations`);
+- approval rights of a client's billing contact (`ApprovalPermission::isBillingContact`);
+- reviewer grants (`ReviewerGrants`);
+- adoption of an existing account when a package request is approved
+  (`PackageRequestWorkflow`).
+
+This is safe only because the identity provider confirms mailbox control before an
+email change takes effect, as the owner has confirmed it does. A provider (or a second
+provider added later) that lets a person set or change an address without proving they
+control it would let them claim every grant above for that address. Before trusting
+such a provider, SVC must require an `email_verified` claim on the identity, refuse or
+leave unverified any sign-in without it, and bind these grants only to verified
+addresses.

@@ -619,6 +619,30 @@ final class ScheduleGenerationPreflightTest extends TestCase
     }
 
     /**
+     * A per-schedule cap still multiplies by the number of schedules, so a
+     * request can carry a budget for the whole run: once it is spent, later
+     * due schedules are reported truncated without being classified.
+     */
+    public function test_a_total_period_budget_bounds_the_run_across_schedules(): void
+    {
+        // Separate clients, so no agreement hands over to another.
+        foreach (['budgeted-one', 'budgeted-two', 'budgeted-three'] as $slug) {
+            $this->scheduled($slug);
+        }
+        $through = CarbonImmutable::parse('2026-10-15');
+
+        $unbudgeted = app(ScheduleGenerationPreflight::class)->run(null, $through, periodCap: 10);
+        $this->assertTrue($unbudgeted->isConclusive());
+        $this->assertSame(9, $unbudgeted->periodsClassified, 'three schedules of three periods each');
+
+        $budgeted = app(ScheduleGenerationPreflight::class)->run(null, $through, periodCap: 10, periodBudget: 4);
+        $this->assertSame(4, $budgeted->periodsClassified);
+        $this->assertSame(2, $budgeted->schedulesTruncated, 'the second schedule stops part way and the third is never classified');
+        $this->assertSame(3, $budgeted->schedulesDue);
+        $this->assertFalse($budgeted->isConclusive());
+    }
+
+    /**
      * A cadence this application cannot read halts the schedule, and it is a
      * defect of the *schedule* rather than a refusal about an invoice.
      *

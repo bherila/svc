@@ -43,6 +43,25 @@ composer dev
 
 The generated SQLite database and `.env` are local-only. Do not import production data into this checkout.
 
+The frontend compiler is TypeScript 7 and the linter is Oxlint, including its
+native React Compiler checks and type-aware rules. No ESLint engine is installed.
+Oxlint still hosts the maintained stylistic, import-order and React Compiler
+`config`/`gating` JS rules: those five checks have no equivalent native rules.
+The import-order wrapper loads only the upstream rule because the package's full
+entry point also loads unrelated rules that require ESLint. Targeted optional-peer
+metadata keeps the engine out of the dependency graph; `pnpm run lint:test`
+exercises the retained rules and verifies the engine is absent.
+
+`pnpm run api:types` generates the checked-in OpenAPI types with
+[`openapi-typesafe`](https://openapi-typesafe.github.io/openapi-typesafe/migration-guide),
+which prints types without the classic TypeScript compiler API. Its exactly pinned
+release candidate preserves SVC's generated types apart from the generator header;
+the fork is still pre-1.0, so update it deliberately and inspect regenerated output.
+`pnpm run api:types:check` rejects generation drift in CI, and the lint tests reject
+any locked ESLint engine or TypeScript version below 7. No TypeScript 6 workspace is
+needed. The generator's legacy Node callbacks are unused; do not add the optional
+classic-compiler adapter to enable them.
+
 For a Codex environment, run `bash codex/setup.sh`. It installs PHP 8.5 and
 required extensions through apt when needed, installs the locked Composer and
 pnpm dependencies, and creates `.env` and an application key if absent. It keeps

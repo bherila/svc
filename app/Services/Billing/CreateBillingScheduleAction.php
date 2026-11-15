@@ -9,15 +9,32 @@ use App\Models\Workspace;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\BillingPeriod;
 use App\Support\Concurrency\Locks;
+use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /** Shared creation boundary for website and API billing schedules. */
 final class CreateBillingScheduleAction
 {
-    public function __construct(private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository) {}
+    /**
+     * How far before today a new schedule's first period may start.
+     *
+     * Generation bills every due period from `next_run_on` forward, so the
+     * first run of a schedule created years in the past issues years of
+     * invoices (and queues their client emails). Two years is one
+     * {@see BillingScheduleService::GENERATION_BATCH_LIMIT} of monthly periods:
+     * enough to catch up a schedule set up late, while an older backlog is
+     * billed deliberately rather than by a date typed into a form.
+     */
+    public const int MAX_BACKDATE_YEARS = 2;
+
+    public function __construct(
+        private readonly AgreementHandoverRepository $handovers = new AgreementHandoverRepository,
+        private readonly WorkspaceClock $clock = new WorkspaceClock,
+    ) {}
 
     /** @param array<string, mixed> $data */
     public function create(Workspace $workspace, ClientCompany $company, array $data, ?string $expectedVersion = null): ClientBillingSchedule
@@ -41,6 +58,7 @@ final class CreateBillingScheduleAction
             if (! is_string($nextRun) || ! is_string($cadence)) {
                 throw new \DomainException('The billing schedule needs a next run date and cadence.');
             }
+            $this->assertFirstRunInRange($workspace, $agreement, CarbonImmutable::parse($nextRun));
             $period = BillingPeriod::beginningAt(CarbonImmutable::parse($nextRun), $cadence);
             $this->handovers->forAgreement($agreement)?->assertClear($period->start->toDateString(), $period->end->toDateString());
 
@@ -65,5 +83,24 @@ final class CreateBillingScheduleAction
                 abort(409, 'This agreement already has a billing schedule; read it before generating invoices.');
             }
         });
+    }
+
+    /**
+     * Refuse a first period before the agreement starts, or further back than
+     * {@see self::MAX_BACKDATE_YEARS}. The same boundary for the website and
+     * the API, so neither can backdate past the other.
+     *
+     * @throws ValidationException
+     */
+    private function assertFirstRunInRange(Workspace $workspace, ClientAgreement $agreement, CarbonImmutable $nextRun): void
+    {
+        $startsOn = $agreement->starts_on->toDateString();
+        if ($nextRun->toDateString() < $startsOn) {
+            throw ValidationException::withMessages(['next_run_on' => "The first billing period cannot start before the agreement starts on {$startsOn}."]);
+        }
+        $earliest = $this->clock->today($workspace)->subYearsNoOverflow(self::MAX_BACKDATE_YEARS)->toDateString();
+        if ($nextRun->toDateString() < $earliest) {
+            throw ValidationException::withMessages(['next_run_on' => 'The first billing period cannot start more than '.self::MAX_BACKDATE_YEARS." years ago (before {$earliest}). Bill an older backlog with individual invoices."]);
+        }
     }
 }
