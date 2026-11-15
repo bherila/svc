@@ -312,6 +312,8 @@ class TimeEntrySplitterTest extends TestCase
 
         ClientTimeEntry::query()->whereKey($entry->id)->update(['minutes' => 120]);
         $this->expectException(TimeChangedDuringBilling::class);
+        // Read by the person or agent who retries, so the whole sentence.
+        $this->expectExceptionMessage('Time on this client changed while its invoice was being generated, so nothing was generated. Retry to generate it from the current time.');
         TimeEntrySplitter::assertCurrent($entry);
     }
 
