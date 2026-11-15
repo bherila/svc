@@ -7,6 +7,7 @@ use App\Services\Billing\AllocationService;
 use App\Services\Billing\ClientInvoicingService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -81,7 +82,7 @@ try {
     }
     $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
     echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate], JSON_THROW_ON_ERROR)."\n";
-} catch (Illuminate\Database\QueryException $failure) {
+} catch (QueryException $failure) {
     echo json_encode(['outcome' => 'failed', 'class' => $failure::class, 'code' => $failure->errorInfo[1] ?? null, 'message' => $failure->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (DomainException|RuntimeException $refusal) {
     echo json_encode(['outcome' => 'refused', 'class' => $refusal::class, 'message' => $refusal->getMessage()], JSON_THROW_ON_ERROR)."\n";
