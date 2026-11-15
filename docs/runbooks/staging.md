@@ -28,8 +28,8 @@ staging, call real Stripe or touch production.
 ## What the owner provides
 
 Create the GitHub Environment **staging** (Settings, Environments). Recommended: required
-reviewers, and a deployment-branch rule limiting it to `main` and `staging` plus the branches
-you intend to deploy. The workflow reads the environment's values as follows; the preflight
+reviewers, and a deployment-branch rule limiting it to `main` (the workflow refuses every other
+ref itself; the rule makes the environment refuse too). The workflow reads the environment's values as follows; the preflight
 prints any that are missing or unsafe (names and the rule only, never values).
 
 Variables (`vars.`):
@@ -65,16 +65,21 @@ workflow writes the values above into it through the deployment action's `env-va
 
 ### What the workflow does
 
-`workflow_dispatch` with a `ref` (branch, tag, full SHA, or `refs/pull/<n>/head`), or a push to
-a `staging` branch (create it only when the owner is ready). In order: check out the ref; run
-the preflight; require that exact commit's `ci` aggregate job to have succeeded in a
-`tests.yml` run of this repository (a pull request head counts; a fork's run does not); build;
+**Only `main` deploys to staging.** The one trigger is `workflow_dispatch` run from `main`
+(the job's `if` skips a dispatch from any other ref), with an optional `sha`: a full commit SHA
+on `main`, or empty for the dispatched `main` head. There is no push trigger, and branches, tags
+and pull request heads cannot be deployed; validate a pull request locally or in CI, then
+deploy it once merged. In order: check out the dispatched `main` head and run
+`scripts/deploy/staging/gate.mjs` from it, which refuses unless the run is a dispatch on `main`,
+the commit equals the current `main` head or is one of its ancestors (GitHub's compare API), and
+it has a successful `ci` job in a `main` push run of `tests.yml` (the pilot's CI check, reused);
+check out that verified commit; run the preflight; build, asserting `HEAD` is the verified SHA;
 deploy atomically with a retained rollback release. It does not run any production data command
 and has no step that reads another environment.
 
-Secrets reach only the preflight and deploy steps, never the Composer/pnpm build. The deployed
-ref's own scripts run in the workflow, so restrict who can start it with the environment's
-reviewers and branch rules.
+Secrets reach only the preflight and deploy steps, never the gate or the Composer/pnpm build.
+Every script the workflow runs comes from reviewed `main`; restrict who can start it with the
+environment's reviewers and branch rule.
 
 The production hook scripts under `scripts/deploy/` are hard-wired to `svc-laravel` and
 `svc.bherila.net`, and the pilot's to the pilot; staging uses none of them and relies on the
@@ -223,7 +228,7 @@ Run in order against staging with the seeded data; tick each with who, when, and
 ids. Test cards: success `4242 4242 4242 4242`; 3DS `4000 0027 6000 3184`; decline
 `4000 0000 0000 0002`; dispute `4000 0000 0000 0259`; any future expiry, any CVC and postal code.
 
-- [ ] **Deploy and schema.** The workflow succeeded for an exact CI-green commit; `php artisan about` on the host shows `staging`, the staging database and `log`/sink mail.
+- [ ] **Deploy and schema.** The workflow succeeded for an exact CI-green `main` commit; `php artisan about` on the host shows `staging`, the staging database and `log`/sink mail.
 - [ ] **Isolation.** `php artisan svc:stripe:status` reports mode `test`; the Stripe account is the test account; the OAuth client and bucket (if any) are staging's.
 - [ ] **Portal card payment.** As the portal contact, open an issued invoice, **Pay by card**, enter 4242 in the Payment Element, **Pay now**. The page says "Payment submitted", then the invoice shows Paid once `payment_intent.succeeded` is delivered (Stripe dashboard shows a 200 delivery). `scripts/staging/portal-card-smoke.mjs` automates this.
 - [ ] **3DS.** Pay another invoice with the 3DS card; complete the challenge; it returns to the invoice and turns Paid.
