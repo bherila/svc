@@ -23,7 +23,7 @@ class StoreProposalRequest extends FormRequest
             'currency' => ['required', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'is_visible_to_client' => ['sometimes', 'boolean'],
             'items' => ['sometimes', 'array', 'max:100'],
-            'items.*' => ['array'],
+            'items.*' => ['array:description,quantity,unit_amount,cadence,sort_order'],
             'items.*.description' => ['required', 'string', 'max:1000'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:10000'],
             'items.*.unit_amount' => ['required', 'integer', 'min:0', 'max:900000000000'],

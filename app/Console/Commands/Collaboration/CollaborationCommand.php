@@ -46,7 +46,7 @@ final class CollaborationCommand extends MutationCommand
             $input = $this->inputJson();
             /** @var array{id?:string,parent_type?:string,idempotency_key?:string,payload?:array<string,mixed>} $data */
             $data = Validator::make($input, ['id' => ['sometimes', 'uuid'], 'parent_type' => ['sometimes', 'in:task,topic'],
-                'idempotency_key' => ['sometimes', 'string', 'max:255'], 'payload' => ['sometimes', 'array']])->validate();
+                'idempotency_key' => ['sometimes', 'string', 'max:255'], 'payload' => ['sometimes', 'array', 'max:50']])->validate();
             $write = ! in_array($operation, ['topics.list', 'topics.get', 'comments.list'], true);
             $result = $write
                 ? $this->preview(fn (): array => $collaboration->mutateNative($actor, $workspace, (string) $this->argument('client'), $data['idempotency_key'] ?? '', $operation, $data['id'] ?? null, $data['parent_type'] ?? null, $data['payload'] ?? []))

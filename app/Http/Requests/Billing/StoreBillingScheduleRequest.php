@@ -25,7 +25,7 @@ class StoreBillingScheduleRequest extends FormRequest
             'due_days' => ['required', 'integer', 'min:0', 'max:365'],
             'currency' => ['required', 'regex:/^[A-Z]{3}$/'],
             'is_active' => ['sometimes', 'boolean'],
-            'line_template' => ['required', 'array', 'min:1'],
+            'line_template' => ['required', 'array', 'min:1', 'max:100'],
             'line_template.*.type' => ['required', 'string', 'max:40', Rule::notIn(InvoiceLineType::systemOnlyValues())],
             'line_template.*.description' => ['required', 'string', 'max:10000'],
             'line_template.*.quantity' => ['required', 'regex:/^\d+(?:\.\d{1,4})?$/'],
