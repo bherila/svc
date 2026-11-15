@@ -458,7 +458,9 @@ final class EarlierDraftCatchUpTest extends TestCase
         $this->month('2026-01-01', '2026-01-31');
         [$february] = $this->month('2026-02-01', '2026-02-28');
         $this->assertNotNull($february->fresh()?->catch_up_basis, 'Generation records the basis');
-        ClientInvoice::query()->whereKey($february->id)->update(['catch_up_basis' => null]);
+        // A draft generated before any basis was recorded: catch-up, held work
+        // or pricing (#718), so issue checks none of them.
+        ClientInvoice::query()->whereKey($february->id)->update(['catch_up_basis' => null, 'held_work_basis' => null, 'pricing_basis' => null]);
         $this->entry('2026-01-20', 120);
         [$january] = $this->month('2026-01-01', '2026-01-31');
         $this->issue($january);

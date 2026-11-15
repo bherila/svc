@@ -721,7 +721,45 @@ row is still the one it read, or reads it with a lock:
 `CadenceGenerationSnapshotTest` holds a generator at its first ordinary read,
 commits each change from a second session, and checks the outcome. Ledger
 quantities that are not tied to a linked row - re-carried deferred work and the
-balance columns - are not yet re-derived at issue; see #718.
+balance columns - are covered at issue by the pricing basis below.
+
+### A cadence draft is issued only from the inputs it was priced from (#718)
+
+A cadence or terminal draft's figures come from its agreement's ledger, and a
+draft can sit for days before it is issued. `PricingBasisRecorder::record()`
+stores on the draft, as `pricing_basis`, what its ledger read: the scope's time
+through the work period's end (stopping the day before a successor in the same
+scope takes over), where each row was placed - the line type and capacity date
+of every allocation outside the draft - and the agreement's other live
+invoices' billed overage and re-carried deferred lines. Only columns that can
+move money are digested: an earlier draft's issue marking its time invoiced, paying an
+earlier invoice, or editing a description refuses nothing. The basis also
+records the last time entry and invoice it saw, so work logged afterwards is
+later work for a later invoice, not a reason to refuse this one.
+
+`issue()` recomputes the basis with locking reads and refuses with
+`PricingBasisChanged` - after the more specific checks have had their say, so
+work now outside the agreement's segment is reported as that - telling the
+owner to regenerate, review and issue. A cadence draft with no basis is refused
+with `PricingBasisMissing`. Where the reads sit in the issue's lock order:
+
+- The agreement's invoices and their re-carried lines are read with share
+  locks at the time phase, after the invoice and lines they rank behind; every
+  writer of those rows holds the agreement lock, which the issue of a draft
+  with a basis takes first. The invoice read names only the agreement (no id
+  range), so it scans the agreement's index and never touches a hand-edited
+  ad-hoc draft (`IssueTimeLockOrderTest`).
+- The time rows and the allocations reaching them are locked exclusively,
+  after the maintenance share lock, as every billing writer that locks time
+  does (`LockOrderConformanceTest::BILLING_WRITER_SITES`); exclusive from the
+  first read, so the issue never upgrades a share lock it holds.
+- The successor's start comes from the client's agreements the issue locked
+  first (`lockHandoverSegments()`), not a later read.
+
+At generation the basis is read through the generator's own snapshot, which is
+the point: it must describe what the draft was priced from, and the issue's
+locking re-read is what notices that the rows have since moved. Those reads are
+pinned in the snapshot ratchet with that reason.
 
 ### Deferred buy-down reservation
 
