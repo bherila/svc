@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
@@ -217,6 +218,83 @@ final class CadenceGenerationSnapshotTest extends TestCase
             $this->assertNotNull(ClientTimeEntry::query()->where('workspace_id', $workspace->id)->find($fragment->id), 'A billed fragment was merged away. '.$output);
             $this->assertSame([$fragment->id], $line->timeEntries()->pluck('client_time_entries.id')->all(), 'The billed fragment lost its allocation. '.$output);
             $this->assertSame(900, (int) ClientTimeEntry::query()->where('workspace_id', $workspace->id)->sum('minutes'), $output);
+        } finally {
+            $worker?->stop(0);
+            @unlink($paused);
+            @unlink($release);
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    /**
+     * Review finding B1 (#718): the expense rebuild locks the candidates - a
+     * current read - and then prices the ones it claims from an ordinary
+     * re-read, the snapshot. An expense cut from $150 to $100 after the
+     * generator's snapshot (unapproved, edited and approved again) must not
+     * be billed at $150.
+     */
+    public function test_an_expense_cut_after_the_generators_snapshot_is_not_billed_as_it_was(): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('A REPEATABLE READ snapshot in a second session is exercised in the MariaDB lane.');
+        }
+
+        $this->bootProbeDatabase('generation_snapshot');
+        Artisan::call('migrate', ['--database' => 'generation_snapshot', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('generation_snapshot');
+        Schema::clearResolvedInstance('db.schema');
+        $barrier = sys_get_temp_dir().'/svc-generation-snapshot-'.Str::lower(Str::random(16));
+        $paused = $barrier.'-paused';
+        $release = $barrier.'-release';
+        $worker = null;
+        try {
+            $workspace = Workspace::query()->create(['name' => 'Synthetic expense snapshot', 'slug' => 'synthetic-expense-snapshot']);
+            $owner = User::factory()->create();
+            $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+            $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic expense client', 'slug' => 'synthetic-expense-client']);
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic monthly retainer', 'status' => 'active',
+                'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD', 'hourly_rate_amount' => 10000,
+                'retainer_minutes' => 600, 'retainer_amount' => 60000, 'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+            ]);
+            $expense = ClientExpense::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'spent_on' => '2026-01-15', 'amount' => 15000,
+                'currency' => 'USD', 'description' => 'Synthetic expense', 'status' => 'approved',
+            ]);
+
+            $worker = new Process(
+                [PHP_BINARY, base_path('tests/Fixtures/Billing/generation-snapshot-worker.php'), base64_encode(json_encode([
+                    'connection' => config('database.connections.'.DB::getDefaultConnection()),
+                    'workspace' => $workspace->id, 'company' => $company->id, 'agreement' => $agreement->id, 'period' => '2026-02-01',
+                    'paused' => $paused, 'release' => $release,
+                ], JSON_THROW_ON_ERROR))],
+                base_path(),
+                ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
+                null,
+                120,
+            );
+            $worker->start();
+            $deadline = microtime(true) + 30;
+            while (! is_file($paused) && $worker->isRunning() && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($paused, $worker->getOutput().$worker->getErrorOutput());
+
+            // $100 now, as unapprove, edit and approve again leave it.
+            ClientExpense::query()->where('workspace_id', $workspace->id)->whereKey($expense->id)
+                ->update(['amount' => 10000, 'lock_version' => DB::raw('lock_version + 1')]);
+
+            $this->assertTrue(touch($release), 'Could not release the generator.');
+            $worker->wait();
+            $output = $worker->getOutput().$worker->getErrorOutput();
+            $this->assertTrue($worker->isSuccessful(), $output);
+
+            DB::purge('generation_snapshot');
+            $line = ClientInvoiceLine::query()->where('workspace_id', $workspace->id)->where('type', InvoiceLineType::Expense->value)->first();
+            $this->assertNotNull($line, 'The fixture no longer claims the expense. '.$output);
+            $this->assertSame(10000, (int) $line->total_amount, 'The expense was billed at the amount it no longer has. '.$output);
         } finally {
             $worker?->stop(0);
             @unlink($paused);
