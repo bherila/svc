@@ -3609,5 +3609,3 @@ INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_clie
 INSERT INTO migrations VALUES(142,'2026_11_20_090000_create_client_email_budget_locks',1);
 INSERT INTO migrations VALUES(143,'2026_11_21_090000_add_pricing_basis_to_client_invoices',1);
 INSERT INTO migrations VALUES(144,'2026_11_22_090000_create_client_agreement_revisions',1);
-INSERT INTO migrations VALUES(145,'2026_11_23_090000_reexpress_timestamps_for_a_utc_session',1);
-INSERT INTO migrations VALUES(146,'2026_11_24_090000_correct_pre_712_local_timestamps',1);

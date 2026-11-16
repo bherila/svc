@@ -117,13 +117,9 @@ storage/{path}` routes over that root.
 The app writes UTC (`config/app.php` sets `timezone` to `UTC`, and `WorkspaceClock::instant()`
 is UTC). MariaDB converts each `TIMESTAMP` through the session's `time_zone`, so the MySQL and
 MariaDB connections pin the session to `+00:00` (`config/database.php`) instead of taking the
-server's default, which on web1 is `SYSTEM`, the OS clock in Europe/London. Before the pin, a value
-written in British summer time was stored an hour early: the app read back what it wrote, while
-`mysqldump`, `UNIX_TIMESTAMP()` and a restore onto another server saw the hour.
-`2026_11_23_090000_reexpress_timestamps_for_a_utc_session` moved the stored values onto the UTC
-session, re-expressed from the server's default zone (`App\Support\Database\UtcTimestampSession`).
+server's default, which on web1 is `SYSTEM`, the OS clock in Europe/London.
 
 Nothing checks this at runtime. A new connection must set the same `timezone`, and SQL must not
-mix `NOW()` or `CURRENT_TIMESTAMP` with workspace-local times. Migrating with a cached
-configuration that predates the pin would read the old zone; the migration refuses a session that
-is not UTC rather than convert twice.
+mix `NOW()` or `CURRENT_TIMESTAMP` with workspace-local times. Values stored before the pin were
+deliberately not converted; docs/client-management/timestamps.md lists which read off and by how
+much.

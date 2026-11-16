@@ -61,7 +61,7 @@ return [
             'engine' => null,
             // TIMESTAMP columns convert through the session zone. The app
             // writes UTC, so the session is UTC too, whatever the server's
-            // default (App\Support\Database\UtcTimestampSession).
+            // default (SECURITY.md, docs/client-management/timestamps.md).
             'timezone' => '+00:00',
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
@@ -85,7 +85,7 @@ return [
             'engine' => null,
             // TIMESTAMP columns convert through the session zone. The app
             // writes UTC, so the session is UTC too, whatever the server's
-            // default (App\Support\Database\UtcTimestampSession).
+            // default (SECURITY.md, docs/client-management/timestamps.md).
             'timezone' => '+00:00',
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
