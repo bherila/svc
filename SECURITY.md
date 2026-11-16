@@ -111,3 +111,15 @@ behind it one bucket.
 (`storage/app/private`) holds the OAuth signing keys, so it is not served (`serve => false`):
 nothing issues temporary URLs for it, and serving it would register signed `GET` and `PUT
 storage/{path}` routes over that root.
+
+## Trust assumption: every stored instant is UTC, in the app and in the database session
+
+The app writes UTC (`config/app.php` sets `timezone` to `UTC`, and `WorkspaceClock::instant()`
+is UTC). MariaDB converts each `TIMESTAMP` through the session's `time_zone`, so the MySQL and
+MariaDB connections pin the session to `+00:00` (`config/database.php`) instead of taking the
+server's default, which on web1 is `SYSTEM`, the OS clock in Europe/London.
+
+Nothing checks this at runtime. A new connection must set the same `timezone`, and SQL must not
+mix `NOW()` or `CURRENT_TIMESTAMP` with workspace-local times. Values stored before the pin were
+deliberately not converted; docs/client-management/timestamps.md lists which read off and by how
+much.

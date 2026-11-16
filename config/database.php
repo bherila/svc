@@ -59,6 +59,10 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // TIMESTAMP columns convert through the session zone. The app
+            // writes UTC, so the session is UTC too, whatever the server's
+            // default (SECURITY.md, docs/client-management/timestamps.md).
+            'timezone' => '+00:00',
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
@@ -79,6 +83,10 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // TIMESTAMP columns convert through the session zone. The app
+            // writes UTC, so the session is UTC too, whatever the server's
+            // default (SECURITY.md, docs/client-management/timestamps.md).
+            'timezone' => '+00:00',
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
