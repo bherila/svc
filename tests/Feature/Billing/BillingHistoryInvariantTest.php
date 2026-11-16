@@ -82,6 +82,9 @@ final class BillingHistoryInvariantTest extends TestCase
     use RefreshDatabase;
     use WalksBillingHistories;
 
+    /** @var array<int, int> each logged entry's minutes as logged, by id: what its split family may charge in all */
+    private array $logged = [];
+
     /**
      * The re-review's history: historical work disputed, answered, disputed
      * again and written off, with an issue and a void between, the stale-draft
@@ -370,7 +373,6 @@ final class BillingHistoryInvariantTest extends TestCase
         Carbon::setTestNow('2026-10-10 12:00:00');
         CarbonImmutable::setTestNow('2026-10-10 12:00:00');
         $totals = [];
-        $periods = [];
         foreach (['bulk', 'sequential'] as $mode) {
             [$workspace, $company, $project, $owner] = $this->world('bulk-'.$mode);
             $agreement = $this->agreement($workspace, $company, $terms);
@@ -380,22 +382,41 @@ final class BillingHistoryInvariantTest extends TestCase
                     ClientTimeEntry::query()->whereKey($entry->id)->update(['is_deferred' => true]);
                 }
             }
+            // Every invoice's work cycle, from the agreement's own terms rather
+            // than from what bulk happened to produce, so a period bulk skips
+            // fails here instead of dropping out of both sides. The first sale
+            // is the cycle before the start (nothing worked yet, the retainer
+            // sold); the last, the cycle today falls in.
+            $months = $agreement->billing_cadence === 'quarterly' ? 3 : 1;
+            $periods = $this->cyclesFrom((string) $agreement->billing_cadence, $agreement->starts_on->subMonthsNoOverflow($months)->toDateString(), CarbonImmutable::now()->toDateString());
             if ($mode === 'bulk') {
                 app(ClientInvoicingService::class)->generateAllInvoices($company);
-                $periods = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('invoice_kind', 'cadence_period')
+                $sold = ClientInvoice::query()->where('workspace_id', $workspace->id)->where('invoice_kind', 'cadence_period')
                     ->orderBy('service_period_start')->pluck('service_period_start')->map(fn ($start): string => Carbon::parse($start)->toDateString())->all();
+                $this->assertSame($periods, $sold, 'Bulk generation invoices every work cycle through today, none skipped.');
             } else {
-                $months = $agreement->billing_cadence === 'quarterly' ? 3 : 1;
                 foreach ($periods as $workStart) {
+                    // The interim overage each month of the cycle bills
+                    // before the cycle's own draft, as the bulk walk does.
+                    if ((bool) $agreement->bill_overage_interim && $months > 1) {
+                        for ($month = Carbon::parse($workStart); $month->lt(Carbon::parse($workStart)->addMonthsNoOverflow($months)); $month = $month->copy()->addMonthNoOverflow()) {
+                            app(ClientInvoicingService::class)->generateInterimOverageInvoice($company, $month->copy(), $agreement->fresh() ?? $agreement);
+                        }
+                    }
                     app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement->fresh() ?? $agreement, Carbon::parse($workStart)->addMonthsNoOverflow($months));
                 }
             }
             $this->assertInvariants($company, $mode);
-            $totals[$mode] = $this->draftTotals($company, 'cadence_period');
+            // Every kind, interim overage included.
+            $totals[$mode] = $this->draftTotals($company);
         }
 
         $this->assertGreaterThanOrEqual(2, count($totals['bulk']));
-        $this->assertSame($totals['sequential'], $totals['bulk']);
+        if ((bool) ($terms['bill_overage_interim'] ?? false)) {
+            $interims = array_filter(array_keys($totals['bulk']), fn (string $key): bool => str_starts_with($key, 'interim_overage '));
+            $this->assertNotEmpty($interims, 'The interim world bills interim overage, or comparing it proves nothing.');
+        }
+        $this->assertSame($totals['bulk'], $totals['sequential']);
     }
 
     /** @return iterable<string, array{array<string, mixed>}> */
@@ -1147,6 +1168,27 @@ final class BillingHistoryInvariantTest extends TestCase
             ->pluck('allocation.client_time_entry_id')
             ->all();
         $this->assertSame([], $twice, "After {$step}, these hours are allocated by two live invoices.");
+
+        // A split re-keys part of an entry under a new id, so ids alone miss
+        // the pre-split row and a fragment of it both charged. Counted in
+        // minutes instead: each family - an entry and every fragment split
+        // from it - charges at most the minutes that were logged.
+        $charged = DB::table('client_invoice_line_time_entries as allocation')
+            ->join('client_invoice_lines as line', 'line.id', '=', 'allocation.client_invoice_line_id')
+            ->join('client_invoices as invoice', 'invoice.id', '=', 'line.client_invoice_id')
+            ->join('client_time_entries as entry', 'entry.id', '=', 'allocation.client_time_entry_id')
+            ->where('invoice.workspace_id', $company->workspace_id)
+            ->where('invoice.client_company_id', $company->id)
+            ->where('invoice.status', '!=', InvoiceStatus::Void->value)
+            ->distinct()
+            ->get(['entry.id', 'entry.minutes', DB::raw('coalesce(entry.split_from_time_entry_id, entry.id) as family')])
+            ->groupBy('family')
+            ->map(fn ($members): int => (int) $members->sum('minutes'));
+        foreach ($charged as $family => $minutes) {
+            if (isset($this->logged[(int) $family])) {
+                $this->assertLessThanOrEqual($this->logged[(int) $family], $minutes, "After {$step}, entry {$family} and its fragments charge more minutes than were logged.");
+            }
+        }
     }
 
     /**
@@ -1254,16 +1296,17 @@ final class BillingHistoryInvariantTest extends TestCase
     }
 
     /**
-     * Each line's type, quantity, total and the time it allocates, by day and
-     * minutes: regeneration recombines and re-splits fragments, so the same
-     * allocation can come back under new ids.
+     * Each line's type, date, quantity, total and the time it allocates, by day
+     * and minutes: regeneration recombines and re-splits fragments, so the
+     * same allocation can come back under new ids. The date is part of what
+     * the client reads, so a draft dated from stale state is stale too.
      *
-     * @return array<int, array{string, string, int, array<int, string>}>
+     * @return array<int, array{string, ?string, string, int, array<int, string>}>
      */
     private function shape(ClientInvoice $invoice): array
     {
         return $invoice->lines()->with('timeEntries:id,worked_on,minutes')->get()
-            ->map(fn ($line): array => [(string) $line->type, (string) $line->quantity, (int) $line->total_amount, $line->timeEntries
+            ->map(fn ($line): array => [(string) $line->type, $line->line_date?->toDateString(), (string) $line->quantity, (int) $line->total_amount, $line->timeEntries
                 ->map(fn (ClientTimeEntry $entry): string => $entry->worked_on->toDateString().':'.(int) $entry->minutes)->sort()->values()->all()])
             ->sortBy(fn (array $shape): string => json_encode($shape, JSON_THROW_ON_ERROR))->values()->all();
     }
@@ -1344,11 +1387,14 @@ final class BillingHistoryInvariantTest extends TestCase
 
     private function hours(Workspace $workspace, ClientCompany $company, ClientProject $project, User $author, string $day, int $minutes): ClientTimeEntry
     {
-        return ClientTimeEntry::query()->create([
+        $entry = ClientTimeEntry::query()->create([
             'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
             'user_id' => $author->id, 'worked_on' => $day, 'minutes' => $minutes, 'description' => 'Synthetic work',
             'client_visible_description' => 'Synthetic client text', 'is_visible_to_client' => true,
             'status' => 'approved', 'is_billable' => true, 'is_deferred' => false, 'billing_rate_amount' => 10000, 'currency' => 'USD',
         ])->refresh();
+        $this->logged[$entry->id] = $minutes;
+
+        return $entry;
     }
 }
