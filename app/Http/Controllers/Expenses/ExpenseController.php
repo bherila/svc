@@ -77,11 +77,13 @@ class ExpenseController extends Controller
                 'project' => fn ($query) => $query->where('workspace_id', $workspace->id),
                 'approvedBy',
                 'clientCompany' => fn ($query) => $query->where('workspace_id', $workspace->id),
-                ...($isManager ? [
-                    'invoiceLine' => fn ($query) => $query->where('workspace_id', $workspace->id)->with([
-                        'invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id),
-                    ]),
-                ] : []),
+                // For every viewer: the client's review is read from it
+                // (approved by payment, a dispute held by a charge), as on the
+                // time sheet and the API. What names the invoice - its number
+                // and link, the settle outcomes - stays with managers below.
+                'invoiceLine' => fn ($query) => $query->where('workspace_id', $workspace->id)->with([
+                    'invoice' => fn ($invoice) => $invoice->where('workspace_id', $workspace->id)->where('client_company_id', $clientCompany->id),
+                ]),
             ])
             ->orderByDesc('spent_on')
             ->orderByDesc('id')
