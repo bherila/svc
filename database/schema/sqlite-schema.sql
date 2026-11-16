@@ -3454,6 +3454,16 @@ CREATE TABLE "client_email_budget_locks"(
   foreign key("workspace_id") references "workspaces"("id") on delete cascade,
   primary key("workspace_id")
 );
+CREATE TABLE "client_agreement_revisions"(
+  "workspace_id" integer not null,
+  "client_company_id" integer not null,
+  "revision" integer not null default '0',
+  "created_at" datetime,
+  "updated_at" datetime,
+  foreign key("workspace_id") references "workspaces"("id") on delete cascade,
+  foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete cascade,
+  primary key("workspace_id", "client_company_id")
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -3598,3 +3608,4 @@ INSERT INTO migrations VALUES(140,'2026_11_18_090000_create_service_package_requ
 INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_client_invoices',1);
 INSERT INTO migrations VALUES(142,'2026_11_20_090000_create_client_email_budget_locks',1);
 INSERT INTO migrations VALUES(143,'2026_11_21_090000_add_pricing_basis_to_client_invoices',1);
+INSERT INTO migrations VALUES(144,'2026_11_22_090000_create_client_agreement_revisions',1);

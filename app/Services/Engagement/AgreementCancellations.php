@@ -355,6 +355,10 @@ final class AgreementCancellations
             'undone_at' => $this->instant(),
         ])->save();
         $locked->forceFill(['ends_on' => $restored?->toDateString()])->save();
+        if ($locked->status === 'active') {
+            // Widens an active term, which a concurrent overlap check must see.
+            $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
+        }
         $this->activities->record($workspace, $company, 'agreement.end_undone', $locked, [
             'changes' => ['ends_on' => ['old' => $undone->toDateString(), 'new' => $restored?->toDateString()]],
         ], $by, (string) Str::uuid());

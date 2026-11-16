@@ -191,14 +191,18 @@ class AgreementWorkflow
                 throw AgreementCancellationRefused::because(CancellationRefusal::EndScheduled);
             }
 
-            if ($locked->status === 'active'
-                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes))) {
+            $movesActiveDates = $locked->status === 'active'
+                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes));
+            if ($movesActiveDates) {
                 $candidate = clone $locked;
                 $candidate->fill($editable);
                 $this->assertNoOverlappingActiveAgreement($candidate);
             }
 
             $locked->update($editable);
+            if ($movesActiveDates) {
+                $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
+            }
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
@@ -243,17 +247,24 @@ class AgreementWorkflow
             if ($locked->status !== 'draft' && $locked->status !== 'paused') {
                 throw new EngagementException('Only draft or paused agreements can be activated.');
             }
+            // The company before any ordinary read (#718). The overlap check
+            // below is an ordinary read, so it sees the snapshot this
+            // transaction's first ordinary read fixes; taken after the company
+            // lock every activation holds, that snapshot holds every
+            // activation that committed while this one waited for it.
+            $this->acceptanceAgreements->lockCompany($locked->workspace_id, $locked->client_company_id);
             if ($locked->status === 'draft') {
                 $this->assertNotAPackageSignup($locked, $enrollment, PackageRefusal::AgreementStartsWithService);
             }
 
-            $this->assertNoOverlappingActiveAgreement($locked);
+            $this->assertNoOverlappingActiveAgreement($locked, companyLocked: true);
 
             $previousStatus = $locked->status;
             $locked->forceFill([
                 'status' => 'active',
                 'activated_at' => $locked->activated_at ?? $this->clock->instant(),
             ])->save();
+            $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
@@ -371,9 +382,12 @@ class AgreementWorkflow
         }
     }
 
-    private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement): void
+    /** @param  bool  $companyLocked  the caller already holds the company lock, taken before its first ordinary read */
+    private function assertNoOverlappingActiveAgreement(ClientAgreement $agreement, bool $companyLocked = false): void
     {
-        $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);
+        if (! $companyLocked) {
+            $this->acceptanceAgreements->lockCompany($agreement->workspace_id, $agreement->client_company_id);
+        }
 
         if ($this->acceptanceAgreements->hasOverlappingActiveAgreement($agreement)) {
             throw new EngagementException('This agreement cannot overlap another active agreement. Ask an operator to verify its terms.');

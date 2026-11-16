@@ -584,6 +584,45 @@ read of the allocation then agrees with the locked rows, and stays agreeing
 while they are held. Whether the allocated invoice is a draft is decided from
 the invoice row locked earlier, never from a re-read.
 
+### Agreement overlap checks refuse an older snapshot (#718)
+
+The overlap check (`hasOverlappingActiveAgreement`) and proposal acceptance's
+active-agreement check are ordinary reads under the company lock
+(`ProposalAcceptanceAgreementQuery::lockCompany`). They see their
+transaction's snapshot, which could predate an activation that committed while
+they waited for that lock. Both agreements then went live.
+
+The snapshot can be fixed before the lock in two ways:
+- **In activation itself:** a draft's package sign-up check was its first
+  ordinary read. Activation now takes the company lock first.
+- **In the caller:** the agent API's executor and package enrollment read
+  before calling in. No lock taken later can move that snapshot.
+
+So each company has an agreement revision, a row of its own in
+`client_agreement_revisions`. Every write that can make two agreements
+overlap advances it under the company lock (`recordAgreementChange`):
+- activation;
+- a date edit on an active agreement;
+- an undone scheduled end of an active agreement;
+- a proposal accepted into an active agreement.
+
+`lockCompany` reads the revision with a lock and through the snapshot, and
+refuses a difference with the retryable `AgreementsChanged`. Undoing a
+scheduled end is covered the same way, though it reads before its company
+lock, which must follow the cancellation-record locks.
+
+The revision is not a column on the company. An ordinary read of a row the
+transaction has already written returns that row's current version, and a
+package sign-up spends overpayment credit, which writes the company row,
+before it activates. A revision there would match whatever the snapshot's age.
+Nothing but the writes above touches the revision row, and each of them comes
+after its own check.
+`AgreementActivationConcurrencyTest` holds one activation with its snapshot
+taken while another commits, at top level and inside a caller transaction that
+read first. Before the fix both went live.
+
+With this, every entry in `snapshot-reads.txt` carries a reviewed reason.
+
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order

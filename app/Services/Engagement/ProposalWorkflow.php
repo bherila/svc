@@ -166,6 +166,9 @@ class ProposalWorkflow
                     );
                 }
 
+                // An active agreement the next overlap check must see.
+                $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
+
                 foreach ($locked->items as $item) {
                     $agreement->recurringItems()->create([
                         'workspace_id' => $locked->workspace_id,
