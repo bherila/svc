@@ -576,6 +576,14 @@ payment first. The hand-recorded path compares the invoice's revision instead
 caller of the processor path. A caller that reads before the invoice lock
 would need that revision check too.
 
+The agent API's time edits (`TimeEntryMutationService::serialized`) read the
+entry before any row lock, so their snapshot predates every lock they take.
+`allocatedInvoice()` compares the entry's allocation rows in the snapshot
+with a locking read of them, and refuses a difference with a 409. Every later
+read of the allocation then agrees with the locked rows, and stays agreeing
+while they are held. Whether the allocated invoice is a draft is decided from
+the invoice row locked earlier, never from a re-read.
+
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
