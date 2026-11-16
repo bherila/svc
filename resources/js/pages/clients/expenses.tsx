@@ -311,7 +311,11 @@ export default function ClientExpenses({
                                                                 variant="secondary"
                                                                 className="ml-1 bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
                                                             >
-                                                                Disputed
+                                                                {statusLabel(
+                                                                    expense
+                                                                        .client_review
+                                                                        .state,
+                                                                )}
                                                             </Badge>
                                                         )}
                                                         {expense.client_review
@@ -321,7 +325,11 @@ export default function ClientExpenses({
                                                                 variant="outline"
                                                                 className="ml-1"
                                                             >
-                                                                Written off
+                                                                {statusLabel(
+                                                                    expense
+                                                                        .client_review
+                                                                        .state,
+                                                                )}
                                                             </Badge>
                                                         )}
                                                     </TableCell>

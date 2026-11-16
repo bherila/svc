@@ -35,13 +35,18 @@ use Tests\TestCase;
  * takes (with a maintenance share the issue's own share does not contend
  * with), without the draft rebuild that follows it: the guard exists for the
  * rebuild that did not happen.
+ *
+ * Which of the two happened is read from the database: the dispute either
+ * commits, or its session shows in `information_schema.innodb_trx` waiting on
+ * a lock. A dispute that was merely slow, on a loaded runner, is neither, and
+ * the test waits for it rather than mistaking it for a blocked one.
  */
 final class DisputeIssueRaceTest extends TestCase
 {
     use UsesAProbeDatabase;
 
-    /** Long enough for an unblocked dispute to have committed. */
-    private const DISPUTER_SECONDS = 3.0;
+    /** How long either the dispute's commit or its lock wait may take to show. */
+    private const DISPUTER_SECONDS = 30.0;
 
     /** @return iterable<string, array{string}> */
     public static function rows(): iterable
@@ -67,7 +72,7 @@ final class DisputeIssueRaceTest extends TestCase
     public function test_a_dispute_reaching_a_row_the_issue_has_locked_waits_for_the_charge(string $row): void
     {
         $this->race($row, 'held-after-guard', function (array $issuer, array $disputer, bool $disputeCommittedWhileHeld, ClientInvoice $draft, ClientTimeEntry|ClientExpense $disputed, string $context): void {
-            $this->assertFalse($disputeCommittedWhileHeld, 'The dispute must wait for the issue that locked its row. '.$context);
+            $this->assertFalse($disputeCommittedWhileHeld, 'The dispute must be seen waiting on the row the issue locked. '.$context);
             $this->assertSame(['outcome' => 'success', 'status' => 'issued'], $issuer, $context);
             $this->assertSame('success', $disputer['outcome'], $context);
             $this->assertSame('issued', $draft->fresh()?->status, $context);
@@ -92,21 +97,19 @@ final class DisputeIssueRaceTest extends TestCase
         $barrier = sys_get_temp_dir().'/svc-dispute-race-'.Str::lower(Str::random(16));
         $paused = $barrier.'-paused';
         $release = $barrier.'-release';
+        $session = $barrier.'-session';
         try {
             [$workspace, $draft, $entry, $expense] = $this->draftChargingAnHourAndAnExpense($row.'-'.$mode);
             $disputed = $row === 'time' ? $entry : $expense;
 
             $issuer = $this->worker($workspace, ['mode' => $mode, 'invoice' => $draft->id, 'paused' => $paused, 'release' => $release]);
-            $disputer = $this->worker($workspace, ['mode' => 'dispute', 'row' => $row, 'row_id' => $disputed->id, 'paused' => null, 'release' => null]);
+            $disputer = $this->worker($workspace, ['mode' => 'dispute', 'row' => $row, 'row_id' => $disputed->id, 'paused' => null, 'release' => null, 'session' => $session]);
             $processes = [$issuer, $disputer];
             $issuer->start();
             $this->awaitFile($issuer, $paused);
             $disputer->start();
-            $deadline = microtime(true) + self::DISPUTER_SECONDS;
-            while ($disputer->isRunning() && microtime(true) < $deadline) {
-                usleep(10_000);
-            }
-            $disputeCommittedWhileHeld = ! $disputer->isRunning();
+            $this->awaitFile($disputer, $session);
+            $disputeCommittedWhileHeld = $this->committedOrBlocked($disputer, (int) file_get_contents($session));
             $this->assertTrue(touch($release), 'Could not release the held issue.');
             $issuer->wait();
             $disputer->wait();
@@ -120,6 +123,7 @@ final class DisputeIssueRaceTest extends TestCase
             }
             @unlink($paused);
             @unlink($release);
+            @unlink($session);
             DB::setDefaultConnection($original);
             Schema::clearResolvedInstance('db.schema');
         }
@@ -176,8 +180,47 @@ final class DisputeIssueRaceTest extends TestCase
             base_path(),
             ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
             null,
-            90,
+            180,
         );
+    }
+
+    /**
+     * Whether the dispute committed while the issue was held (true) or was
+     * seen blocked (false) - each shown by the database, not inferred from a
+     * dispute process still running after a guessed delay that also counted
+     * its PHP boot. Blocked is InnoDB reporting the session in LOCK WAIT, or
+     * the session's statement still executing after two seconds: a locking
+     * read waiting on its first row shows in the processlist (`Execute`,
+     * state `Statistics`) before its transaction has a row in innodb_trx.
+     */
+    private function committedOrBlocked(Process $disputer, int $session): bool
+    {
+        $database = DB::connection('dispute_race');
+        $deadline = microtime(true) + self::DISPUTER_SECONDS;
+        while (microtime(true) < $deadline) {
+            if (! $disputer->isRunning()) {
+                return true;
+            }
+            $waiting = $database->selectOne(
+                "select count(*) as n from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = 'LOCK WAIT'",
+                [$session],
+            );
+            $stuck = $database->selectOne(
+                "select count(*) as n from information_schema.processlist where id = ? and command in ('Query', 'Execute') and time_ms >= 2000",
+                [$session],
+            );
+            if ((int) $waiting->n > 0 || (int) $stuck->n > 0) {
+                return false;
+            }
+            usleep(10_000);
+        }
+
+        $this->fail(sprintf(
+            "The dispute neither committed nor was seen blocked.\ninnodb_trx: %s\nprocesslist: %s\n%s",
+            json_encode($database->select('select trx_mysql_thread_id, trx_state, trx_query from information_schema.innodb_trx')),
+            json_encode($database->select('select id, command, time_ms, state, info from information_schema.processlist where id = ?', [$session])),
+            $disputer->getOutput().$disputer->getErrorOutput(),
+        ));
     }
 
     private function awaitFile(Process $process, string $path): void

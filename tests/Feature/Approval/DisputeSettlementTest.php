@@ -224,6 +224,30 @@ final class DisputeSettlementTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('to_approve.groups', []));
     }
 
+    /** @return iterable<string, array{string, bool}> */
+    public static function writtenOffWindow(): iterable
+    {
+        // Written off at 2026-10-08 12:00:00; the portal keeps it for 30 days.
+        yield 'a second before thirty days' => ['2026-11-07 11:59:59', true];
+        yield 'thirty days to the second' => ['2026-11-07 12:00:00', true];
+        yield 'a second after thirty days' => ['2026-11-07 12:00:01', false];
+    }
+
+    #[DataProvider('writtenOffWindow')]
+    public function test_the_portal_lists_a_written_off_hour_for_thirty_days(string $now, bool $listed): void
+    {
+        $entry = $this->hours('2026-09-20', 120, ['status' => 'approved', 'billing_rate_amount' => 10000, 'currency' => 'USD']);
+        $contact = $this->contact();
+        $this->dispute($contact, 'time', $entry->public_id);
+        $this->settleTime($entry, DisputeSettlement::WrittenOff);
+
+        CarbonImmutable::setTestNow($now);
+        $this->actingAs($contact)->get('/portal/'.$this->company->public_id)->assertOk()
+            ->assertInertia(fn (Assert $page) => $listed
+                ? $page->where('to_approve.groups.0.hours.entries.0.state', 'written_off')
+                : $page->where('to_approve.groups', []));
+    }
+
     public function test_a_written_off_expense_is_never_claimed(): void
     {
         $this->hours('2026-09-10', 60);

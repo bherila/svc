@@ -45,10 +45,11 @@ final class AgentExpensePresenter
      */
     public static function clientReview(ClientExpense $expense): array
     {
-        // Read only what the caller loaded: the agent read service loads the
-        // invoice for everyone it serves, the web page for managers only, and
-        // a reader without it sees no charge and no payment rather than a
-        // query it was not allowed.
+        // Read only what the caller loaded. The agent read service and the
+        // web page load the invoice for every viewer, as the time sheet does:
+        // a member sees that the client paid or that a charge holds a dispute,
+        // never the invoice itself. A caller that did not load it sees no
+        // charge and no payment rather than a query it was not allowed.
         $invoice = $expense->relationLoaded('invoiceLine') && $expense->invoiceLine?->relationLoaded('invoice') ? $expense->invoiceLine->invoice : null;
         $status = $invoice instanceof ClientInvoice && (int) $invoice->workspace_id === (int) $expense->workspace_id ? (string) $invoice->status : null;
         $settlement = DisputeSettlement::tryFrom((string) $expense->client_dispute_settlement);

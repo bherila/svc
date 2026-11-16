@@ -4,6 +4,8 @@ namespace Tests\Feature\Expenses;
 
 use App\Models\ClientCompany;
 use App\Models\ClientExpense;
+use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientProjectMembership;
 use App\Models\User;
@@ -11,6 +13,7 @@ use App\Models\Workspace;
 use App\Queries\Expenses\WorkspaceExpenses;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\AgentApi\ProjectRole;
+use App\Support\Approval\ClientApprovalSource;
 use App\Support\Expenses\ExpenseStatus;
 use App\Support\Expenses\NewExpense;
 use Carbon\CarbonImmutable;
@@ -291,6 +294,44 @@ final class ExpenseSurfaceTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(1, ClientExpense::query()->count());
+    }
+
+    /**
+     * What a member sees of the client's review, as on the time sheet and the
+     * API: that the client approved by paying, never the invoice behind it.
+     */
+    public function test_a_member_sees_the_clients_review_but_not_the_invoice(): void
+    {
+        $member = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $member->id, 'role' => 'member']);
+        ClientProjectMembership::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'client_project_id' => $this->project->id,
+            'user_id' => $member->id,
+            'role' => ProjectRole::Contributor->value,
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'invoice_number' => 'SYN-PAID-1',
+            'status' => 'paid', 'currency' => 'USD', 'subtotal_amount' => 4250, 'tax_amount' => 0, 'total_amount' => 4250, 'balance_amount' => 0,
+            'is_visible_to_client' => true,
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $invoice->id, 'client_project_id' => $this->project->id, 'type' => 'expense',
+            'description' => 'Synthetic courier', 'quantity' => '1', 'unit_amount' => 4250, 'total_amount' => 4250, 'tax_amount' => 0, 'sort_order' => 0,
+        ]);
+        $expense = $this->expense();
+        $expense->forceFill([
+            'status' => ExpenseStatus::Invoiced->value, 'client_invoice_line_id' => $line->id,
+            'client_approved_at' => CarbonImmutable::parse('2026-04-02 10:00:00'), 'client_approval_source' => ClientApprovalSource::Payment->value,
+        ])->save();
+
+        $page = $this->actingAs($member)->get($this->url())->assertOk();
+        $page->assertInertia(fn (Assert $page) => $page
+            ->where('expenses.0.client_review.state', 'approved_by_payment')
+            ->where('expenses.0.billing', null)
+            ->where('expenses.0.settle_dispute', null));
+        $this->assertStringNotContainsString('SYN-PAID-1', (string) $page->getContent(), 'A member is not shown the invoice.');
+        $this->assertStringNotContainsString($invoice->public_id, (string) $page->getContent(), 'A member is not shown the invoice.');
     }
 
     /**

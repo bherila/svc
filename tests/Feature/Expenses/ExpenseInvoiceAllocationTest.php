@@ -164,8 +164,17 @@ final class ExpenseInvoiceAllocationTest extends TestCase
         DB::listen(function ($query) use (&$queries): void {
             $queries[] = strtolower($query->sql);
         });
-        $this->actingAs($member)->get($url)->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->where('expenses.0.billing', null));
-        $this->assertSame([], array_values(array_filter($queries, fn (string $sql): bool => str_contains($sql, 'client_invoice_lines') || str_contains($sql, 'client_invoices'))));
+        $response = $this->actingAs($member)->get($url)->assertOk();
+        $response->assertInertia(fn (AssertableInertia $page) => $page->where('expenses.0.billing', null));
+        // The member's review is read from the invoice (#718: the owner's
+        // contract), so it is loaded - once, scoped - and never shown.
+        $this->assertStringNotContainsString('SYN-DRAFT', (string) $response->getContent());
+        $this->assertStringNotContainsString(route('svc.billing.invoices.show', [$workspace, $invoice], absolute: false), (string) $response->getContent());
+        $invoiceReads = array_values(array_filter($queries, fn (string $sql): bool => str_contains($sql, 'client_invoice_lines') || str_contains($sql, 'client_invoices')));
+        $this->assertCount(2, $invoiceReads, implode("\n", $invoiceReads));
+        foreach ($invoiceReads as $sql) {
+            $this->assertStringContainsString('workspace_id', $sql);
+        }
     }
 
     public function test_database_refuses_cross_workspace_claims_and_deleting_claimed_lines(): void

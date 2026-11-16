@@ -35,6 +35,7 @@ import {
 import WorkspaceShell from '@/layouts/workspace-shell';
 import { apiRequest } from '@/lib/api';
 import { formatShortDay } from '@/lib/datetime';
+import { statusLabel } from '@/lib/labels';
 import { SHELL_CONTAINER } from '@/lib/layout';
 import { refreshPageProps } from '@/lib/refresh-page-props';
 import { formatDecimalHours, formatHours } from '@/lib/time';
@@ -57,7 +58,7 @@ function stateOf(entry: TimeEntry): {
     // has to act on (docs/ux-overhaul.md 7b″).
     if (entry.client_review.state === 'disputed') {
         return {
-            label: 'Disputed',
+            label: statusLabel(entry.client_review.state),
             variant: 'secondary',
             // The destructive tint fails contrast on a badge; spelled out, as
             // the other states are.
@@ -67,7 +68,10 @@ function stateOf(entry: TimeEntry): {
     }
 
     if (entry.client_review.state === 'written_off') {
-        return { label: 'Written off', variant: 'outline' };
+        return {
+            label: statusLabel(entry.client_review.state),
+            variant: 'outline',
+        };
     }
 
     if (entry.invoice !== null) {
