@@ -564,6 +564,18 @@ are checked where the rows are linked, or are recorded in the pricing and
 held-work bases. Acceptance issues that first-period draft in the same
 transaction, so `issue()`'s locked re-reads run before it commits.
 
+The payment writers (`applyPayment`, `writeRefundedAmount`,
+`writePaymentCorrection`) lock the invoice before their first ordinary read.
+Every write of a payment's money holds that lock too: `applyPayment`,
+`writePaymentStatus` and `writeRefundedAmount`. So `refreshStatus` sums the
+invoice's payments as they stand when it writes the paid amount, balance and
+status. The processor callers keep to this: `StripeWebhookService::handle`
+resolves its scope outside the transaction, and `refundExisting` locks the
+payment first. The hand-recorded path compares the invoice's revision instead
+(`assertCurrentInvoiceSnapshot`). Nothing enforces that ordering for a new
+caller of the processor path. A caller that reads before the invoice lock
+would need that revision check too.
+
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
