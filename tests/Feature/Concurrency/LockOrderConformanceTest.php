@@ -301,10 +301,12 @@ final class LockOrderConformanceTest extends TestCase
             LockOrderRecorder::sequences(),
         );
 
+        // Activation takes the agreement, the company and the company's
+        // agreement revision (#718); signing takes the agreement alone.
         $this->assertSame(
-            [['ClientAgreement', 'ClientCompany'], ['ClientAgreement']],
+            [['ClientAgreement', 'ClientCompany', 'ClientAgreementRevision'], ['ClientAgreement']],
             $sequences,
-            'Two transactions of two locks and one - not one sequence of three, and not three of one.',
+            'Two transactions of three locks and one - not one sequence of four, and not four of one.',
         );
     }
 

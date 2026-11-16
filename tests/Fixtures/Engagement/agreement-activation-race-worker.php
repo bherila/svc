@@ -39,7 +39,7 @@ $await = static function (string $path): void {
 
 // Held just after the package-sign-up check, the first ordinary read a draft's
 // activation makes: from here on its snapshot is fixed.
-if ($input['paused'] !== null && ! ($input['outer'] ?? false)) {
+if ($input['paused'] !== null && ($input['outer'] ?? null) === null) {
     $held = false;
     Event::listen(static function (QueryExecuted $query) use ($input, $await, &$held): void {
         if (! $held && str_contains($query->sql, 'service_package_enrollments')) {
@@ -55,7 +55,7 @@ if ($input['paused'] !== null && ! ($input['outer'] ?? false)) {
 $agreement = ClientAgreement::query()->where('workspace_id', (int) $input['workspace'])->whereKey((int) $input['agreement'])->firstOrFail();
 
 try {
-    if ($input['outer'] ?? false) {
+    if (($input['outer'] ?? null) !== null) {
         // As the agent API's executor does: an outer transaction whose
         // ordinary read fixes the snapshot before activation takes any lock.
         DB::transaction(static function () use ($input, $await): void {
@@ -64,6 +64,13 @@ try {
                 exit(3);
             }
             $await($input['release']);
+            if ($input['outer'] === 'spend') {
+                // As a sign-up invoice spending credit does before activation
+                // (OverpaymentCreditService::recordPoolChange): the company row
+                // written, so this transaction now reads its current version.
+                DB::table('client_companies')->where('workspace_id', $agreement->workspace_id)->where('id', $agreement->client_company_id)
+                    ->update(['credit_revision' => DB::raw('credit_revision + 1')]);
+            }
             app(AgreementWorkflow::class)->activate($agreement);
         });
     } else {

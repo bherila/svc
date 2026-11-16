@@ -43,26 +43,33 @@ final class ProposalAcceptanceAgreementQuery
      * The lock alone is not enough (#718). The checks that follow it are
      * ordinary reads, which see this transaction's snapshot, and a caller can
      * have fixed that snapshot before the lock - the agent API's executor and
-     * package enrollment read first. So the company's `agreement_revision`,
-     * which every such writer advances under this lock
-     * ({@see self::recordAgreementChange()}), is read through the snapshot too,
-     * and a difference refuses: an agreement change committed since the
-     * snapshot that the checks would not see.
+     * package enrollment read first. So the company's agreement revision
+     * (`client_agreement_revisions`), which every such writer advances under
+     * this lock ({@see self::recordAgreementChange()}), is read with a lock and
+     * through the snapshot, and a difference refuses: an agreement change
+     * committed since the snapshot that the checks would not see. A missing row
+     * is revision zero.
+     *
+     * The revision has a row of its own, written by nothing else, because an
+     * ordinary read of a row this transaction has already written returns that
+     * row's current version: a revision on the company row, which a credit
+     * spend writes, would match whatever the snapshot's age.
      *
      * @throws AgreementsChanged when the snapshot predates an agreement change
      */
     public function lockCompany(int $workspaceId, int $companyId): void
     {
-        $locked = ClientCompany::query()
+        ClientCompany::query()
             ->whereKey($companyId)
             ->where('workspace_id', $workspaceId)
             ->tap(Locks::forUpdate())
-            ->firstOrFail(['id', 'agreement_revision']);
-        $seen = DB::table('client_companies')
+            ->firstOrFail();
+        $revision = fn () => DB::table('client_agreement_revisions')
             ->where('workspace_id', $workspaceId)
-            ->where('id', $companyId)
-            ->value('agreement_revision');
-        if (! is_numeric($seen) || (int) $seen !== (int) $locked->agreement_revision) {
+            ->where('client_company_id', $companyId);
+        $current = $revision()->tap(Locks::forUpdate())->value('revision');
+        $seen = $revision()->value('revision');
+        if (self::revision($seen) !== self::revision($current)) {
             throw new AgreementsChanged;
         }
     }
@@ -74,10 +81,17 @@ final class ProposalAcceptanceAgreementQuery
      */
     public function recordAgreementChange(int $workspaceId, int $companyId): void
     {
-        DB::table('client_companies')
-            ->where('workspace_id', $workspaceId)
-            ->where('id', $companyId)
-            ->update(['agreement_revision' => DB::raw('agreement_revision + 1')]);
+        $now = now();
+        DB::table('client_agreement_revisions')->upsert(
+            [['workspace_id' => $workspaceId, 'client_company_id' => $companyId, 'revision' => 1, 'created_at' => $now, 'updated_at' => $now]],
+            ['workspace_id', 'client_company_id'],
+            ['revision' => DB::raw('revision + 1'), 'updated_at' => $now],
+        );
+    }
+
+    private static function revision(mixed $value): int
+    {
+        return is_numeric($value) ? (int) $value : 0;
     }
 
     public function hasActiveUnlinkedAgreement(ClientProposal $proposal): bool

@@ -40,15 +40,18 @@ final class AgreementActivationConcurrencyTest extends TestCase
     /** How long the second activation is given to finish while the first is held. */
     private const SECOND_SECONDS = 3.0;
 
-    /** @return iterable<string, array{bool}> */
+    /** @return iterable<string, array{string|null}> */
     public static function callers(): iterable
     {
-        yield 'its own transaction' => [false];
-        yield 'a caller transaction that read first' => [true];
+        yield 'its own transaction' => [null];
+        yield 'a caller transaction that read first' => ['read'];
+        // A sign-up invoice spending credit writes the company row first, so
+        // a revision kept there would read current through the snapshot.
+        yield 'a caller transaction that read first and wrote the company row' => ['spend'];
     }
 
     #[DataProvider('callers')]
-    public function test_two_overlapping_activations_cannot_both_go_live(bool $outer): void
+    public function test_two_overlapping_activations_cannot_both_go_live(?string $outer): void
     {
         if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->markTestSkipped('Snapshot timing across sessions is exercised in the MariaDB lane.');
@@ -78,7 +81,7 @@ final class AgreementActivationConcurrencyTest extends TestCase
             $other = $draft('Synthetic overlapping agreement', '2026-01-01');
 
             $first = $this->worker($workspace->id, $held->id, $paths['paused'], $paths['release'], $outer);
-            $second = $this->worker($workspace->id, $other->id, null, null, false);
+            $second = $this->worker($workspace->id, $other->id, null, null, null);
             $processes = [$first, $second];
             $first->start();
             $this->awaitFile($first, $paths['paused']);
@@ -112,7 +115,7 @@ final class AgreementActivationConcurrencyTest extends TestCase
         }
     }
 
-    private function worker(int $workspaceId, int $agreementId, ?string $paused, ?string $release, bool $outer): Process
+    private function worker(int $workspaceId, int $agreementId, ?string $paused, ?string $release, ?string $outer): Process
     {
         $input = base64_encode(json_encode([
             'connection' => config('database.connections.'.DB::getDefaultConnection()),

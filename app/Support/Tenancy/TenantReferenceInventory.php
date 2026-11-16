@@ -92,6 +92,7 @@ final class TenantReferenceInventory
             TenantReference::enforcedBy('client_company_memberships', 'client_company_id', 'client_companies', 'ccm_ws_company_fk'),
             TenantReference::enforcedBy('client_portal_invitations', 'client_company_id', 'client_companies', 'cpi_ws_company_fk'),
             TenantReference::enforcedBy('client_company_activity', 'client_company_id', 'client_companies', 'cca_ws_company_fk'),
+            TenantReference::enforcedBy('client_agreement_revisions', 'client_company_id', 'client_companies', 'client_agreement_revisions_company_foreign'),
             TenantReference::enforcedBy('client_projects', 'client_company_id', 'client_companies', 'cp_ws_company_fk'),
             TenantReference::enforcedBy('client_proposals', 'client_company_id', 'client_companies', 'cpr_ws_company_fk'),
             TenantReference::enforcedBy('client_agreements', 'client_company_id', 'client_companies', 'cag_ws_company_fk'),

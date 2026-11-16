@@ -132,6 +132,14 @@ enum LockResource: string
     // they started from. It reads like a parent and behaves like a shared
     // resource acquired at the end.
     case ClientCompany = 'client_companies';
+    // A company's agreement revision (#718): under the company lock, the overlap
+    // and active-agreement checks lock it to compare with their snapshot, and
+    // the writes that can create an overlap advance it. A row of its own,
+    // because a transaction that has written the company row - a credit spend
+    // advancing `credit_revision` - reads that row's current version through
+    // its snapshot, and a revision kept there could no longer show the
+    // snapshot's age.
+    case ClientAgreementRevision = 'client_agreement_revisions';
     case ClientProject = 'client_projects';
     // Contact edits are scoped to their company; future combined edits take the company first.
     case ClientContact = 'client_contacts';

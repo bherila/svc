@@ -10,8 +10,9 @@ use DomainException;
  * so a decision about which of them are active or overlap cannot be trusted
  * (#718).
  *
- * Raised under the company lock when the company's `agreement_revision` read
- * through the snapshot differs from the one read through the lock: an
+ * Raised under the company lock when the company's agreement revision
+ * (`client_agreement_revisions`) read through the snapshot differs from the one
+ * read with a lock: an
  * activation, an active agreement's date edit, an undone scheduled end or an
  * accepted proposal committed in between, and the overlap check would not see
  * it. Nothing has been written. Retrying in a fresh transaction reads the
