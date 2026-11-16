@@ -37,18 +37,18 @@ final class LocalStampClassifier
     /** How far apart two stamps written by one statement can be. */
     public const SAME_STATEMENT_SECONDS = 60;
 
-    /** Before any writer used the workspace clock (#127's merge is the earliest). */
+    /** The earliest switch to the workspace clock (#127's merge). */
     private const ERA_FLOOR = '2026-08-30 06:29:02';
 
-    /** @var array<int, array{int, int}> the offset range, by the era's start */
-    private array $offsets = [];
+    /** @var array{int, int}|null */
+    private ?array $offsets = null;
 
     public function __construct(private readonly DateTimeZone $zone) {}
 
     /** Whether the zone is ever off UTC while the wall clock was being stored. */
     public function isOffUtc(): bool
     {
-        [$min, $max] = $this->offsetRange(null);
+        [$min, $max] = $this->offsetRange();
 
         return $min !== 0 || $max !== 0;
     }
@@ -59,7 +59,7 @@ final class LocalStampClassifier
         $shift = $spec->companionShiftDays;
         // When it was written, read as UTC: the era's edges are about writes.
         $writtenIfUtc = $value->subDays($shift);
-        [$minOffset, $maxOffset] = $this->offsetRange($spec->localSince);
+        [$minOffset, $maxOffset] = $this->offsetRange();
 
         if ($writtenIfUtc->gte(CarbonImmutable::parse(self::NEW_RELEASE_FROM, 'UTC')->addSeconds(max(0, $maxOffset)))) {
             return LocalStampVerdict::outside();
@@ -114,7 +114,9 @@ final class LocalStampClassifier
         }
 
         $readings = [];
-        foreach ([$first->utc()->subHour(), $first->utc(), $first->utc()->addHour()] as $candidate) {
+        // PHP reads a repeated wall time as its first occurrence, so the only
+        // other reading is an hour later.
+        foreach ([$first->utc(), $first->utc()->addHour()] as $candidate) {
             if ($candidate->setTimezone($this->zone)->format('Y-m-d H:i:s') === $wall) {
                 $readings[$candidate->getTimestamp()] = $candidate;
             }
@@ -129,24 +131,23 @@ final class LocalStampClassifier
     }
 
     /**
-     * The zone's least and greatest UTC offset, in seconds, from the start of
-     * the era to the old release's end.
+     * The zone's least and greatest UTC offset, in seconds, from the earliest
+     * switch to the old release's end. One range for every column: a column
+     * whose era started later can only have a narrower one, and the wider
+     * range only widens what is reported instead of corrected.
      *
      * @return array{int, int}
      */
-    private function offsetRange(?CarbonImmutable $since): array
+    private function offsetRange(): array
     {
-        $from = ($since ?? CarbonImmutable::parse(self::ERA_FLOOR, 'UTC'))->getTimestamp();
-        if (! isset($this->offsets[$from])) {
+        if ($this->offsets === null) {
+            $from = CarbonImmutable::parse(self::ERA_FLOOR, 'UTC')->getTimestamp();
             $until = CarbonImmutable::parse(self::OLD_RELEASE_UNTIL, 'UTC')->getTimestamp();
-            $offsets = array_map(
-                static fn (array $transition): int => (int) $transition['offset'],
-                $this->zone->getTransitions($from, $until) ?: [],
-            );
+            $offsets = array_column($this->zone->getTransitions($from, $until) ?: [], 'offset');
             $offsets[] = $this->zone->getOffset(CarbonImmutable::createFromTimestamp($until, 'UTC'));
-            $this->offsets[$from] = [min($offsets), max($offsets)];
+            $this->offsets = [min($offsets), max($offsets)];
         }
 
-        return $this->offsets[$from];
+        return $this->offsets;
     }
 }
