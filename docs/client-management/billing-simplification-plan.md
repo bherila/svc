@@ -92,13 +92,13 @@ The stale-snapshot race tests become plain race tests and keep their assertions.
 
 ### Operator check before the switch
 
-READ COMMITTED with binary logging requires row-based or mixed logging. Nothing in the repository mentions the binlog. On web1, check:
+READ COMMITTED with binary logging requires row-based or mixed logging. Checked on web1 on 2026-11-16 (shared hosting; neither setting can be changed there):
 
 ```sql
-SELECT @@log_bin, @@binlog_format;
+SELECT @@log_bin, @@binlog_format;  -- 0, MIXED
 ```
 
-If `log_bin` is on and the format is `STATEMENT`, change it to `ROW` (or `MIXED`) first.
+Binary logging is off, so the restriction does not apply, and `MIXED` would satisfy it if the host turned logging on. The isolation level is set per connection (`SET SESSION TRANSACTION ISOLATION LEVEL`, run by Laravel's connector from the `isolation_level` key), which needs no server privilege, so nothing on the host changes. If the app moves to a host with `binlog_format = STATEMENT`, change it to `ROW` or `MIXED` before deploying there.
 
 ### Rollout and rollback
 
@@ -182,7 +182,7 @@ Only Release 1 backfills `minutes` from a row, which at that point is always the
 
 ## Order and what it buys
 
-1. **Part 1, Release 1:** several days for the per-site audit, plus the binlog check.
+1. **Part 1, Release 1:** several days for the per-site audit. The binlog check is done (above).
 2. **Part 1, Release 2:** mostly deletion.
 3. **Part 2, Releases 1 to 3:** the larger piece. Its decisions above should be settled before Release 2.
 
