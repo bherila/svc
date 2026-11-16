@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\Billing\InvoiceLifecycleService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Tests\Concerns\UsesAProbeDatabase;
@@ -21,15 +22,29 @@ use Tests\TestCase;
  * snapshot before either sends.
  *
  * The second waits on the first's budget key rather than deadlocking on the
- * workspace row, and once the first commits it is refused: its snapshot cannot
- * see the first delivery, but the key's admitted total under the lock can, so
- * the limit holds.
+ * workspace row. Once the first commits, the second counts its delivery
+ * through a locking read, which sees it whatever the second's snapshot: refused
+ * when both would exceed the limit, admitted when both fit exactly - counted
+ * once, not twice. Both at REPEATABLE READ and READ COMMITTED
+ * (billing-simplification-plan.md, Part 1).
  */
 final class ManualClientEmailBudgetConcurrencyTest extends TestCase
 {
     use UsesAProbeDatabase;
 
-    public function test_a_second_send_waits_on_the_budget_key_and_its_stale_snapshot_still_counts_the_first(): void
+    /** @return iterable<string, array{string, int, bool}> */
+    public static function levels(): iterable
+    {
+        foreach (['REPEATABLE READ', 'READ COMMITTED'] as $isolation) {
+            // Two recipients each: four do not fit under three.
+            yield "over the limit, {$isolation}" => [$isolation, 3, false];
+            // Four fit exactly under four; counting the first twice would refuse.
+            yield "exactly at the limit, {$isolation}" => [$isolation, 4, true];
+        }
+    }
+
+    #[DataProvider('levels')]
+    public function test_a_second_send_waits_on_the_budget_key_and_counts_the_first_once(string $isolation, int $limit, bool $admitted): void
     {
         if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->markTestSkipped('Row-lock contention is exercised in the MariaDB lane.');
@@ -57,7 +72,7 @@ final class ManualClientEmailBudgetConcurrencyTest extends TestCase
                     'unit_amount' => 100,
                 ]]), $workspace);
             }
-            $configuration = ['connection' => config('database.connections.client_email_budget_probe'), 'workspace' => $workspace->id, 'limit' => 3];
+            $configuration = ['connection' => ['isolation_level' => $isolation] + config('database.connections.client_email_budget_probe'), 'workspace' => $workspace->id, 'limit' => $limit];
 
             // The second send's snapshot is taken first, before anything is sent.
             $secondInput = new InputStream;
@@ -99,12 +114,19 @@ final class ManualClientEmailBudgetConcurrencyTest extends TestCase
             $second->wait();
             $this->assertTrue($first->isSuccessful(), $first->getOutput());
             $this->assertTrue($second->isSuccessful(), $second->getOutput());
+            $level = 'isolation:'.str_replace(' ', '-', $isolation)."\n";
+            $this->assertStringContainsString($level, $first->getOutput());
+            $this->assertStringContainsString($level, $second->getOutput());
             $this->assertStringEndsWith("sent\n", $first->getOutput());
-            $this->assertStringContainsString('refused: This workspace has reached its limit of 3 recipients', $second->getOutput());
+            if ($admitted) {
+                $this->assertStringEndsWith("sent\n", $second->getOutput());
+            } else {
+                $this->assertStringContainsString("refused: This workspace has reached its limit of {$limit} recipients", $second->getOutput());
+            }
 
             DB::purge('client_email_budget_probe');
-            $this->assertSame(1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('origin', 'manual')->count());
-            $this->assertSame(2, (int) DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients'));
+            $this->assertSame($admitted ? 2 : 1, ClientInvoiceEmailDelivery::query()->where('workspace_id', $workspace->id)->where('origin', 'manual')->count());
+            $this->assertSame($admitted ? 4 : 2, (int) DB::table('client_email_budget_locks')->where('workspace_id', $workspace->id)->value('admitted_recipients'));
         } finally {
             foreach ($processes as $process) {
                 $process->stop(0);

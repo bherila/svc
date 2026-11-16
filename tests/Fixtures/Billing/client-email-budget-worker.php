@@ -35,6 +35,7 @@ config([
 $workspace = Workspace::query()->findOrFail($input['workspace']);
 $connectionId = DB::connection()->getPdo()->query('select connection_id()')->fetchColumn();
 echo "connection:{$connectionId}\n";
+echo 'isolation:'.DB::connection()->getPdo()->query('select @@session.tx_isolation')->fetchColumn()."\n";
 DB::connection()->beforeExecuting(function (string $sql): void {
     if (str_contains($sql, 'client_email_budget_locks') && str_starts_with(strtolower(ltrim($sql)), 'insert')) {
         echo "attempting-lock\n";
