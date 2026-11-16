@@ -556,6 +556,14 @@ A schedule, though, generates whatever its agreement's status. A successor
 activated just after generation commits meets the same invoice, since
 activation does not check the outgoing agreement's invoices, so a lock in the
 generator would not close it.
+
+Package acceptance (`PackageEnrollmentWorkflow::accept`) runs the same engine
+for a sign-up's first period. Its transaction can read before the agreement
+lock, but the second fact needs no snapshot timing. The engine's time reads
+are checked where the rows are linked, or are recorded in the pricing and
+held-work bases. Acceptance issues that first-period draft in the same
+transaction, so `issue()`'s locked re-reads run before it commits.
+
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
