@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Exceptions\DisputedRowsOnDraft;
+use App\Exceptions\DisputedWorkChanged;
+use App\Exceptions\WorkOutsideAgreementSegment;
 use App\Models\ClientAgreement;
 use App\Models\ClientAgreementRecurringItem;
 use App\Models\ClientCompany;
@@ -30,8 +33,12 @@ use App\Services\Packages\PackageMigrationWorkflow;
 use App\Services\Packages\ServicePackageWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Approval\DisputeSettlement;
+use App\Support\Billing\InterimLedgerChanged;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Billing\PricingBasisChanged;
+use App\Support\Billing\PricingBasisMissing;
+use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Packages\Migration\ContinuedRecurrence;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -1139,20 +1146,45 @@ final class BillingHistoryInvariantTest extends TestCase
                 "After %s, its rebuild left draft %s for %s stale.\nNow: %s\nRegenerated: %s",
                 $step, $draft->invoice_number, $draft->service_period_start?->toDateString(), json_encode($before), json_encode($after),
             ));
-            $issued = $this->inSavepoint(function () use ($draft, $workspace): bool {
+            $refusal = $this->inSavepoint(function () use ($draft, $workspace): ?DomainException {
                 try {
                     app(InvoiceLifecycleService::class)->issue($draft->fresh() ?? $draft, $workspace);
 
-                    return true;
-                } catch (DomainException) {
-                    return false;
+                    return null;
+                } catch (DomainException $refused) {
+                    return $refused;
                 }
             });
-            $this->assertFalse($issued, sprintf(
+            $this->assertNotNull($refusal, sprintf(
                 "After %s, draft %s for %s would change on regeneration, and issued as it was.\nNow: %s\nRegenerated: %s",
                 $step, $draft->invoice_number, $draft->service_period_start?->toDateString(), json_encode($before), json_encode($after),
             ));
+            // Refused for being stale, not for something unrelated that
+            // happens to stop the issue and would hide a missing guard.
+            $this->assertTrue(self::isStalenessRefusal($refusal), sprintf(
+                'After %s, stale draft %s was refused for an unrelated reason: %s: %s',
+                $step, $draft->invoice_number, $refusal::class, $refusal->getMessage(),
+            ));
         }
+    }
+
+    /**
+     * The issue guards that refuse a draft priced from state that has since
+     * moved, each asking for it to be regenerated. The census of the
+     * histories here (#718) met only the first two.
+     */
+    private static function isStalenessRefusal(DomainException $refusal): bool
+    {
+        foreach ([
+            DisputedWorkChanged::class, WorkOutsideAgreementSegment::class, PricingBasisChanged::class, PricingBasisMissing::class,
+            InterimLedgerChanged::class, DisputedRowsOnDraft::class, TimeChangedDuringBilling::class,
+        ] as $stale) {
+            if ($refusal instanceof $stale) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function assertNoHourIsChargedTwice(ClientCompany $company, string $step): void
