@@ -28,8 +28,8 @@ if (! $app->environment('testing') || ! str_starts_with($input['connection']['da
     exit(2);
 }
 $barrierPrefix = sys_get_temp_dir().DIRECTORY_SEPARATOR.'svc-dispute-race-';
-foreach (['paused', 'release'] as $key) {
-    if ($input[$key] !== null && (! is_string($input[$key]) || ! str_starts_with($input[$key], $barrierPrefix))) {
+foreach (['paused', 'release', 'session'] as $key) {
+    if (($input[$key] ?? null) !== null && (! is_string($input[$key]) || ! str_starts_with($input[$key], $barrierPrefix))) {
         exit(2);
     }
 }
@@ -58,6 +58,11 @@ try {
     // out: the case the issue guard exists for is a rebuild that did not
     // happen.
     if ($input['mode'] === 'dispute') {
+        // The session the test watches for a lock wait: evidence that the
+        // dispute is blocked by the issue, rather than merely slow.
+        if (file_put_contents($input['session'], (string) DB::selectOne('select connection_id() as id')->id) === false) {
+            exit(3);
+        }
         DB::transaction(static function () use ($workspace, $input): void {
             BillingMaintenance::share($workspace->id);
             $model = $input['row'] === 'time' ? ClientTimeEntry::class : ClientExpense::class;

@@ -35,13 +35,18 @@ use Tests\TestCase;
  * takes (with a maintenance share the issue's own share does not contend
  * with), without the draft rebuild that follows it: the guard exists for the
  * rebuild that did not happen.
+ *
+ * Which of the two happened is read from the database: the dispute either
+ * commits, or its session shows in `information_schema.innodb_trx` waiting on
+ * a lock. A dispute that was merely slow, on a loaded runner, is neither, and
+ * the test waits for it rather than mistaking it for a blocked one.
  */
 final class DisputeIssueRaceTest extends TestCase
 {
     use UsesAProbeDatabase;
 
-    /** Long enough for an unblocked dispute to have committed. */
-    private const DISPUTER_SECONDS = 3.0;
+    /** How long either the dispute's commit or its lock wait may take to show. */
+    private const DISPUTER_SECONDS = 30.0;
 
     /** @return iterable<string, array{string}> */
     public static function rows(): iterable
@@ -67,7 +72,7 @@ final class DisputeIssueRaceTest extends TestCase
     public function test_a_dispute_reaching_a_row_the_issue_has_locked_waits_for_the_charge(string $row): void
     {
         $this->race($row, 'held-after-guard', function (array $issuer, array $disputer, bool $disputeCommittedWhileHeld, ClientInvoice $draft, ClientTimeEntry|ClientExpense $disputed, string $context): void {
-            $this->assertFalse($disputeCommittedWhileHeld, 'The dispute must wait for the issue that locked its row. '.$context);
+            $this->assertFalse($disputeCommittedWhileHeld, 'The dispute must be seen waiting on the row the issue locked. '.$context);
             $this->assertSame(['outcome' => 'success', 'status' => 'issued'], $issuer, $context);
             $this->assertSame('success', $disputer['outcome'], $context);
             $this->assertSame('issued', $draft->fresh()?->status, $context);
@@ -92,21 +97,19 @@ final class DisputeIssueRaceTest extends TestCase
         $barrier = sys_get_temp_dir().'/svc-dispute-race-'.Str::lower(Str::random(16));
         $paused = $barrier.'-paused';
         $release = $barrier.'-release';
+        $session = $barrier.'-session';
         try {
             [$workspace, $draft, $entry, $expense] = $this->draftChargingAnHourAndAnExpense($row.'-'.$mode);
             $disputed = $row === 'time' ? $entry : $expense;
 
             $issuer = $this->worker($workspace, ['mode' => $mode, 'invoice' => $draft->id, 'paused' => $paused, 'release' => $release]);
-            $disputer = $this->worker($workspace, ['mode' => 'dispute', 'row' => $row, 'row_id' => $disputed->id, 'paused' => null, 'release' => null]);
+            $disputer = $this->worker($workspace, ['mode' => 'dispute', 'row' => $row, 'row_id' => $disputed->id, 'paused' => null, 'release' => null, 'session' => $session]);
             $processes = [$issuer, $disputer];
             $issuer->start();
             $this->awaitFile($issuer, $paused);
             $disputer->start();
-            $deadline = microtime(true) + self::DISPUTER_SECONDS;
-            while ($disputer->isRunning() && microtime(true) < $deadline) {
-                usleep(10_000);
-            }
-            $disputeCommittedWhileHeld = ! $disputer->isRunning();
+            $this->awaitFile($disputer, $session);
+            $disputeCommittedWhileHeld = $this->committedOrBlocked($disputer, (int) file_get_contents($session));
             $this->assertTrue(touch($release), 'Could not release the held issue.');
             $issuer->wait();
             $disputer->wait();
@@ -120,6 +123,7 @@ final class DisputeIssueRaceTest extends TestCase
             }
             @unlink($paused);
             @unlink($release);
+            @unlink($session);
             DB::setDefaultConnection($original);
             Schema::clearResolvedInstance('db.schema');
         }
@@ -178,6 +182,31 @@ final class DisputeIssueRaceTest extends TestCase
             null,
             90,
         );
+    }
+
+    /**
+     * Whether the dispute committed while the issue was held (true) or was
+     * seen waiting on a row lock (false) - each shown by the database, not
+     * inferred from a dispute that was still running after a guessed delay.
+     */
+    private function committedOrBlocked(Process $disputer, int $session): bool
+    {
+        $deadline = microtime(true) + self::DISPUTER_SECONDS;
+        while (microtime(true) < $deadline) {
+            if (! $disputer->isRunning()) {
+                return true;
+            }
+            $waiting = DB::connection('dispute_race')->selectOne(
+                "select count(*) as n from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = 'LOCK WAIT'",
+                [$session],
+            );
+            if ((int) $waiting->n > 0) {
+                return false;
+            }
+            usleep(10_000);
+        }
+
+        $this->fail('The dispute neither committed nor waited on a lock. '.$disputer->getOutput().$disputer->getErrorOutput());
     }
 
     private function awaitFile(Process $process, string $path): void
