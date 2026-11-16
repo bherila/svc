@@ -1,6 +1,6 @@
 # Billing simplification: READ COMMITTED and whole time entries
 
-**Status:** proposal for the owner's review. No code has changed. It comes out of #718: the guard gaps left there are symptoms of two design choices, and removing the choices removes the need for most of the guards.
+**Status:** approved by the owner on 2026-11-16 (both parts, and the decisions in Part 2). No code has changed yet. It comes out of #718: the guard gaps left there are symptoms of two design choices, and removing the choices removes the need for most of the guards.
 
 The two parts are independent. Part 1 is small and should go first. Part 2 is larger and benefits from Part 1 being in place.
 
@@ -145,9 +145,9 @@ Every fragment is a full time entry with its own status, approval, dispute and d
   - `InvoiceFromTimeService::addTime` refuses any existing allocation.
 - **"Invoiced" is derived, not stamped.** Today issue sets `status='invoiced'` per row. Instead, an entry is invoiced when its allocations on issued invoices cover all its minutes. Until then it stays approved, with the remaining minutes open.
 
-### Decisions for the owner
+### Decisions (approved by the owner, 2026-11-16)
 
-1. **Dispute, approval and write-off apply to the whole entry.** Today a client can dispute one fragment. Proposed: the client reviews the entry as logged.
+1. **Dispute, approval and write-off apply to the whole entry.** Today a client can dispute one fragment. Decided: the client reviews the entry as logged.
    - **When part of it is already on an issued invoice,** the dispute follows the existing already-charged path: it can be answered, not written off.
    - **Write-off is all or nothing.** If writing off part of an entry is needed, the operator first splits it by editing, as two entries a person chose, not ones the generator made.
 2. **What the time sheet and portal show:** one row per entry, with "billed 45 of 90 min" when it's partly allocated, instead of separate fragment rows.
@@ -184,6 +184,6 @@ Only Release 1 backfills `minutes` from a row, which at that point is always the
 
 1. **Part 1, Release 1:** several days for the per-site audit. The binlog check is done (above).
 2. **Part 1, Release 2:** mostly deletion.
-3. **Part 2, Releases 1 to 3:** the larger piece. Its decisions above should be settled before Release 2.
+3. **Part 2, Releases 1 to 3:** the larger piece. Its decisions above are settled; the divergent-family classes are decided when the count command has run.
 
 Together they retire the snapshot ratchet and its 723 entries, the revision counters, split lineage and recombination, and the split-family guard. They also make two of #718's guard gaps unnecessary: "charged once" becomes a single sum, and the lossy allocation digest after a buy-down disappears with lineage in digests.
