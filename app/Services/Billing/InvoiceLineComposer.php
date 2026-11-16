@@ -461,6 +461,7 @@ class InvoiceLineComposer
     public function linkAllFragmentsToLines(ClientCompany $company, array $fragmentsToLines, TimeEntrySplitter $splitter): void
     {
         $entrySplitPlan = [];
+        $pricedFrom = [];
 
         foreach ($fragmentsToLines as $lineId => $fragments) {
             foreach ($fragments as $fragment) {
@@ -468,6 +469,7 @@ class InvoiceLineComposer
                 if (! isset($entrySplitPlan[$entryId])) {
                     $entrySplitPlan[$entryId] = [];
                 }
+                $pricedFrom[$entryId][] = $fragment;
                 $entrySplitPlan[$entryId][] = [
                     'line_id' => $lineId,
                     'minutes' => $fragment->minutes,
@@ -476,7 +478,7 @@ class InvoiceLineComposer
         }
 
         foreach ($entrySplitPlan as $entryId => $splits) {
-            $entry = $this->pricedEntry($company, $entryId);
+            $entry = $this->pricedEntry($company, $entryId, $pricedFrom[$entryId]);
 
             // Refused rather than skipped, and the earlier reasoning for
             // skipping was wrong on a point of fact. It argued that stopping
@@ -545,38 +547,46 @@ class InvoiceLineComposer
     }
 
     /**
-     * The entry as these fragments priced it, provided it is still that row.
+     * The entry, locked, provided it is still the row these fragments priced.
      *
-     * The fragments were measured from this transaction's ordinary reads -
-     * its snapshot, which a caller may have opened before generation's locks,
-     * and which a time writer (who takes the row's lock, not the agreement's)
-     * can have moved past since. The row is read both ways: through the
-     * snapshot, as priced, and with its lock, as it is now. When they differ
-     * the line would charge minutes the work no longer has, or a split would
-     * write them back, so nothing is linked (#718).
+     * The fragments were measured from ordinary reads made before generation
+     * took this row's lock, and a time writer (who takes the row's lock, not
+     * the agreement's) can have moved it since. Each fragment carries the
+     * entry's minutes and version as priced, and the locked row is compared
+     * with those. When they differ the line would charge minutes the work no
+     * longer has, or a split would write them back, so nothing is linked
+     * (#718). The comparison is with the carried values, never with a second
+     * ordinary read: at READ COMMITTED that read is as current as the lock and
+     * would agree with it (docs/client-management/billing-simplification-plan.md).
+     *
+     * A row soft-deleted since it was priced is refused the same way; a row
+     * this company cannot claim at all comes back null.
+     *
+     * @param  non-empty-list<TimeEntryFragment>  $fragments
      */
-    private function pricedEntry(ClientCompany $company, int $entryId): ?ClientTimeEntry
+    private function pricedEntry(ClientCompany $company, int $entryId, array $fragments): ?ClientTimeEntry
     {
-        $priced = ClientTimeEntry::query()
-            ->where('workspace_id', $company->workspace_id)
-            ->where('client_company_id', $company->id)
-            ->find($entryId);
         $current = ClientTimeEntry::query()
+            ->withTrashed()
             ->where('workspace_id', $company->workspace_id)
             ->where('client_company_id', $company->id)
             ->whereKey($entryId)
             ->tap(Locks::forUpdate())
-            ->first(['id', 'minutes', 'lock_version']);
-        if ($priced === null && $current === null) {
+            ->first();
+        if ($current === null) {
             return null;
         }
-        if ($priced === null || $current === null
-            || (int) $current->minutes !== (int) $priced->minutes
-            || (int) $current->lock_version !== (int) $priced->lock_version) {
+        if ($current->trashed()) {
             throw new TimeChangedDuringBilling;
         }
+        foreach ($fragments as $fragment) {
+            if ($fragment->entryMinutes !== (int) $current->minutes
+                || $fragment->entryLockVersion !== (int) $current->lock_version) {
+                throw new TimeChangedDuringBilling;
+            }
+        }
 
-        return $priced;
+        return $current;
     }
 
     /**

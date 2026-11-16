@@ -226,6 +226,10 @@ class TimeEntrySplitter
             dateWorked: $entry->date_worked->format('Y-m-d'),
             description: $entry->name,
             userId: $entry->user_id,
+            // What attach compares with the locked row: the values priced, not
+            // a later read of them, which at READ COMMITTED is already current.
+            entryMinutes: (int) $entry->getOriginal('minutes'),
+            entryLockVersion: (int) $entry->getOriginal('lock_version'),
             clientInvoiceLineId: $entry->client_invoice_line_id,
             allocationType: $allocationType
         );

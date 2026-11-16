@@ -804,6 +804,12 @@ row is still the one it read, or reads it with a lock:
   retryable `TimeChangedDuringBilling` when its minutes or version differ from
   the copy that was priced. A split otherwise wrote the old minutes back over a
   committed edit, and a whole entry was charged at minutes it no longer had.
+  "The copy that was priced" is carried, not re-read: each `TimeEntryFragment`
+  holds the entry's minutes and version from pricing, and `pricedEntry`
+  compares the locked row with those. A second ordinary read would do at
+  REPEATABLE READ, where it returns the snapshot, but at READ COMMITTED it is
+  as current as the lock and agrees with it
+  ([billing-simplification-plan.md](billing-simplification-plan.md), Part 1).
 - **Recombining fragments** (`AllocationService::group`) decides a fragment is
   billed from its allocation rows read with a share lock, scoped to the
   workspace so the read is a bounded lookup. An eager load through the snapshot

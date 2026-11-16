@@ -42,6 +42,9 @@ if (($input['period'] ?? null) !== null && ! preg_match('/^\d{4}-\d{2}-\d{2}$/',
 }
 config(['database.connections.generation_snapshot' => $input['connection'], 'database.default' => 'generation_snapshot']);
 DB::purge('generation_snapshot');
+// Reported with the outcome, so a test that asks for an isolation level can
+// see its session got it rather than the server's default.
+$isolation = (string) DB::selectOne('select @@session.tx_isolation as level')->level;
 
 $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFail();
 $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['company'])->firstOrFail();
@@ -81,11 +84,11 @@ try {
         exit(0);
     }
     $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
-    echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate], JSON_THROW_ON_ERROR)."\n";
+    echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate, 'isolation' => $isolation], JSON_THROW_ON_ERROR)."\n";
 } catch (QueryException $failure) {
     echo json_encode(['outcome' => 'failed', 'class' => $failure::class, 'code' => $failure->errorInfo[1] ?? null, 'message' => $failure->getMessage()], JSON_THROW_ON_ERROR)."\n";
 } catch (DomainException|RuntimeException $refusal) {
-    echo json_encode(['outcome' => 'refused', 'class' => $refusal::class, 'message' => $refusal->getMessage()], JSON_THROW_ON_ERROR)."\n";
+    echo json_encode(['outcome' => 'refused', 'class' => $refusal::class, 'message' => $refusal->getMessage(), 'isolation' => $isolation], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {
     echo json_encode(['outcome' => 'unexpected', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";
     exit(1);

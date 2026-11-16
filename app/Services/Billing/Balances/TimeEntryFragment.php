@@ -18,6 +18,8 @@ readonly class TimeEntryFragment
      * @param  string  $dateWorked  The date the work was performed (Y-m-d format)
      * @param  string  $description  The description of the work
      * @param  int  $userId  The ID of the user who performed the work
+     * @param  int  $entryMinutes  The whole entry's minutes as this fragment was priced from it
+     * @param  int  $entryLockVersion  The entry's `lock_version` as this fragment was priced from it
      * @param  int|null  $clientInvoiceLineId  The invoice line this fragment is linked to (null if unlinked)
      * @param  string  $allocationType  The type of allocation: 'prior_month_retainer', 'current_month_retainer', 'catch_up', 'billable_catchup', or 'unallocated'
      */
@@ -27,6 +29,8 @@ readonly class TimeEntryFragment
         public string $dateWorked,
         public string $description,
         public int $userId,
+        public int $entryMinutes,
+        public int $entryLockVersion,
         public ?int $clientInvoiceLineId = null,
         public string $allocationType = 'unallocated'
     ) {}
