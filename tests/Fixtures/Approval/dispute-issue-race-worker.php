@@ -40,7 +40,9 @@ $pause = static function () use ($input): void {
     if (! touch($input['paused'])) {
         exit(3);
     }
-    $deadline = microtime(true) + 30;
+    // Longer than the test can wait for the dispute, so a held issue is
+    // never what gives up first.
+    $deadline = microtime(true) + 120;
     while (! is_file($input['release']) && microtime(true) < $deadline) {
         usleep(10_000);
     }

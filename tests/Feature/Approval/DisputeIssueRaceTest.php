@@ -180,33 +180,47 @@ final class DisputeIssueRaceTest extends TestCase
             base_path(),
             ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'],
             null,
-            90,
+            180,
         );
     }
 
     /**
      * Whether the dispute committed while the issue was held (true) or was
-     * seen waiting on a row lock (false) - each shown by the database, not
-     * inferred from a dispute that was still running after a guessed delay.
+     * seen blocked (false) - each shown by the database, not inferred from a
+     * dispute process still running after a guessed delay that also counted
+     * its PHP boot. Blocked is InnoDB reporting the session in LOCK WAIT, or
+     * the session's statement still executing after two seconds: a locking
+     * read waiting on its first row shows in the processlist (`Execute`,
+     * state `Statistics`) before its transaction has a row in innodb_trx.
      */
     private function committedOrBlocked(Process $disputer, int $session): bool
     {
+        $database = DB::connection('dispute_race');
         $deadline = microtime(true) + self::DISPUTER_SECONDS;
         while (microtime(true) < $deadline) {
             if (! $disputer->isRunning()) {
                 return true;
             }
-            $waiting = DB::connection('dispute_race')->selectOne(
+            $waiting = $database->selectOne(
                 "select count(*) as n from information_schema.innodb_trx where trx_mysql_thread_id = ? and trx_state = 'LOCK WAIT'",
                 [$session],
             );
-            if ((int) $waiting->n > 0) {
+            $stuck = $database->selectOne(
+                "select count(*) as n from information_schema.processlist where id = ? and command in ('Query', 'Execute') and time_ms >= 2000",
+                [$session],
+            );
+            if ((int) $waiting->n > 0 || (int) $stuck->n > 0) {
                 return false;
             }
             usleep(10_000);
         }
 
-        $this->fail('The dispute neither committed nor waited on a lock. '.$disputer->getOutput().$disputer->getErrorOutput());
+        $this->fail(sprintf(
+            "The dispute neither committed nor was seen blocked.\ninnodb_trx: %s\nprocesslist: %s\n%s",
+            json_encode($database->select('select trx_mysql_thread_id, trx_state, trx_query from information_schema.innodb_trx')),
+            json_encode($database->select('select id, command, time_ms, state, info from information_schema.processlist where id = ?', [$session])),
+            $disputer->getOutput().$disputer->getErrorOutput(),
+        ));
     }
 
     private function awaitFile(Process $process, string $path): void
