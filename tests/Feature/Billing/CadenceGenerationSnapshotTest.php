@@ -38,19 +38,24 @@ final class CadenceGenerationSnapshotTest extends TestCase
 {
     use UsesAProbeDatabase;
 
-    /** @return iterable<string, array{int, int}> */
+    /** @return iterable<string, array{int, int, string}> */
     public static function cuts(): iterable
     {
-        // Fifteen hours against a ten-hour retainer are split at ten; cut to
-        // twelve, the split would write the fifteen back.
-        yield 'an entry the pool splits' => [900, 720];
-        // Five hours fit the pool and are linked whole; cut to three, the line
-        // would still charge five.
-        yield 'an entry linked whole' => [300, 180];
+        // Each at both isolation levels: at READ COMMITTED a second ordinary
+        // read is as current as the lock, so only the values carried from
+        // pricing can tell the cut apart (billing-simplification-plan.md).
+        foreach (['REPEATABLE READ', 'READ COMMITTED'] as $isolation) {
+            // Fifteen hours against a ten-hour retainer are split at ten; cut
+            // to twelve, the split would write the fifteen back.
+            yield "an entry the pool splits, {$isolation}" => [900, 720, $isolation];
+            // Five hours fit the pool and are linked whole; cut to three, the
+            // line would still charge five.
+            yield "an entry linked whole, {$isolation}" => [300, 180, $isolation];
+        }
     }
 
     #[DataProvider('cuts')]
-    public function test_time_cut_after_the_generators_snapshot_is_not_charged_as_it_was(int $before, int $after): void
+    public function test_time_cut_after_the_generators_snapshot_is_not_charged_as_it_was(int $before, int $after, string $isolation): void
     {
         if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->markTestSkipped('A REPEATABLE READ snapshot in a second session is exercised in the MariaDB lane.');
@@ -84,8 +89,13 @@ final class CadenceGenerationSnapshotTest extends TestCase
 
             $worker = new Process(
                 [PHP_BINARY, base_path('tests/Fixtures/Billing/generation-snapshot-worker.php'), base64_encode(json_encode([
-                    'connection' => config('database.connections.'.DB::getDefaultConnection()),
+                    'connection' => ['isolation_level' => $isolation] + config('database.connections.'.DB::getDefaultConnection()),
                     'workspace' => $workspace->id, 'company' => $company->id, 'agreement' => $agreement->id, 'period' => '2026-02-01',
+                    // Held once the time is priced and its lines are being
+                    // written, before attach locks the row. Under REPEATABLE
+                    // READ any point after the first read would do; under READ
+                    // COMMITTED an earlier cut is simply read and priced as it is.
+                    'pause_on' => 'insert into `client_invoice_lines`',
                     'paused' => $paused, 'release' => $release,
                 ], JSON_THROW_ON_ERROR))],
                 base_path(),
@@ -110,6 +120,7 @@ final class CadenceGenerationSnapshotTest extends TestCase
             $this->assertTrue($worker->isSuccessful(), $output);
             $lines = explode("\n", trim($worker->getOutput()));
             $outcome = json_decode(end($lines), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(str_replace(' ', '-', $isolation), $outcome['isolation'] ?? null, $output);
             // Refused, writing nothing: retrying prices the time as it is now.
             $this->assertSame(['outcome' => 'refused', 'class' => TimeChangedDuringBilling::class], array_intersect_key($outcome, ['outcome' => 1, 'class' => 1]), $output);
 

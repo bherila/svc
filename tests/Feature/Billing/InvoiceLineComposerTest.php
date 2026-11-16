@@ -18,9 +18,11 @@ use App\Services\Billing\InvoiceLineComposer;
 use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\SubcontractorBillingMode;
+use App\Support\Billing\TimeChangedDuringBilling;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
@@ -389,8 +391,8 @@ final class InvoiceLineComposerTest extends TestCase
         $overage = $this->line($invoice, 'additional_hours', 30000, 30000, 1);
 
         app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
-            $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
-            $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+            $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $entry->minutes, (int) $entry->lock_version)],
+            $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $entry->minutes, (int) $entry->lock_version)],
         ], app(TimeEntrySplitter::class));
 
         // One entry became two rows, one per line, because the pivot allows a
@@ -457,8 +459,8 @@ final class InvoiceLineComposerTest extends TestCase
         try {
             app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
                 $line->id => [
-                    new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
-                    new TimeEntryFragment($foreignEntry->id, 60, '2026-03-14', 'Work', $this->user->id),
+                    new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $siblingEntry->minutes, (int) $siblingEntry->lock_version),
+                    new TimeEntryFragment($foreignEntry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $foreignEntry->minutes, (int) $foreignEntry->lock_version),
                 ],
             ], app(TimeEntrySplitter::class));
         } finally {
@@ -500,7 +502,7 @@ final class InvoiceLineComposerTest extends TestCase
                 $line = $this->line($invoice, 'additional_hours', 30000, 30000);
 
                 app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
-                    $line->id => [new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+                    $line->id => [new TimeEntryFragment($siblingEntry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $siblingEntry->minutes, (int) $siblingEntry->lock_version)],
                 ], app(TimeEntrySplitter::class));
 
                 $invoice->recalculateTotals();
@@ -538,7 +540,57 @@ final class InvoiceLineComposerTest extends TestCase
             'is_deferred' => true,
             'status' => 'approved',
             'currency' => 'USD',
-        ]);
+        ])->refresh();
+    }
+
+    /** @return iterable<string, array{int, int, int, int}> */
+    public static function pricedFromAnotherRow(): iterable
+    {
+        // [minutes, versions behind] carried by the first fragment, then the second.
+        yield 'the minutes changed since pricing' => [90, 0, 90, 0];
+        yield 'the version moved since pricing' => [120, 1, 120, 1];
+        yield 'one of two fragments priced from older minutes' => [120, 0, 90, 0];
+        yield 'one of two fragments priced from an older version' => [120, 0, 120, 1];
+    }
+
+    /**
+     * The locked row is compared with what each fragment carries from pricing,
+     * never with a second ordinary read, which at READ COMMITTED is already as
+     * current as the lock (billing-simplification-plan.md, Part 1).
+     */
+    #[DataProvider('pricedFromAnotherRow')]
+    public function test_a_fragment_priced_from_another_version_of_the_row_is_refused(int $firstMinutes, int $firstBehind, int $secondMinutes, int $secondBehind): void
+    {
+        $entry = $this->entry(120);
+        $version = (int) $entry->lock_version;
+        $invoice = $this->invoice();
+        $retainer = $this->line($invoice, 'prior_month_retainer', 0, 0);
+        $overage = $this->line($invoice, 'additional_hours', 30000, 30000, 1);
+
+        try {
+            app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
+                $retainer->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, $firstMinutes, $version - $firstBehind)],
+                $overage->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, $secondMinutes, $version - $secondBehind)],
+            ], app(TimeEntrySplitter::class));
+            $this->fail('A fragment priced from another version of the row was linked.');
+        } catch (TimeChangedDuringBilling) {
+            // Expected.
+        }
+
+        $this->assertSame(0, $retainer->timeEntries()->count() + $overage->timeEntries()->count());
+        $this->assertSame([120], ClientTimeEntry::query()->where('client_company_id', $this->company->id)->pluck('minutes')->map(fn ($m) => (int) $m)->all());
+    }
+
+    public function test_an_entry_deleted_since_pricing_is_refused_as_changed_time(): void
+    {
+        $entry = $this->entry(60);
+        $invoice = $this->invoice();
+        $line = $this->line($invoice, 'additional_hours', 30000, 30000);
+        $fragment = new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, 60, (int) $entry->lock_version);
+        $entry->delete();
+
+        $this->expectException(TimeChangedDuringBilling::class);
+        app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [$line->id => [$fragment]], app(TimeEntrySplitter::class));
     }
 
     public function test_an_entry_covered_by_one_line_is_not_split(): void
@@ -548,7 +600,7 @@ final class InvoiceLineComposerTest extends TestCase
         $line = $this->line($invoice, 'additional_hours', 30000, 30000);
 
         app(InvoiceLineComposer::class)->linkAllFragmentsToLines($this->company, [
-            $line->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id)],
+            $line->id => [new TimeEntryFragment($entry->id, 60, '2026-03-14', 'Work', $this->user->id, (int) $entry->minutes, (int) $entry->lock_version)],
         ], app(TimeEntrySplitter::class));
 
         $this->assertSame(1, ClientTimeEntry::query()->where('client_company_id', $this->company->id)->count());
@@ -597,7 +649,7 @@ final class InvoiceLineComposerTest extends TestCase
             'is_deferred' => true,
             'status' => 'approved',
             'currency' => 'USD',
-        ]);
+        ])->refresh();
     }
 
     private function milestone(int $priceAmount): ClientTask
