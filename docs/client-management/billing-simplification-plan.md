@@ -1,8 +1,12 @@
 # Billing simplification: READ COMMITTED and whole time entries
 
-**Status:** approved by the owner on 2026-11-16 (both parts, and the decisions in Part 2). No code has changed yet. It comes out of #718: the guard gaps left there are symptoms of two design choices, and removing the choices removes the need for most of the guards.
+**Status: shelved (2026-11-16).** Billing stays at REPEATABLE READ, and neither part is planned. Pick this up only for a concrete problem: Part 2 if split time entries cause wrong or confusing invoices.
 
-The two parts are independent. Part 1 is small and should go first. Part 2 is larger and benefits from Part 1 being in place.
+- **Part 1 (READ COMMITTED) was withdrawn after its first slice.** Every check that compares a locked row with an earlier read had to be rewritten to hold at both levels before the switch. Cadence generation has no cheap way across: its pricing basis is recorded from reads made after pricing, so it would have had to stay at REPEATABLE READ. The result would have mixed isolation levels and both kinds of guard, which is more to reason about than today, not less. The existing snapshot checks stay. The ratchet (`tests/Fixtures/Concurrency/snapshot-reads.txt`) is how new code is held to them, and every entry has a reason.
+- **What landed:** #748 compares the locked time entry with the minutes and version it was priced from, carried on `TimeEntryFragment`. That is correct at either level and stays.
+- **Part 2 (whole time entries)** is independent of the isolation level and was not started. The owner's decisions below still stand if it is.
+
+It came out of #718, whose remaining guard gaps are symptoms of the two design choices described here.
 
 ## Part 1: billing runs at READ COMMITTED
 
