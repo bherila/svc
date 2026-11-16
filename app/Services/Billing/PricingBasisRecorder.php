@@ -70,12 +70,14 @@ final class PricingBasisRecorder
      * records a basis on every draft it prices - this one, and the held-work
      * basis before it - so a draft with neither was not priced from the
      * ledger: a billing schedule's template, or one written by hand. A
-     * reissue is governed by its own charge checks.
+     * reopened invoice is one of these drafts too: the reopen regenerates it,
+     * recording a fresh basis, and its own charge checks ask only whether a
+     * later invoice was sized against it, so the reissue is held to the basis
+     * as any issue is (#718).
      */
     public function appliesTo(ClientInvoice $locked): bool
     {
         return $locked->status === InvoiceStatus::Draft->value
-            && $locked->reopened_at === null
             && $locked->client_agreement_id !== null
             && in_array($locked->invoiceKindValue(), [InvoiceKind::CadencePeriod->value, InvoiceKind::Terminal->value], true)
             && ($locked->pricing_basis !== null || $locked->held_work_basis !== null);
