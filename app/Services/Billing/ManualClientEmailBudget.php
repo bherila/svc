@@ -2,8 +2,8 @@
 
 namespace App\Services\Billing;
 
-use App\Casts\EmailAddressList;
 use App\Models\ClientInvoiceEmailDelivery;
+use App\Models\InvoiceReminderLog;
 use App\Support\Billing\Reminders\PaymentReminderOrigin;
 use App\Support\Billing\Reminders\PaymentReminderStatus;
 use App\Support\Concurrency\Locks;
@@ -32,18 +32,13 @@ use WeakMap;
  * has already share-locked the workspace row through its foreign key, so two
  * sends upgrading it would deadlock.
  *
- * Waiting is not enough on its own. The count is an ordinary read, made before
- * the key's lock: under REPEATABLE READ it comes from the transaction's
- * snapshot, which the agent API's transaction may have taken long before, and
- * under READ COMMITTED from whenever it ran. So the key also carries the
- * recipients it has admitted, a total that only grows. That total is read in
- * the same statement as the count - one view, at either isolation level - and
- * again under the lock, and the difference is the admissions committed after
- * the count was taken, which are added on top. Counting the rows with a lock
- * instead would take gap locks under REPEATABLE READ that deadlock with the
- * delivery claim's own writes (billing-simplification-plan.md, Part 1). The
- * bound is exact, erring only towards refusing when one of those sends has
- * since failed.
+ * Waiting is not enough under REPEATABLE READ, where the count is read through
+ * the transaction's snapshot and the agent API's transaction may have taken it
+ * before the lock. So the key also carries the recipients it has admitted, a
+ * total that only grows: read once through the snapshot and once under the
+ * lock, the difference is what admissions the snapshot cannot see added, and
+ * it is counted on top. The bound is then exact, erring only towards refusing
+ * when one of those sends has since failed.
  *
  * Not counted against the limit and not checked here: a keyed retry of a
  * failed manual delivery (`InvoiceEmailService::claimFailedManualDelivery`),
@@ -86,10 +81,10 @@ final class ManualClientEmailBudget
      * this refuses.
      *
      * One admission per workspace per transaction. The correction for a stale
-     * count reads the key before this transaction has written it; once it has
-     * - and the upsert below writes it even when this refuses - a second call
-     * under REPEATABLE READ reads its own write instead and would miss every
-     * admission committed after the snapshot. So admit everything a
+     * snapshot reads the key through the snapshot before this transaction has
+     * written it; once it has - and the upsert below writes it even when this
+     * refuses - a second call reads its own write instead and would miss
+     * every admission committed after the snapshot. So admit everything a
      * transaction sends in one call, and a send whose recipients grow later
      * is asked for again in a transaction of its own (see
      * `PaymentReminderService::sendRegistered()`). A second call for the same
@@ -101,12 +96,9 @@ final class ManualClientEmailBudget
     {
         $this->claimTransaction($workspaceId);
 
-        // The count and the key's total in one statement, so they describe
-        // one moment at either isolation level - a REPEATABLE READ snapshot,
-        // or the statement's own view at READ COMMITTED - and before this
-        // transaction writes the key: once it has, its own write is what a
-        // REPEATABLE READ transaction would read.
-        [$counted, $seen] = $this->countedWithAdmitted($workspaceId);
+        // Through this transaction's snapshot, and before this transaction
+        // writes the key: once it has, its own write is what this would read.
+        $seen = $this->admitted($this->key($workspaceId));
 
         // An upsert, not an ignored insert: InnoDB locks a duplicate an upsert
         // meets exclusively, where an ignored insert would take a shared lock
@@ -120,7 +112,7 @@ final class ManualClientEmailBudget
         ]], ['workspace_id'], ['updated_at']);
         $current = $this->admitted($this->key($workspaceId)->tap(Locks::forUpdate()));
 
-        if (! self::fits($counted, $seen, $current, $recipients, $this->limit())) {
+        if (! self::fits($this->usedInLastDay($workspaceId), $seen, $current, $recipients, $this->limit())) {
             return false;
         }
 
@@ -134,11 +126,11 @@ final class ManualClientEmailBudget
 
     /**
      * Whether `$recipients` more fit under `$limit`, given what was counted
-     * and the key's admitted total read in the same statement
-     * (`$seenAdmitted`) and under its lock (`$lockedAdmitted`).
+     * through the snapshot and the key's admitted total read through that
+     * snapshot (`$seenAdmitted`) and under its lock (`$lockedAdmitted`).
      *
      * The difference is the recipients of admissions committed after the
-     * count was taken, whose rows it could not see. A locked total below the
+     * snapshot, whose rows the count could not see. A locked total below the
      * one seen means the key was reset, which nothing does; it adds nothing
      * rather than taking sends away.
      */
@@ -150,50 +142,28 @@ final class ManualClientEmailBudget
     /** Recipients addressed by hand in the last 24 hours: invoice emails and payment reminders that did not fail. */
     public function usedInLastDay(int $workspaceId): int
     {
-        return $this->countedWithAdmitted($workspaceId)[0];
-    }
-
-    /**
-     * {@see usedInLastDay()}'s count and the key's admitted total, from one
-     * statement and so from one view of the data.
-     *
-     * @return array{int, int}
-     */
-    private function countedWithAdmitted(int $workspaceId): array
-    {
         $since = $this->clock->instant()->subDay();
-        $deliveries = DB::table('client_invoice_email_deliveries')
-            ->select(['recipients', DB::raw('null as admitted')])
+        $count = static function (iterable $rows): int {
+            $total = 0;
+            foreach ($rows as $recipients) {
+                $total += is_array($recipients) ? count($recipients) : 0;
+            }
+
+            return $total;
+        };
+
+        return $count(ClientInvoiceEmailDelivery::query()
             ->where('workspace_id', $workspaceId)
             ->where('origin', 'manual')
             ->whereIn('status', ['pending', 'sending', 'sent'])
-            ->where('queued_at', '>=', $since);
-        $reminders = DB::table('invoice_reminder_logs')
-            ->select(['recipients', DB::raw('null as admitted')])
-            ->where('workspace_id', $workspaceId)
-            ->where('origin', PaymentReminderOrigin::Manual->value)
-            ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value, PaymentReminderStatus::Sent->value])
-            ->where('queued_at', '>=', $since);
-        $key = DB::table(self::KEY_TABLE)
-            ->select([DB::raw('null as recipients'), 'admitted_recipients as admitted'])
-            ->where('workspace_id', $workspaceId);
-
-        $addresses = new EmailAddressList;
-        $model = new ClientInvoiceEmailDelivery;
-        $counted = 0;
-        $admitted = 0;
-        foreach ($deliveries->unionAll($reminders)->unionAll($key)->get() as $row) {
-            $row = (array) $row;
-            if ($row['admitted'] !== null) {
-                $admitted = is_numeric($row['admitted']) ? (int) $row['admitted'] : 0;
-
-                continue;
-            }
-            // Read through the column's cast, as the models read it.
-            $counted += count($addresses->get($model, 'recipients', $row['recipients'], []));
-        }
-
-        return [$counted, $admitted];
+            ->where('queued_at', '>=', $since)
+            ->pluck('recipients'))
+            + $count(InvoiceReminderLog::query()
+                ->where('workspace_id', $workspaceId)
+                ->where('origin', PaymentReminderOrigin::Manual->value)
+                ->whereIn('status', [PaymentReminderStatus::Pending->value, PaymentReminderStatus::Sending->value, PaymentReminderStatus::Sent->value])
+                ->where('queued_at', '>=', $since)
+                ->pluck('recipients'));
     }
 
     /**

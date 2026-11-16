@@ -55,7 +55,7 @@ Every change below must be correct at **both** isolation levels, so a rollback s
    - **Alternative:** take the basis's input rows with a lock before pricing, which the agreement lock already partly does.
 3. **`ManualClientEmailBudget::admit`** reads its count before the upsert and adds `current - seen` to compensate for an old snapshot. At READ COMMITTED the locked count already includes those admissions, so they'd be counted twice and refused too early.
    - **Don't just delete the compensation.** Back at REPEATABLE READ, `usedInLastDay()`'s ordinary reads could miss an admission committed after a caller's snapshot, and the daily limit would be exceeded.
-   - **The fix (done):** read the count and the key's total in one statement, so both describe one moment at either level, and keep the compensation against the locked total. A locking count was tried first. It deadlocked under REPEATABLE READ: its gap locks on the delivery rows met the delivery claim's own update. The one-admit-per-transaction rule stays, because a second call under REPEATABLE READ would read its own write of the key.
+   - **The fix:** count under a locking read, which sees the latest committed rows at either level, then drop the compensation and the one-admit-per-transaction rule.
 4. **`TimeEntryMutationService::allocatedInvoice`** runs its plain read before its locked read. At READ COMMITTED that only causes a rare spurious 409, but taking the lock first removes it.
 5. **`docs/client-management/concurrency.md`:** rewrite the sections that explain behaviour by "the snapshot follows the agreement lock". The rule becomes: take the lock, then read. A value read before the lock is compared, under the lock, with what was used, never with a re-read.
 
