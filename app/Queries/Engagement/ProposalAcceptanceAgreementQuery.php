@@ -6,10 +6,12 @@ use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientProposal;
 use App\Support\Concurrency\Locks;
+use App\Support\Engagement\AgreementsChanged;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The agreement reads and shared lock that protect contract transitions.
@@ -37,14 +39,45 @@ final class ProposalAcceptanceAgreementQuery
      * Locking only the proposal or agreement being changed lets two different
      * rows both observe an empty active set. The shared parent is the row every
      * acceptance, activation, and active-term correction has in common.
+     *
+     * The lock alone is not enough (#718). The checks that follow it are
+     * ordinary reads, which see this transaction's snapshot, and a caller can
+     * have fixed that snapshot before the lock - the agent API's executor and
+     * package enrollment read first. So the company's `agreement_revision`,
+     * which every such writer advances under this lock
+     * ({@see self::recordAgreementChange()}), is read through the snapshot too,
+     * and a difference refuses: an agreement change committed since the
+     * snapshot that the checks would not see.
+     *
+     * @throws AgreementsChanged when the snapshot predates an agreement change
      */
     public function lockCompany(int $workspaceId, int $companyId): void
     {
-        ClientCompany::query()
+        $locked = ClientCompany::query()
             ->whereKey($companyId)
             ->where('workspace_id', $workspaceId)
             ->tap(Locks::forUpdate())
-            ->firstOrFail();
+            ->firstOrFail(['id', 'agreement_revision']);
+        $seen = DB::table('client_companies')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $companyId)
+            ->value('agreement_revision');
+        if (! is_numeric($seen) || (int) $seen !== (int) $locked->agreement_revision) {
+            throw new AgreementsChanged;
+        }
+    }
+
+    /**
+     * Advance the company's agreement revision, under the company lock, in the
+     * transaction that makes an agreement active or widens an active one's
+     * dates: what a concurrent overlap check would otherwise miss.
+     */
+    public function recordAgreementChange(int $workspaceId, int $companyId): void
+    {
+        DB::table('client_companies')
+            ->where('workspace_id', $workspaceId)
+            ->where('id', $companyId)
+            ->update(['agreement_revision' => DB::raw('agreement_revision + 1')]);
     }
 
     public function hasActiveUnlinkedAgreement(ClientProposal $proposal): bool

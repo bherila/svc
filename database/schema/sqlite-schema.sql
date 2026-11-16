@@ -2035,6 +2035,7 @@ CREATE TABLE "client_companies"(
   "notes" text,
   "autopay_enabled_at" datetime,
   "autopay_limit_amount" integer,
+  "agreement_revision" integer not null default('0'),
   foreign key("workspace_id") references "workspaces"("id") on delete cascade on update no action
 );
 CREATE UNIQUE INDEX "client_companies_public_id_unique" on "client_companies"(
@@ -3598,3 +3599,4 @@ INSERT INTO migrations VALUES(140,'2026_11_18_090000_create_service_package_requ
 INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_client_invoices',1);
 INSERT INTO migrations VALUES(142,'2026_11_20_090000_create_client_email_budget_locks',1);
 INSERT INTO migrations VALUES(143,'2026_11_21_090000_add_pricing_basis_to_client_invoices',1);
+INSERT INTO migrations VALUES(144,'2026_11_22_090000_add_agreement_revision_to_client_companies',1);

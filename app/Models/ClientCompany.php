@@ -28,13 +28,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $autopay_limit_amount the most autopay charges for one invoice, in minor units; null while it is off
  * @property bool $is_active
  * @property int $credit_revision
+ * @property int $agreement_revision advanced under the company lock by every write that can make two of its agreements overlap (#718)
  */
 #[Fillable([
     'workspace_id', 'name', 'slug', 'billing_email', 'automatic_invoice_email_enabled',
     'automatic_invoice_email_delay_days', 'is_active', 'payment_reminders_enabled_at', 'autopay_enabled_at', 'autopay_limit_amount',
     'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes',
 ])]
-#[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision', 'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes'])]
+#[Hidden(['id', 'workspace_id', 'lock_version', 'credit_revision', 'agreement_revision', 'billing_address', 'phone', 'website_url', 'tax_id', 'currency', 'notes'])]
 class ClientCompany extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -44,6 +45,7 @@ class ClientCompany extends Model implements WorkspaceOwned
         return [
             'is_active' => 'boolean',
             'credit_revision' => 'integer',
+            'agreement_revision' => 'integer',
             'automatic_invoice_email_enabled' => 'boolean',
             'automatic_invoice_email_delay_days' => 'integer',
             'payment_reminders_enabled_at' => 'immutable_datetime',

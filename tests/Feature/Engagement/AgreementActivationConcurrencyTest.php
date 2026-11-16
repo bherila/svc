@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Process\Process;
 use Tests\Concerns\UsesAProbeDatabase;
 use Tests\TestCase;
@@ -23,9 +24,14 @@ use Tests\TestCase;
  * the company lock. An activation that committed while this one waited for the
  * company was then invisible to it, and both agreements went live.
  *
- * The first worker is held just after that check; the second activates the
+ * The first worker is held with its snapshot taken; the second activates the
  * overlapping agreement meanwhile; then the first is let go. Exactly one may
- * end up active.
+ * end up active. Held at top level, just after the sign-up check, the fix is
+ * the company lock taken before any ordinary read. Held inside a caller's
+ * transaction that has already read - the agent API's executor, package
+ * enrollment - no lock taken later can move the snapshot, so the company's
+ * agreement revision, read through the snapshot and through the lock, refuses
+ * it.
  */
 final class AgreementActivationConcurrencyTest extends TestCase
 {
@@ -34,7 +40,15 @@ final class AgreementActivationConcurrencyTest extends TestCase
     /** How long the second activation is given to finish while the first is held. */
     private const SECOND_SECONDS = 3.0;
 
-    public function test_two_overlapping_activations_cannot_both_go_live(): void
+    /** @return iterable<string, array{bool}> */
+    public static function callers(): iterable
+    {
+        yield 'its own transaction' => [false];
+        yield 'a caller transaction that read first' => [true];
+    }
+
+    #[DataProvider('callers')]
+    public function test_two_overlapping_activations_cannot_both_go_live(bool $outer): void
     {
         if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->markTestSkipped('Snapshot timing across sessions is exercised in the MariaDB lane.');
@@ -63,8 +77,8 @@ final class AgreementActivationConcurrencyTest extends TestCase
             $held = $draft('Synthetic held agreement', '2026-03-01');
             $other = $draft('Synthetic overlapping agreement', '2026-01-01');
 
-            $first = $this->worker($workspace->id, $held->id, $paths['paused'], $paths['release']);
-            $second = $this->worker($workspace->id, $other->id, null, null);
+            $first = $this->worker($workspace->id, $held->id, $paths['paused'], $paths['release'], $outer);
+            $second = $this->worker($workspace->id, $other->id, null, null, false);
             $processes = [$first, $second];
             $first->start();
             $this->awaitFile($first, $paths['paused']);
@@ -98,7 +112,7 @@ final class AgreementActivationConcurrencyTest extends TestCase
         }
     }
 
-    private function worker(int $workspaceId, int $agreementId, ?string $paused, ?string $release): Process
+    private function worker(int $workspaceId, int $agreementId, ?string $paused, ?string $release, bool $outer): Process
     {
         $input = base64_encode(json_encode([
             'connection' => config('database.connections.'.DB::getDefaultConnection()),
@@ -106,6 +120,7 @@ final class AgreementActivationConcurrencyTest extends TestCase
             'agreement' => $agreementId,
             'paused' => $paused,
             'release' => $release,
+            'outer' => $outer,
         ], JSON_THROW_ON_ERROR));
 
         return new Process(

@@ -39,7 +39,7 @@ $await = static function (string $path): void {
 
 // Held just after the package-sign-up check, the first ordinary read a draft's
 // activation makes: from here on its snapshot is fixed.
-if ($input['paused'] !== null) {
+if ($input['paused'] !== null && ! ($input['outer'] ?? false)) {
     $held = false;
     Event::listen(static function (QueryExecuted $query) use ($input, $await, &$held): void {
         if (! $held && str_contains($query->sql, 'service_package_enrollments')) {
@@ -55,7 +55,20 @@ if ($input['paused'] !== null) {
 $agreement = ClientAgreement::query()->where('workspace_id', (int) $input['workspace'])->whereKey((int) $input['agreement'])->firstOrFail();
 
 try {
-    app(AgreementWorkflow::class)->activate($agreement);
+    if ($input['outer'] ?? false) {
+        // As the agent API's executor does: an outer transaction whose
+        // ordinary read fixes the snapshot before activation takes any lock.
+        DB::transaction(static function () use ($input, $await): void {
+            $agreement = ClientAgreement::query()->where('workspace_id', (int) $input['workspace'])->whereKey((int) $input['agreement'])->firstOrFail();
+            if (! touch($input['paused'])) {
+                exit(3);
+            }
+            $await($input['release']);
+            app(AgreementWorkflow::class)->activate($agreement);
+        });
+    } else {
+        app(AgreementWorkflow::class)->activate($agreement);
+    }
     echo json_encode(['outcome' => 'activated'], JSON_THROW_ON_ERROR)."\n";
 } catch (DomainException|RuntimeException $exception) {
     echo json_encode(['outcome' => 'refused', 'class' => $exception::class, 'message' => $exception->getMessage()], JSON_THROW_ON_ERROR)."\n";

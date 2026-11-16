@@ -91,6 +91,7 @@ final class FillableCoverageTest extends TestCase
         ],
         ClientCompany::class => [
             'credit_revision' => 'The credit pool\'s revision. Advanced only by OverpaymentCreditService::recordPoolChange(), under the company lock, in the transaction that changed the pool; a value assigned through the model would let a stale snapshot pass issue()\'s credit check.',
+            'agreement_revision' => 'The company\'s agreement revision (#718). Advanced only by ProposalAcceptanceAgreementQuery::recordAgreementChange(), under the company lock, in the transaction that activated or widened an agreement; a value assigned through the model would let a stale snapshot pass the overlap check.',
         ],
         ClientInvoicePayment::class => [
             'provider_charged_at' => 'A processor settlement fact (S7). Written only by ProcessorSettlementRecorder from what Stripe or Square reports, through the query builder with the payment\'s revision; assignable through the model, a correction could invent the processor\'s own record.',

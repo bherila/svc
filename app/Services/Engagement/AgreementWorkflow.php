@@ -191,14 +191,18 @@ class AgreementWorkflow
                 throw AgreementCancellationRefused::because(CancellationRefusal::EndScheduled);
             }
 
-            if ($locked->status === 'active'
-                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes))) {
+            $movesActiveDates = $locked->status === 'active'
+                && (array_key_exists('starts_on', $changes) || array_key_exists('ends_on', $changes));
+            if ($movesActiveDates) {
                 $candidate = clone $locked;
                 $candidate->fill($editable);
                 $this->assertNoOverlappingActiveAgreement($candidate);
             }
 
             $locked->update($editable);
+            if ($movesActiveDates) {
+                $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
+            }
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
@@ -260,6 +264,7 @@ class AgreementWorkflow
                 'status' => 'active',
                 'activated_at' => $locked->activated_at ?? $this->clock->instant(),
             ])->save();
+            $this->acceptanceAgreements->recordAgreementChange($locked->workspace_id, $locked->client_company_id);
             $this->activities->record(
                 $locked->workspace,
                 $locked->clientCompany,
