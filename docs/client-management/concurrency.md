@@ -584,6 +584,19 @@ read of the allocation then agrees with the locked rows, and stays agreeing
 while they are held. Whether the allocated invoice is a draft is decided from
 the invoice row locked earlier, never from a re-read.
 
+Activation (`AgreementWorkflow::activate`) used to fix its snapshot before
+the company lock: a draft's package sign-up check was its first ordinary
+read. Its overlap check then missed an overlapping agreement activated while
+it waited for the company lock, and both went live. Activation now takes the
+company lock before its first ordinary read, and
+`AgreementActivationConcurrencyTest` holds one activation at that point while
+another commits. Undoing a scheduled end (`AgreementCancellations::undo` and
+`undoByContact`) runs the same overlap check, and still reads before its
+company lock. That lock has to follow the cancellation-record locks, so this
+is a follow-up rather than the same one-line move.
+
+With this, every entry in `snapshot-reads.txt` carries a reviewed reason.
+
 `tests/Feature/Billing/BuyDownAttachSnapshotTest.php` holds the two-session
 regressions, run from a worker whose snapshot predates the state it acts on;
 `tests/Feature/Billing/IssueTimeLockOrderTest.php` holds issue's lock-order
