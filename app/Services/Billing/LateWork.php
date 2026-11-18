@@ -81,7 +81,7 @@ final class LateWork
             }
         }
         $ids = array_values(array_unique($ids));
-        $positions = app(BillingEligibilityOrder::class)->positions((int) $agreement->workspace_id, (int) $agreement->client_company_id, array_values($ids));
+        $positions = app(BillingEligibilityOrder::class)->positions((int) $agreement->workspace_id, (int) $agreement->client_company_id, $ids);
         if (count($positions) !== count($ids)) {
             throw new LogicException('Billing eligibility history is missing or belongs to another client.');
         }
