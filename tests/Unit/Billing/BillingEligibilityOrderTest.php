@@ -76,6 +76,13 @@ final class BillingEligibilityOrderTest extends TestCase
         self::assertSame([1, 2], $this->sequences());
         self::assertSame(2, $this->counter());
         self::assertSame(0, DB::table('billing_eligibility_event_reservations')->count());
+        $positions = $order->positions($this->workspace->id, $this->company->id, [$ids[1], PHP_INT_MAX, $ids[0]]);
+        self::assertCount(2, $positions, 'Committed positions must be read after their pending registrations were cleared.');
+        self::assertSame($ids[0], $positions[$ids[0]]->id);
+        self::assertSame(1, $positions[$ids[0]]->sequence);
+        self::assertSame($ids[1], $positions[$ids[1]]->id);
+        self::assertSame(2, $positions[$ids[1]]->sequence);
+        self::assertArrayNotHasKey(PHP_INT_MAX, $positions, 'An unknown published ID supplies no ordering evidence.');
         DB::transaction(fn (): int => $order->record($this->workspace->id, $this->company->id));
         self::assertSame([1, 2, 3], $this->sequences());
     }
@@ -100,7 +107,7 @@ final class BillingEligibilityOrderTest extends TestCase
         self::assertSame([1], $this->sequences());
     }
 
-    public function test_a_failing_commit_listener_rolls_back_business_writes_before_throwing(): void
+    public function test_invalid_fences_roll_back_business_writes_and_exact_remaining_capacity_can_commit(): void
     {
         DB::table('client_billing_eligibility_counters')->where('workspace_id', $this->workspace->id)->where('client_company_id', $this->company->id)->delete();
         try {
@@ -119,37 +126,79 @@ final class BillingEligibilityOrderTest extends TestCase
         DB::table('client_billing_eligibility_counters')->insert(['workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id, 'sequence' => 0]);
         DB::transaction(fn (): int => app(BillingEligibilityOrder::class)->record($this->workspace->id, $this->company->id));
         self::assertSame([1], $this->sequences());
+
+        DB::table('client_billing_eligibility_counters')->where('workspace_id', $this->workspace->id)
+            ->where('client_company_id', $this->company->id)->update(['sequence' => PHP_INT_MAX - 1]);
+        try {
+            DB::transaction(function (): void {
+                DB::table('client_companies')->where('workspace_id', $this->workspace->id)->where('id', $this->company->id)
+                    ->update(['name' => 'Synthetic overflow must roll back']);
+                $order = app(BillingEligibilityOrder::class);
+                $order->record($this->workspace->id, $this->company->id);
+                $order->record($this->workspace->id, $this->company->id);
+            });
+            self::fail('Two events cannot consume only one remaining sequence position.');
+        } catch (LogicException $exception) {
+            self::assertSame('The billing eligibility counter is missing or exhausted.', $exception->getMessage());
+        }
+        self::assertFalse(DB::connection()->getPdo()->inTransaction());
+        self::assertSame(0, DB::transactionLevel());
+        self::assertSame('Synthetic one', $this->company->fresh()?->name);
+        self::assertSame([1], $this->sequences(), 'The failed batch published neither event.');
+        self::assertSame(PHP_INT_MAX - 1, $this->counter());
+        self::assertSame(0, DB::table('billing_eligibility_event_reservations')->count());
+
+        $last = DB::transaction(fn (): int => app(BillingEligibilityOrder::class)->record($this->workspace->id, $this->company->id));
+        self::assertSame([1, PHP_INT_MAX], $this->sequences(), 'The exact remaining capacity is usable.');
+        self::assertSame(PHP_INT_MAX, $this->counter());
+        self::assertSame(PHP_INT_MAX, app(BillingEligibilityOrder::class)->positions($this->workspace->id, $this->company->id, [$last])[$last]->sequence);
     }
 
     public function test_company_fences_are_sorted_and_only_owned_event_and_counter_writes_follow(): void
     {
         $second = $this->company('two');
+        $otherWorkspace = Workspace::query()->create(['name' => 'Synthetic second workspace', 'slug' => 'synthetic-second-workspace']);
+        $otherCompany = ClientCompany::query()->create(['workspace_id' => $otherWorkspace->id, 'name' => 'Synthetic foreign company', 'slug' => 'synthetic-foreign-company']);
         $queries = [];
         DB::listen(static function (QueryExecuted $query) use (&$queries): void {
             $queries[] = $query;
         });
-        DB::transaction(function () use ($second): void {
+        $events = DB::transaction(function () use ($second, $otherWorkspace, $otherCompany): array {
             $order = app(BillingEligibilityOrder::class);
-            $order->record($this->workspace->id, $second->id);
-            $order->record($this->workspace->id, $this->company->id);
+
+            return [
+                'other_workspace' => $order->record($otherWorkspace->id, $otherCompany->id),
+                'other_company' => $order->record($this->workspace->id, $second->id),
+                'own' => $order->record($this->workspace->id, $this->company->id),
+            ];
         });
         $companies = [];
         $fenced = false;
         foreach ($queries as $query) {
             $sql = str_replace(['`', '"'], '', $query->sql);
             if (str_starts_with($sql, 'select * from client_billing_eligibility_counters ')) {
-                $companies[] = (int) $query->bindings[1];
+                $companies[] = [(int) $query->bindings[0], (int) $query->bindings[1]];
                 $fenced = true;
             } elseif ($fenced && preg_match('/^(insert|update|delete) /', $sql)) {
                 if (str_starts_with($sql, 'delete from billing_eligibility_event_reservations ')) {
                     continue;
                 }
                 self::assertMatchesRegularExpression('/^update client_billing_eligibility_(events|counters) set /', $sql);
-                self::assertContains($this->workspace->id, $query->bindings);
+                self::assertStringContainsString('where workspace_id = ? and client_company_id = ?', $sql);
             }
         }
-        self::assertSame([$this->company->id, $second->id], $companies);
+        self::assertSame([[$this->workspace->id, $this->company->id], [$this->workspace->id, $second->id], [$otherWorkspace->id, $otherCompany->id]], $companies);
         self::assertSame([1, 1], $this->sequences());
+        self::assertSame(0, DB::transactionLevel());
+        $order = app(BillingEligibilityOrder::class);
+        $own = $order->positions($this->workspace->id, $this->company->id, array_values($events));
+        self::assertSame([$events['own']], array_keys($own));
+        self::assertSame(1, $own[$events['own']]->sequence);
+        self::assertSame([], $order->positions($this->workspace->id, $second->id, [$events['own']]));
+        self::assertSame([], $order->positions($otherWorkspace->id, $this->company->id, [$events['own']]));
+        $foreign = $order->positions($otherWorkspace->id, $otherCompany->id, array_values($events));
+        self::assertSame([$events['other_workspace']], array_keys($foreign));
+        self::assertSame(1, $foreign[$events['other_workspace']]->sequence);
     }
 
     public function test_committed_child_survives_a_later_sibling_rollback_without_leaking_abandoned_work(): void
