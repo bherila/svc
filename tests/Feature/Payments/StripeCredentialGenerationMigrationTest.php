@@ -80,7 +80,7 @@ final class StripeCredentialGenerationMigrationTest extends TestCase
             $workspace = $this->workspace('old-response-after-save');
             $old = $this->connection($workspace, ['active_slot' => null, 'secret' => null,
                 'connected_at' => '2030-12-01 13:00:00', 'revoked_at' => '2030-12-01 14:00:00']);
-            $replacement = $this->connection($workspace, ['secret' => 'sk_test_synthetic_preupgrade_B', 'connected_at' => '2030-12-01 14:00:00']);
+            $replacement = $this->connection($workspace, ['secret' => 'sk_test_synthetic_preupgrade_B', 'connected_at' => '2030-12-01 14:00:00', 'endpoint_token' => str_repeat('B', 40)]);
             // Reconstruct the old bug: A's in-flight response wrote only this
             // timestamp after B saved. The old schema retained no key identity.
             DB::table('workspaces')->where('id', $workspace->id)->update(['stripe_refused_at' => '2030-12-01 15:00:00']);
