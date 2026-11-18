@@ -2,6 +2,7 @@
 
 namespace App\Services\Payments;
 
+use App\Support\Payments\StripeCredentialIdentity;
 use LogicException;
 use SensitiveParameter;
 use Stripe\StripeClient;
@@ -18,11 +19,12 @@ final readonly class StripeAccess
         #[SensitiveParameter] private string $secret,
         /** `live`, `test`, or `unknown`. */
         public string $mode,
+        public ?StripeCredentialIdentity $credentialIdentity = null,
     ) {}
 
-    public static function forKey(#[SensitiveParameter] string $secret): self
+    public static function forKey(#[SensitiveParameter] string $secret, ?StripeCredentialIdentity $credentialIdentity = null): self
     {
-        return new self($secret, self::modeOf($secret));
+        return new self($secret, self::modeOf($secret), $credentialIdentity);
     }
 
     public function client(): StripeClient

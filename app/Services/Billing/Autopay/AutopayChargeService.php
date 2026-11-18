@@ -17,6 +17,7 @@ use App\Support\Billing\Autopay\AutopayConnectionRefusal;
 use App\Support\Billing\Autopay\AutopayVerdict;
 use App\Support\Billing\InvoicePaymentStatus;
 use App\Support\Billing\InvoiceStatus;
+use App\Support\Payments\StripeHealthRefusal;
 use App\Support\WorkspaceClock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -266,14 +267,14 @@ final class AutopayChargeService
             ], ['idempotency_key' => 'autopay-attempt-'.$attempt->public_id]);
         } catch (CardException $refusal) {
             // The card was refused, so Stripe accepted the key.
-            $this->health->accepted($workspace);
+            $this->health->accepted($workspace, $access);
 
             return $this->failed($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal), $this->intentIdOf($refusal));
         } catch (InvalidRequestException|AuthenticationException|PermissionException $refusal) {
             if (AutopayConnectionRefusal::refuses($refusal)) {
-                return $this->connectionRefused($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal));
+                return $this->connectionRefused($workspace, $invoice, $company, $attempt, $access, $amount, $this->failureOf($refusal));
             }
-            $this->health->accepted($workspace);
+            $this->health->accepted($workspace, $access);
 
             return $this->failed($workspace, $invoice, $company, $attempt, $amount, $this->failureOf($refusal), null);
         } catch (Throwable $unknown) {
@@ -284,7 +285,7 @@ final class AutopayChargeService
             return $this->outcome($workspace, $invoice, AutopayChargeResult::NeedsReview, null, $amount, 'Stripe did not answer; check the Stripe dashboard before charging by hand.');
         }
 
-        $this->health->accepted($workspace);
+        $this->health->accepted($workspace, $access);
         $intentId = (string) $intent->id;
         $status = (string) $intent->status;
         if ($intentId === '') {
@@ -320,15 +321,25 @@ final class AutopayChargeService
      *
      * @param  array{code: string, reason: string}  $failure
      */
-    private function connectionRefused(Workspace $workspace, ClientInvoice $invoice, ClientCompany $company, InvoiceAutopayAttempt $attempt, int $amount, array $failure): AutopayChargeOutcome
+    private function connectionRefused(Workspace $workspace, ClientInvoice $invoice, ClientCompany $company, InvoiceAutopayAttempt $attempt, StripeAccess $access, int $amount, array $failure): AutopayChargeOutcome
     {
         $this->release($workspace, $attempt);
-        if ($this->health->refuse($workspace)) {
-            $this->activities->record($workspace, $company, 'invoice.autopay_connection_refused', $invoice, [
-                'code' => mb_substr($failure['code'], 0, 64),
-                'amount' => $amount,
-                'currency' => $invoice->currency,
-            ]);
+        // Keep the once-per-breakage activity in the guarded health transition's
+        // transaction; reconnect cannot replace the key between the two writes.
+        $health = DB::transaction(function () use ($workspace, $company, $invoice, $access, $failure, $amount, $attempt): StripeHealthRefusal {
+            $health = $this->health->recordRefusal($workspace, $access);
+            if ($health === StripeHealthRefusal::First) {
+                $this->activities->record($workspace, $company, 'invoice.autopay_connection_refused', $invoice, [
+                    'code' => mb_substr($failure['code'], 0, 64),
+                    'amount' => $amount,
+                    'currency' => $invoice->currency,
+                ], null, $attempt->public_id);
+            }
+
+            return $health;
+        });
+        if ($health === StripeHealthRefusal::Obsolete) {
+            return $this->outcome($workspace, $invoice, AutopayChargeResult::Released, null, $amount, 'Stripe refused an earlier connection that has already changed; nothing was charged and the invoice can be tried with the current connection.');
         }
         Log::warning('Stripe refused a workspace connection while autopay was charging; nothing was charged.', ['workspace' => $workspace->public_id, 'code' => $failure['code']]);
 

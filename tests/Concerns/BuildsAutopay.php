@@ -29,7 +29,7 @@ trait BuildsAutopay
     protected array $autopayStripeCalls = [];
 
     /**
-     * @param  Closure(string, string, array<string, mixed>): array{0: array<string, mixed>, 1?: int}|null  $answer
+     * @param  Closure(string, string, array<string, mixed>, array<int|string, mixed>): array{0: array<string, mixed>, 1?: int}|null  $answer
      */
     protected function fakeAutopayStripe(?Closure $answer = null): void
     {
@@ -62,7 +62,7 @@ trait BuildsAutopay
                 }
                 $path = (string) parse_url($absUrl, PHP_URL_PATH);
                 ($this->record)(['method' => (string) $method, 'path' => $path, 'params' => $params, 'idempotency' => $key]);
-                $answer = ($this->answer)((string) $method, $path, $params);
+                $answer = ($this->answer)((string) $method, $path, $params, $headers);
 
                 return [json_encode($answer[0], JSON_THROW_ON_ERROR), $answer[1] ?? 200, []];
             }

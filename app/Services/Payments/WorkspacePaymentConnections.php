@@ -7,8 +7,10 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Models\WorkspacePaymentConnection;
 use App\Support\Access\StaffRole;
+use App\Support\Concurrency\Locks;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Payments\StripeCredentialIdentity;
 use App\Support\WorkspaceClock;
 use DomainException;
 use Illuminate\Database\Eloquent\Collection;
@@ -49,11 +51,17 @@ final class WorkspacePaymentConnections
     /** Drop what this request has read; for anything that changes connections without this service. */
     public function forget(): void
     {
-        $this->rows = [];
-        $this->migrated = [];
+        $this->forgetRequest();
         foreach (PaymentProcessor::cases() as $processor) {
             Cache::forget(self::ANY_KEY.$processor->value);
         }
+    }
+
+    /** Reload this request's credential snapshots after observing another request's replacement. */
+    public function forgetRequest(): void
+    {
+        $this->rows = [];
+        $this->migrated = [];
     }
 
     /**
@@ -307,6 +315,18 @@ final class WorkspacePaymentConnections
 
         try {
             return DB::transaction(function () use ($target, $origin, $processor, $actor): WorkspacePaymentConnection {
+                // Serialize reuse with the source's revocation cascade: a new
+                // dependent must be visible before revoke can invalidate it.
+                $origin = WorkspacePaymentConnection::query()
+                    ->where('workspace_id', $origin->workspace_id)
+                    ->whereKey($origin->id)
+                    ->where('processor', $processor->value)
+                    ->whereNull('revoked_at')
+                    ->whereNull('reuses_connection_id')
+                    ->tap(Locks::forUpdate())->first();
+                if ($origin === null) {
+                    throw new DomainException('That connection cannot be reused.');
+                }
                 $this->retireActive($target, $processor, $actor);
 
                 $created = WorkspacePaymentConnection::query()->create([
@@ -323,6 +343,7 @@ final class WorkspacePaymentConnections
                     'active_slot' => $processor->value,
                 ]);
                 $this->syncSquareHint($target->id);
+                $this->saveStripeGeneration($created, $origin->id);
 
                 return $created;
             });
@@ -348,7 +369,7 @@ final class WorkspacePaymentConnections
             $dependents = WorkspacePaymentConnection::query()
                 ->where('reuses_connection_id', $connection->id)
                 ->whereNull('revoked_at')
-                ->get();
+                ->orderBy('id')->tap(Locks::forUpdate())->get();
             foreach ($dependents as $dependent) {
                 $this->markRevoked($dependent, $actor);
             }
@@ -461,6 +482,13 @@ final class WorkspacePaymentConnections
                 'webhook_endpoint_id' => null,
                 'updated_at' => $this->clock->now(),
             ]);
+        if ($updated === 1 && $connection->processorEnum() === PaymentProcessor::Stripe) {
+            DB::table('workspaces')->where('id', $connection->workspace_id)->update([
+                'stripe_credential_version' => 'disconnected',
+                'stripe_refused_at' => null,
+                'stripe_refused_credential_version' => null,
+            ]);
+        }
         $connection->refresh();
         $this->syncSquareHint((int) $connection->workspace_id);
         $this->forget();
@@ -471,7 +499,7 @@ final class WorkspacePaymentConnections
     /** @param  array<string, mixed>  $account */
     private function insert(Workspace $workspace, PaymentProcessor $processor, ConnectionOrigin $origin, ?User $actor, #[SensitiveParameter] array $account): WorkspacePaymentConnection
     {
-        return WorkspacePaymentConnection::query()->create([
+        $created = WorkspacePaymentConnection::query()->create([
             'workspace_id' => $workspace->id,
             'processor' => $processor->value,
             'external_account_id' => $account['external_account_id'],
@@ -489,5 +517,21 @@ final class WorkspacePaymentConnections
             'connected_at' => $this->clock->now(),
             'active_slot' => $processor->value,
         ]);
+        $this->saveStripeGeneration($created, $created->id);
+
+        return $created;
+    }
+
+    /** Save the generation in the same transaction as credential replacement, even in one clock second. */
+    private function saveStripeGeneration(WorkspacePaymentConnection $connection, int $sourceId): void
+    {
+        if ($connection->processorEnum() === PaymentProcessor::Stripe) {
+            $identity = new StripeCredentialIdentity($connection->workspace_id, $connection->id, $sourceId);
+            DB::table('workspaces')->where('id', $connection->workspace_id)->update([
+                'stripe_credential_version' => $identity->connectionVersion(),
+                'stripe_refused_at' => null,
+                'stripe_refused_credential_version' => null,
+            ]);
+        }
     }
 }
