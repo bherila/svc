@@ -52,7 +52,11 @@ class InvoiceLineComposer
             ->orderBy('id');
         $snapshot = (clone $lines)->get();
         $latest = (clone $lines)->reorder()->tap(Locks::forUpdate())->max('id');
-        if ((string) $latest !== (string) $snapshot->max('id')) {
+        if ($latest !== null && ! is_numeric($latest)) {
+            throw new InvoiceChangedDuringGeneration;
+        }
+        $currentMaximum = $latest === null ? null : (int) $latest;
+        if ($currentMaximum !== $snapshot->last()?->id) {
             throw new InvoiceChangedDuringGeneration;
         }
         $attributes = static fn (ClientInvoiceLine $line): array => $line->getAttributes();
