@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Authorization\ProjectAccess;
 use App\Services\Billing\AgreementBillingRateResolver;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\DraftInvoiceTimeRegenerator;
 use App\Services\Billing\MoneyService;
@@ -119,6 +120,9 @@ final class TimeEntryMutationService
             if (array_key_exists('worked_on', $attributes)) {
                 $attributes['worked_on'] = DateOnly::toStored($attributes['worked_on']);
             }
+            $eligibilityChanged = (isset($attributes['worked_on']) && $attributes['worked_on'] !== $entry->worked_on->toDateString())
+                || (array_key_exists('is_billable', $attributes) && (bool) $attributes['is_billable'] !== $entry->is_billable)
+                || (array_key_exists('is_deferred', $attributes) && (bool) $attributes['is_deferred'] !== $entry->is_deferred);
             abort_unless(AgentApiVersion::matches($entry, $data['expected_version']), 409, 'The time entry has changed; read it and retry.');
             $updated = ClientTimeEntry::query()
                 ->whereKey($entry->id)
@@ -127,6 +131,9 @@ final class TimeEntryMutationService
                 ->update($attributes + ['lock_version' => DB::raw('lock_version + 1')]);
             abort_unless($updated === 1, 409, 'The time entry has changed; read it and retry.');
 
+            if ($eligibilityChanged) {
+                app(BillingEligibilityOrder::class)->recordEntry($entry);
+            }
             if ($invoice instanceof ClientInvoice) {
                 $this->assertNoForeignAllocations($workspace, $entry);
                 $this->draftInvoices->regenerate($invoice, $workspace, $entry->id);
@@ -395,6 +402,7 @@ final class TimeEntryMutationService
                     'currency' => $rate['currency'],
                     'lock_version' => $entry->lock_version + 1,
                 ])->save();
+                app(BillingEligibilityOrder::class)->recordEntry($entry);
             }
         });
     }

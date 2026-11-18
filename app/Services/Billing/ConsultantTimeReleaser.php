@@ -87,7 +87,7 @@ final class ConsultantTimeReleaser
             // since leaves the status as it was, and matching on the status
             // alone overwrote that rate with the agreement's (#718). A moved
             // entry waits for the next generation.
-            $released += ClientTimeEntry::query()
+            $changed = ClientTimeEntry::query()
                 ->where('workspace_id', $company->workspace_id)
                 ->whereKey($entry->id)
                 ->where('lock_version', $entry->lock_version)
@@ -96,6 +96,10 @@ final class ConsultantTimeReleaser
                 ->where(fn ($outcome) => $outcome->whereNull('client_dispute_settlement')
                     ->orWhere('client_dispute_settlement', '!=', DisputeSettlement::WrittenOff->value))
                 ->update(['status' => 'approved', 'lock_version' => DB::raw('lock_version + 1')] + $this->rateFor($entry));
+            if ($changed === 1) {
+                app(BillingEligibilityOrder::class)->recordEntry($entry);
+            }
+            $released += $changed;
         }
 
         return $released;

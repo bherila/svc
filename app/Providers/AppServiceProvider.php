@@ -15,6 +15,7 @@ use App\Services\AgentApi\Operations\AgentDeploymentFlags;
 use App\Services\AgentApi\Operations\AgentOperationCatalog;
 use App\Services\AgentApi\Operations\AgentPrincipalResolver;
 use App\Services\ApiCredentials\OpenApiGrantableScopes;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\Mail\InvoiceMailSender;
 use App\Services\Billing\Mail\LaravelInvoiceMailSender;
 use App\Services\Billing\Pdf\DompdfInvoicePdfRenderer;
@@ -47,6 +48,9 @@ use Closure;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Connection;
+use Illuminate\Database\Events\TransactionCommitted;
+use Illuminate\Database\Events\TransactionCommitting;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Mail\MailManager;
@@ -54,6 +58,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -72,6 +77,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(BillingEligibilityOrder::class);
         // Read once per request: every write goes through the service, which clears it.
         $this->app->scoped(WorkspacePaymentConnections::class);
         // Whether any workspace has its own Square connection is a database
@@ -164,6 +170,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Event::listen(TransactionCommitting::class, static fn (TransactionCommitting $event) => app(BillingEligibilityOrder::class)->committing($event->connection));
+        Event::listen(TransactionCommitted::class, static fn (TransactionCommitted $event) => app(BillingEligibilityOrder::class)->committed($event->connection));
+        Event::listen(TransactionRolledBack::class, static fn (TransactionRolledBack $event) => app(BillingEligibilityOrder::class)->rolledBack($event->connection));
         OperationRoutes::macro();
         Passport::loadKeysFrom(storage_path('app/private/oauth'));
         Passport::authorizationView('bherila-auth::oauth.authorize');

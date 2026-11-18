@@ -1018,3 +1018,16 @@ refusal after B saved, so the current row cannot prove the historical key.
 Migration backfills only the current connection fence, never the refusal owner;
 concurrent new health writes retain their actual request attribution. No secret
 is read by migration.
+
+### Eligibility commit order (#752)
+
+`BillingEligibilityOrder` reserves anonymous IDs without foreign-key parents
+while the domain transaction runs. At its physical outer commit, it publishes
+its actual event rows in sorted workspace/company order, acquiring company
+foreign-key shares before any counter fence. It then locks preseeded eligibility
+counters in that same order. Only own event/counter updates and own anonymous
+reservation cleanup follow; no business or foreign-key parent lock follows a
+counter. This orders commits rather than ID allocation, including a lower-ID
+transaction that commits later. Nested/savepoint events remain provisional to
+the registering connection until the actual outer commit. The four physical
+MariaDB cases exercise both reversed commit orders and approval versus issue.

@@ -58,6 +58,7 @@ use LogicException;
  * @property int|null $submitted_by_user_id
  * @property SubcontractorBillingMode|null $subcontractor_billing_mode
  * @property int $lock_version
+ * @property int|null $billing_eligibility_event_id
  */
 #[Fillable([
     'public_id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id',
@@ -68,8 +69,9 @@ use LogicException;
     'client_disputed_at', 'client_disputed_by_user_id', 'client_dispute_note',
     'client_dispute_settlement', 'client_dispute_reply', 'client_dispute_settled_at', 'client_dispute_settled_by_user_id',
     'submitted_at', 'submitted_by_user_id',
+    'billing_eligibility_event_id',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'client_dispute_settled_by_user_id', 'submitted_by_user_id'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_project_id', 'client_task_id', 'user_id', 'approved_by_user_id', 'client_approved_by_user_id', 'client_disputed_by_user_id', 'client_dispute_settled_by_user_id', 'submitted_by_user_id', 'billing_eligibility_event_id'])]
 class ClientTimeEntry extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision, SoftDeletes;
@@ -78,6 +80,7 @@ class ClientTimeEntry extends Model implements WorkspaceOwned
     {
         return [
             'worked_on' => DateOnly::class,
+            'billing_eligibility_event_id' => 'integer',
             'minutes' => 'integer',
             'is_billable' => 'boolean',
             'is_deferred' => 'boolean',

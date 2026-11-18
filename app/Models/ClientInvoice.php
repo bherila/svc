@@ -58,6 +58,7 @@ use RuntimeException;
  * @property array<string, mixed>|null $catch_up_basis
  * @property array<string, mixed>|null $held_work_basis what a cadence draft was priced from, as far as disputes go; see HeldWorkBasis
  * @property array<string, mixed>|null $pricing_basis every ledger input a cadence draft was priced from; see PricingBasis
+ * @property int|null $billing_eligibility_event_id first issue's immutable eligibility boundary
  */
 #[Fillable([
     'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id',
@@ -81,7 +82,7 @@ use RuntimeException;
     // stale-draft audit reads, never a trigger: nothing issues on it.
     'scheduled_issue_date',
 ])]
-#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'deferred_work_statement', 'catch_up_basis', 'held_work_basis', 'pricing_basis'])]
+#[Hidden(['id', 'workspace_id', 'client_company_id', 'client_agreement_id', 'client_billing_schedule_id', 'notes', 'void_reason', 'reopen_reason', 'hours_statement', 'deferred_work_statement', 'catch_up_basis', 'held_work_basis', 'pricing_basis', 'billing_eligibility_event_id'])]
 class ClientInvoice extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
@@ -95,6 +96,7 @@ class ClientInvoice extends Model implements WorkspaceOwned
     protected function casts(): array
     {
         return [
+            'billing_eligibility_event_id' => 'integer',
             'issue_date' => DateOnly::class,
             'due_date' => DateOnly::class,
             'scheduled_issue_date' => DateOnly::class,

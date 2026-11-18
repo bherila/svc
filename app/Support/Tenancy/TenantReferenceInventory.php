@@ -45,6 +45,8 @@ final class TenantReferenceInventory
      */
     public const REASON_LINEAGE = 'nullable attribution column with no referential constraint by design: the invoice record outlives the row that explains it, and SET NULL is barred over the NOT NULL workspace_id (InnoDB errno 1830)';
 
+    public const REASON_ELIGIBILITY_ORDER = 'nullable internal commit-order attribution: its parent publishes only at outer commit (an immediate FK would fail with InnoDB errno 1452); history deletion must not delete a business row, and composite SET NULL over NOT NULL workspace_id is barred by errno 1830; LateWork verifies event workspace/company or refuses the pointer';
+
     /**
      * Why a deferred-work snapshot's frozen project carries no constraint (#610).
      *
@@ -82,6 +84,10 @@ final class TenantReferenceInventory
     public static function all(): array
     {
         return [
+            TenantReference::enforcedBy('client_billing_eligibility_counters', 'client_company_id', 'client_companies', 'billing_eligibility_counter_company_fk'),
+            TenantReference::enforcedBy('client_billing_eligibility_events', 'client_company_id', 'client_companies', 'billing_eligibility_event_company_fk'),
+            TenantReference::exempt('client_time_entries', 'billing_eligibility_event_id', 'client_billing_eligibility_events', self::REASON_ELIGIBILITY_ORDER),
+            TenantReference::exempt('client_invoices', 'billing_eligibility_event_id', 'client_billing_eligibility_events', self::REASON_ELIGIBILITY_ORDER),
             // Companies own everything below them.
             TenantReference::enforcedBy('historical_entries', 'historical_record_id', 'historical_records', 'history_entry_record_fk'),
             TenantReference::enforcedBy('historical_entries', 'parent_record_id', 'historical_records', 'history_entry_parent_fk'),

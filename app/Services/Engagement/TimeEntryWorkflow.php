@@ -8,6 +8,7 @@ use App\Models\ClientTask;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\BillingMaintenance;
 use App\Services\WorkspaceAuthorization;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +56,7 @@ class TimeEntryWorkflow
         return DB::transaction(function () use ($workspace, $project, $company, $task, $worker, $attributes, $clientDescription, $visibleToClient): ClientTimeEntry {
             BillingMaintenance::share($workspace->id);
 
-            return ClientTimeEntry::query()->create([
+            $entry = ClientTimeEntry::query()->create([
                 'workspace_id' => $workspace->id,
                 'client_company_id' => $company->id,
                 'client_project_id' => $project->id,
@@ -81,6 +82,9 @@ class TimeEntryWorkflow
                     : $workspace->default_currency,
                 'status' => 'draft',
             ]);
+            app(BillingEligibilityOrder::class)->recordEntry($entry);
+
+            return $entry;
         });
     }
 }

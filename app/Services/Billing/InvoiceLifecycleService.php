@@ -678,6 +678,14 @@ final class InvoiceLifecycleService
             $reissue = $locked->reopened_at !== null;
             $revision = $reissue ? $locked->document_revision + 1 : 1;
 
+            if ($locked->billing_eligibility_event_id === null && $locked->issued_at === null
+                && $locked->invoiceKindValue() === InvoiceKind::CadencePeriod->value
+                && $locked->client_agreement_id !== null) {
+                $locked->setAttribute('billing_eligibility_event_id', app(BillingEligibilityOrder::class)->record(
+                    (int) $locked->workspace_id, (int) $locked->client_company_id,
+                ));
+            }
+
             $locked->forceFill([
                 'issue_date' => $issueDate,
                 'due_date' => $locked->due_date ?? $issueDate,
