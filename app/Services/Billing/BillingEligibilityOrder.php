@@ -115,6 +115,9 @@ final class BillingEligibilityOrder
                     foreach (array_chunk($ids, 200) as $chunk) {
                         foreach ($connection->table('billing_eligibility_event_reservations')
                             ->whereIn('id', $chunk)->orderBy('id')->pluck('id') as $id) {
+                            if (! is_numeric($id)) {
+                                throw new LogicException('A billing eligibility reservation has an invalid ID.');
+                            }
                             $reserved[] = (int) $id;
                         }
                     }

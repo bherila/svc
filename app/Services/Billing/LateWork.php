@@ -69,7 +69,18 @@ final class LateWork
         $entries = $work->where('workspace_id', $agreement->workspace_id)->where('client_company_id', $agreement->client_company_id)
             ->whereDate('worked_on', '<', $before->toDateString())
             ->get(['id', 'worked_on', 'created_at', 'approved_at', 'billing_eligibility_event_id']);
-        $ids = $entries->pluck('billing_eligibility_event_id')->merge($charged->pluck('billing_eligibility_event_id'))->filter()->map(static fn (mixed $id): int => (int) $id)->unique()->values()->all();
+        $ids = [];
+        foreach ($entries as $entry) {
+            if ($entry->billing_eligibility_event_id !== null) {
+                $ids[] = $entry->billing_eligibility_event_id;
+            }
+        }
+        foreach ($charged as $invoice) {
+            if ($invoice->billing_eligibility_event_id !== null) {
+                $ids[] = $invoice->billing_eligibility_event_id;
+            }
+        }
+        $ids = array_values(array_unique($ids));
         $positions = app(BillingEligibilityOrder::class)->positions((int) $agreement->workspace_id, (int) $agreement->client_company_id, array_values($ids));
         if (count($positions) !== count($ids)) {
             throw new LogicException('Billing eligibility history is missing or belongs to another client.');

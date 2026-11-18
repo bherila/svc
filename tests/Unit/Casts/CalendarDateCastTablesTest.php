@@ -111,6 +111,7 @@ final class CalendarDateCastTablesTest extends TestCase
             ],
             ClientInvoice::class => [
                 'id' => 'int',
+                'billing_eligibility_event_id' => 'integer',
                 'issue_date' => DateOnly::class,
                 'due_date' => DateOnly::class,
                 'scheduled_issue_date' => DateOnly::class,
