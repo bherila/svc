@@ -17,11 +17,11 @@ return new class extends Migration
         Schema::table('workspace_payment_connections', function (Blueprint $table): void {
             $table->index(['reuses_connection_id', 'id'], 'payment_connection_reuse_source_idx');
         });
-        DB::table('workspaces')->whereExists(function ($query): void {
+        DB::table('workspaces')->whereNull('stripe_credential_version')->whereExists(function ($query): void {
             $query->selectRaw('1')->from('workspace_payment_connections')
                 ->whereColumn('workspace_payment_connections.workspace_id', 'workspaces.id')
                 ->where('processor', 'stripe');
-        })->update(['stripe_credential_version' => 'disconnected']);
+        })->update(['stripe_credential_version' => 'backfill']);
 
         DB::table('workspace_payment_connections as local')
             ->leftJoin('workspace_payment_connections as source', 'source.id', '=', 'local.reuses_connection_id')
@@ -40,13 +40,21 @@ return new class extends Migration
                     }
                     // This immutable format also identifies the rows captured alongside
                     // the actual key by PaymentConnectionResolver. No timestamps suffice.
-                    DB::table('workspaces')->where('id', $row->workspace_id)->update([
-                        'stripe_credential_version' => 'connection:'.$row->id.':source:'.$sourceId,
-                    ]);
-                    DB::table('workspaces')->where('id', $row->workspace_id)
-                        ->where('stripe_refused_at', '<', $row->connected_at)->update(['stripe_refused_at' => null]);
+                    $version = 'connection:'.$row->id.':source:'.$sourceId;
+                    $updated = DB::table('workspaces')->where('id', $row->workspace_id)
+                        ->where('stripe_credential_version', 'backfill')
+                        ->update(['stripe_credential_version' => $version]);
+                    if ($updated === 1) {
+                        // A reconnect may finish after this chunk was selected.
+                        // Never replace its fence or clear its genuine refusal.
+                        DB::table('workspaces')->where('id', $row->workspace_id)
+                            ->where('stripe_credential_version', $version)
+                            ->where('stripe_refused_at', '<', $row->connected_at)->update(['stripe_refused_at' => null]);
+                    }
                 }
             }, 'local.id', 'id');
+        DB::table('workspaces')->where('stripe_credential_version', 'backfill')
+            ->update(['stripe_credential_version' => 'disconnected']);
     }
 
     public function down(): void

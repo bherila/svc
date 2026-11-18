@@ -40,7 +40,7 @@ final class PaymentConnectionResolver
         $source = $this->connections->credentialSource($connection);
         $secret = $source?->secret();
 
-        return $secret === null || $source === null ? null : StripeAccess::forKey($secret, new StripeCredentialIdentity(
+        return $secret === null ? null : StripeAccess::forKey($secret, new StripeCredentialIdentity(
             (int) $connection->workspace_id, (int) $connection->id, (int) $source->id,
         ));
     }

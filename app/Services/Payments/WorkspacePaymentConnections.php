@@ -7,6 +7,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
 use App\Models\WorkspacePaymentConnection;
 use App\Support\Access\StaffRole;
+use App\Support\Concurrency\Locks;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
 use App\Support\Payments\StripeCredentialIdentity;
@@ -316,7 +317,7 @@ final class WorkspacePaymentConnections
                     ->where('processor', $processor->value)
                     ->whereNull('revoked_at')
                     ->whereNull('reuses_connection_id')
-                    ->lockForUpdate()->first();
+                    ->tap(Locks::forUpdate())->first();
                 if ($origin === null) {
                     throw new DomainException('That connection cannot be reused.');
                 }
@@ -362,7 +363,7 @@ final class WorkspacePaymentConnections
             $dependents = WorkspacePaymentConnection::query()
                 ->where('reuses_connection_id', $connection->id)
                 ->whereNull('revoked_at')
-                ->orderBy('id')->lockForUpdate()->get();
+                ->orderBy('id')->tap(Locks::forUpdate())->get();
             foreach ($dependents as $dependent) {
                 $this->markRevoked($dependent, $actor);
             }

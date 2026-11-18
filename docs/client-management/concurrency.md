@@ -982,3 +982,26 @@ acquiring expense locks ahead of time. Legacy claims to generated lines have no
 current writer. Credit cleanup, whose production callers all compose a new
 header or a reset-verified draft, also deletes only its exact credit-line ids:
 an empty range DELETE was enough to scan and lock another draft's lines.
+
+
+### Stripe credential generations (#753)
+
+Autopay health takes only the workspace row under an exclusive registered lock:
+its current nonsecret generation must equal the local/source row identities that
+were captured alongside the actual request key. No ordinary credential lookup is
+used to approve a health write, so a REPEATABLE READ snapshot cannot approve A
+after B reconnects. Health and its once-per-breakage activity commit together;
+the external Stripe request and actual payment recording are outside that short
+transaction.
+
+Connection reuse locks the effective source before retiring/inserting the target;
+source revocation serializes on that source and takes a current locking read of
+its dependents on `(reuses_connection_id, id)`. These credential locks precede the
+workspace-generation writes. The new `WorkspacePaymentConnection` registry entry
+therefore sits before `Workspace`; existing billing locks retain their relative order.
+The source lock prevents reuse from appearing after a completed revocation
+cascade, and the current dependent read includes a borrower committed after the
+revoker's ordinary snapshot. Each dependent's generation is invalidated in the
+same transaction as revocation, including source reconnects and same-second
+replacements. The MariaDB two-session controls in
+`StripeCredentialGenerationSnapshotTest` exercise those current-read boundaries.

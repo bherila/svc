@@ -3,6 +3,7 @@
 namespace App\Services\Payments;
 
 use App\Models\Workspace;
+use App\Support\Concurrency\Locks;
 use App\Support\Payments\PaymentProcessor;
 use App\Support\Payments\StripeCredentialIdentity;
 use App\Support\Payments\StripeHealthRefusal;
@@ -85,7 +86,7 @@ final class StripeConnectionHealth
             // A locking read sees the current generation even when the caller's
             // REPEATABLE READ snapshot predates reconnect. Connection writers
             // save this fence and reset the marker in their own transaction.
-            $current = DB::table('workspaces')->where('id', $workspace->id)->lockForUpdate()
+            $current = DB::table('workspaces')->where('id', $workspace->id)->tap(Locks::forUpdate())
                 ->first(['stripe_credential_version', 'stripe_refused_at']);
             if ($current === null || $current->stripe_credential_version !== $identity->connectionVersion()) {
                 return null;
