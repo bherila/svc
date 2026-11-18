@@ -117,6 +117,9 @@ final class AllocationService
         if ($root !== null) {
             $group->prepend($root);
         }
+        // A malformed legacy self-parent is returned by both lookups. Never
+        // count it twice: merge would otherwise delete its own survivor.
+        $group = $group->unique('id')->values();
         $ids = $group->modelKeys();
         // Scoped to the workspace so the read is a bounded lookup on
         // (workspace_id, client_time_entry_id) - unscoped, the locking scan

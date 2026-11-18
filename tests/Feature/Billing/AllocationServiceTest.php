@@ -49,6 +49,17 @@ final class AllocationServiceTest extends TestCase
         $this->user = User::factory()->create();
     }
 
+    public function test_a_legacy_self_parent_is_not_counted_twice_or_deleted_during_recombination(): void
+    {
+        $entry = $this->entry(180);
+        $entry->forceFill(['split_from_time_entry_id' => $entry->id])->save();
+
+        $this->assertSame(0, $this->recombine());
+        $this->assertSame(1, $this->entryCount());
+        $this->assertSame(180, $entry->fresh()->minutes);
+        $this->assertNull($entry->fresh()->deleted_at);
+    }
+
     public function test_a_split_entry_recombines_into_one(): void
     {
         $entry = $this->entry(180);
