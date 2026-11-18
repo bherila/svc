@@ -25,6 +25,7 @@ use Tests\Feature\Billing\InvoiceHoursStatementTest;
 use Tests\Feature\Billing\InvoiceLineComposerTest;
 use Tests\Feature\Billing\InvoiceReviewDeliveryTest;
 use Tests\Feature\Billing\InvoicingExamplesTest;
+use Tests\Feature\Billing\LateWorkTest;
 use Tests\Feature\Billing\PricingBasisTest;
 use Tests\Feature\Billing\ReopenAndReissueInvoiceTest;
 use Tests\Feature\Billing\ReplaySnapshotNullIdentityTest;
@@ -175,6 +176,8 @@ final class NullSemanticsRegistryTest extends TestCase
      * @var list<string>
      */
     private const REGISTERED_BRANCHES = [
+        'client_invoices.billing_eligibility_event_id => covered_by:Tests\Feature\Billing\LateWorkTest::test_ambiguous_legacy_rows_keep_the_strict_timestamp_policy',
+        'client_time_entries.billing_eligibility_event_id => covered_by:Tests\Feature\Billing\LateWorkTest::test_an_entry_without_ordering_evidence_is_not_guessed_from_equal_seconds',
         'client_agreements.activated_at => covered_by:Tests\Feature\EngagementWorkflowTest::test_only_an_unstamped_agreement_takes_an_activation_date',
         'client_agreements.bill_overage_interim => covered_by:Tests\Feature\Billing\CapacityAndScopeGuardsTest::test_an_agreement_with_no_interim_policy_bills_no_interim_overage',
         'client_agreements.catch_up_threshold_minutes => covered_by:Tests\Feature\Billing\InvoicingExamplesTest::test_an_unset_threshold_defaults_to_one_hour',
@@ -368,6 +371,10 @@ final class NullSemanticsRegistryTest extends TestCase
      */
     private const REGISTRY = [
         'client_invoices' => [
+            'billing_eligibility_event_id' => [
+                'covered_by' => LateWorkTest::class,
+                'method' => 'test_ambiguous_legacy_rows_keep_the_strict_timestamp_policy',
+            ],
             // Null for every invoice that sells no retainer and every one
             // generated before the statement existed: the document prints
             // without a statement rather than computing one from today's
@@ -1043,6 +1050,10 @@ final class NullSemanticsRegistryTest extends TestCase
             'agreement_link' => 'PENDING-AUDIT',
         ],
         'client_time_entries' => [
+            'billing_eligibility_event_id' => [
+                'covered_by' => LateWorkTest::class,
+                'method' => 'test_an_entry_without_ordering_evidence_is_not_guessed_from_equal_seconds',
+            ],
             // Part of the fragment-recombination signature, where null is
             // compared as a typed value distinct from a task id and decides
             // whether two fragments may merge. Treating it as inert would let

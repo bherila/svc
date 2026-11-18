@@ -8,13 +8,20 @@ use App\Support\Concurrency\Locks;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use PDO;
 use Throwable;
+use WeakMap;
 
 /** Explicit eligibility events, ordered at the final physical-commit fence. */
 final class BillingEligibilityOrder
 {
-    /** @var array<string, array<int, array{workspace: int, company: int, depth: int}>> */
-    private array $pending = [];
+    /** @var WeakMap<PDO, array<int, array{workspace: int, company: int, depth: int}>> */
+    private WeakMap $pending;
+
+    public function __construct()
+    {
+        $this->pending = new WeakMap;
+    }
 
     public function record(int $workspaceId, int $companyId): int
     {
@@ -23,9 +30,12 @@ final class BillingEligibilityOrder
             throw new LogicException('Billing eligibility requires its domain transaction.');
         }
         $id = (int) $connection->table('billing_eligibility_event_reservations')->insertGetId([]);
-        $this->pending[$connection->getName()][$id] = [
+        $pdo = $connection->getPdo();
+        $registered = $this->pending[$pdo] ?? [];
+        $registered[$id] = [
             'workspace' => $workspaceId, 'company' => $companyId, 'depth' => $connection->transactionLevel(),
         ];
+        $this->pending[$pdo] = $registered;
 
         return $id;
     }
@@ -37,10 +47,12 @@ final class BillingEligibilityOrder
     public function positions(int $workspaceId, int $companyId, array $ids): array
     {
         $connection = DB::connection();
+        $pdo = $connection->getRawPdo();
+        $registered = $pdo instanceof PDO ? ($this->pending[$pdo] ?? []) : [];
         $positions = [];
         $stored = [];
         foreach ($ids as $id) {
-            $pending = $this->pending[$connection->getName()][$id] ?? null;
+            $pending = $registered[$id] ?? null;
             if ($pending !== null && $pending['workspace'] === $workspaceId && $pending['company'] === $companyId) {
                 $positions[$id] = new BillingEligibilityPosition($id, null);
             } else {
@@ -81,7 +93,8 @@ final class BillingEligibilityOrder
         if ($connection->transactionLevel() !== 1) {
             return;
         }
-        $pending = $this->pending[$connection->getName()] ?? [];
+        $pdo = $connection->getPdo();
+        $pending = $this->pending[$pdo] ?? [];
         if ($pending === []) {
             return;
         }
@@ -132,13 +145,17 @@ final class BillingEligibilityOrder
                     $sequence = (int) $counter->sequence;
                     foreach (array_chunk($ids, 200) as $chunk) {
                         $cases = [];
+                        $bindings = [];
                         foreach ($chunk as $id) {
-                            $cases[] = 'WHEN '.(int) $id.' THEN '.(++$sequence);
+                            $cases[] = 'WHEN ? THEN ?';
+                            $bindings[] = $id;
+                            $bindings[] = ++$sequence;
                         }
-                        $connection->table('client_billing_eligibility_events')
-                            ->where('workspace_id', $workspaceId)->where('client_company_id', $companyId)
-                            ->whereIn('id', $chunk)
-                            ->update(['sequence' => DB::raw('CASE id '.implode(' ', $cases).' END')]);
+                        $connection->update(
+                            'update client_billing_eligibility_events set sequence = CASE id '.implode(' ', $cases)
+                                .' END where workspace_id = ? and client_company_id = ? and id in ('.implode(', ', array_fill(0, count($chunk), '?')).')',
+                            [...$bindings, $workspaceId, $companyId, ...$chunk],
+                        );
                     }
                     $connection->table('client_billing_eligibility_counters')
                         ->where('workspace_id', $workspaceId)->where('client_company_id', $companyId)
@@ -151,7 +168,7 @@ final class BillingEligibilityOrder
             }
             // Do not retain completed registrations while afterCommit callbacks
             // run (one may fail before Laravel emits TransactionCommitted).
-            unset($this->pending[$connection->getName()]);
+            unset($this->pending[$pdo]);
         } catch (Throwable $exception) {
             // Laravel's non-retryable committing-listener failures do not
             // reliably roll PDO back. Never leave business writes committable.
@@ -163,29 +180,40 @@ final class BillingEligibilityOrder
 
     public function committed(Connection $connection): void
     {
-        $name = $connection->getName();
+        $pdo = $connection->getRawPdo();
+        if (! $pdo instanceof PDO) {
+            return;
+        }
         $depth = $connection->transactionLevel();
         if ($depth === 0) {
-            unset($this->pending[$name]);
+            unset($this->pending[$pdo]);
 
             return;
         }
-        foreach ($this->pending[$name] ?? [] as $id => $event) {
-            $this->pending[$name][$id]['depth'] = min($event['depth'], $depth);
+        $registered = $this->pending[$pdo] ?? [];
+        foreach ($registered as $id => $event) {
+            $registered[$id] = [...$event, 'depth' => min($event['depth'], $depth)];
         }
+        $this->pending[$pdo] = $registered;
     }
 
     public function rolledBack(Connection $connection): void
     {
-        $name = $connection->getName();
+        $pdo = $connection->getRawPdo();
+        if (! $pdo instanceof PDO) {
+            return;
+        }
         $depth = $connection->transactionLevel();
-        foreach ($this->pending[$name] ?? [] as $id => $event) {
+        $registered = $this->pending[$pdo] ?? [];
+        foreach ($registered as $id => $event) {
             if ($event['depth'] > $depth) {
-                unset($this->pending[$name][$id]);
+                unset($registered[$id]);
             }
         }
-        if ($depth === 0) {
-            unset($this->pending[$name]);
+        if ($registered === []) {
+            unset($this->pending[$pdo]);
+        } else {
+            $this->pending[$pdo] = $registered;
         }
     }
 }

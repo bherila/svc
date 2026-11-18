@@ -1847,9 +1847,12 @@ class ClientDirectoryTest extends TestCase
             }
 
             $reparented = true;
-            DB::table('client_companies')
+            // The new seeded counter already carries a composite company
+            // key. Keep this an application-authorization regression by
+            // explicitly seeding the legacy reparent that schema now refuses.
+            $this->writingLegacyCrossTenantRows(fn () => DB::table('client_companies')
                 ->where('id', $company->id)
-                ->update(['workspace_id' => $foreign->id]);
+                ->update(['workspace_id' => $foreign->id]));
         });
 
         $this->browserClientPatch($manager, $mine, $company, [

@@ -23,7 +23,9 @@ Two committed events compare their per-company sequences. Thus a lower allocated
 ID that commits later is still later work. No event ordering is inferred from an
 unlocked snapshot of time-entry membership or a maximum time-entry ID.
 
-The coordinator is scoped to a connection and tracks savepoint depth. Savepoint
+The coordinator keys registrations by physical PDO identity in a WeakMap and
+tracks savepoint depth. Disconnect/replacement cannot borrow an abandoned
+session's registrations or retain its PDO handle. Savepoint
 commit promotes its registrations to the parent; rollback drops registrations
 from abandoned depths; outer commit/rollback clears them. Its commit listener
 runs only at physical depth one. If sequence assignment fails, it rolls back the

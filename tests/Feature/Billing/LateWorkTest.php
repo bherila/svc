@@ -202,11 +202,28 @@ final class LateWorkTest extends TestCase
             ->update(['billing_eligibility_event_id' => null]);
         $legacy = $this->hours('2026-01-15', 30);
         $ordered = $this->orderedHours('2026-01-16', 30);
+        $this->assertNull($issued->fresh()?->billing_eligibility_event_id);
+        $this->assertNotNull($ordered->billing_eligibility_event_id);
         $this->hours('2026-02-10', 60);
         $draft = $this->generate($agreement, '2026-03-01');
         $this->assertSame(10000, (int) $draft->total_amount);
         $this->assertSame([], $this->invoicesCarrying($legacy));
         $this->assertSame([], $this->invoicesCarrying($ordered));
+    }
+
+    public function test_an_entry_without_ordering_evidence_is_not_guessed_from_equal_seconds(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $issued = app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        $legacy = $this->hours('2026-01-15', 30);
+        $this->assertNotNull($issued->billing_eligibility_event_id);
+        $this->assertNull($legacy->billing_eligibility_event_id);
+        $this->assertSame($issued->issued_at?->format('Y-m-d H:i:s'), $legacy->created_at?->format('Y-m-d H:i:s'));
+        $this->hours('2026-02-10', 60);
+        $draft = $this->generate($agreement, '2026-03-01');
+        $this->assertSame(10000, (int) $draft->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($legacy));
     }
 
     public function test_only_real_eligibility_edits_move_an_existing_entries_order(): void

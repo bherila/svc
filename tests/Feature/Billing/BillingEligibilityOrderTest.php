@@ -148,6 +148,19 @@ final class BillingEligibilityOrderTest extends TestCase
         return ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic '.$suffix, 'slug' => 'synthetic-'.$suffix]);
     }
 
+    public function test_replacing_a_connection_cannot_borrow_its_abandoned_pending_positions(): void
+    {
+        $order = app(BillingEligibilityOrder::class);
+        DB::beginTransaction();
+        $id = $order->record($this->workspace->id, $this->company->id);
+        self::assertArrayHasKey($id, $order->positions($this->workspace->id, $this->company->id, [$id]));
+        // Disconnect rolls PDO's transaction back without Laravel's rollback
+        // event. A replacement session may reuse the same configured name.
+        DB::purge('billing_eligibility_order');
+        self::assertSame(0, DB::transactionLevel());
+        self::assertSame([], $order->positions($this->workspace->id, $this->company->id, [$id]));
+    }
+
     private function counter(): int
     {
         return (int) DB::table('client_billing_eligibility_counters')->where('workspace_id', $this->workspace->id)
