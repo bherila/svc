@@ -83,14 +83,15 @@ final class InvoiceLifecycleService
      * @param  list<array<string, mixed>>  $lines
      * @param  array<int, int>  $subtotalOverrides
      * @param  (callable(ClientInvoice): void)|null  $beforeGenerationRecorded  final composition inside the draft transaction
+     * @param  (callable(ClientInvoice): array{list<array<string, mixed>>, array<int, int>})|null  $prepareLinesAfterHeader  lock line inputs only after the invoice insert
      */
-    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines, array $subtotalOverrides = [], ?callable $beforeGenerationRecorded = null): ClientInvoice
+    public function createDraft(Workspace $workspace, ClientCompany $company, array $attributes, array $lines, array $subtotalOverrides = [], ?callable $beforeGenerationRecorded = null, ?callable $prepareLinesAfterHeader = null): ClientInvoice
     {
         $this->assertCompanyTenant($workspace, $company);
         $currency = MoneyService::currency($attributes['currency'] ?? null);
         $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
 
-        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals, $beforeGenerationRecorded): ClientInvoice {
+        return DB::transaction(function () use ($workspace, $company, $attributes, $lines, $subtotalOverrides, $currency, $totals, $beforeGenerationRecorded, $prepareLinesAfterHeader): ClientInvoice {
             BillingMaintenance::share($workspace->id);
             $invoice = ClientInvoice::query()->create([
                 'workspace_id' => $workspace->id,
@@ -137,6 +138,11 @@ final class InvoiceLifecycleService
                 'is_visible_to_client' => (bool) ($attributes['is_visible_to_client'] ?? false),
             ]);
 
+            if ($prepareLinesAfterHeader !== null) {
+                [$lines, $subtotalOverrides] = $prepareLinesAfterHeader($invoice);
+                $totals = MoneyService::invoiceTotals($lines, $subtotalOverrides);
+                $invoice->forceFill([...$totals, 'balance_amount' => $totals['total_amount']])->save();
+            }
             $this->createLines($invoice, $workspace, $lines, $subtotalOverrides);
             if ($beforeGenerationRecorded !== null) {
                 $beforeGenerationRecorded($invoice);
@@ -487,7 +493,7 @@ final class InvoiceLifecycleService
                     $interimTime = $this->interimOverageGenerator()->lockTimeFingerprint($locked, $agreement, $interimClaims[0]);
                     // Allocations rank after time and before the disputed
                     // expenses the next check locks.
-                    $interimLedger = $this->interimOverageGenerator()->lockLedgerAllocations($locked, $interimLedger);
+                    $interimLedger = $this->interimOverageGenerator()->lockLedgerAllocations($locked, $interimLedger, $agreement, $interimClaims[0], $lineIds);
                 }
                 // Every ledger input the draft was priced from, read with
                 // share locks at the time phase (#718). A moved basis is

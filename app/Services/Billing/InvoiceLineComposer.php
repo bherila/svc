@@ -16,6 +16,7 @@ use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\FlatHourlyGroup;
 use App\Support\Billing\FlatHourlyPricing;
 use App\Support\Billing\HoursQuantity;
+use App\Support\Billing\InvoiceChangedDuringGeneration;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Concurrency\Locks;
@@ -37,6 +38,33 @@ class InvoiceLineComposer
      */
     public function resetSystemGeneratedLines(ClientInvoice $invoice, bool $preserveExpenseClaims = false): void
     {
+        // Exact-id deletes and later totals must describe the same line set.
+        // The invoice lock excludes current line writers, but the caller may
+        // already have an older RR snapshot. New lines always receive an
+        // auto-increment id: a current maximum detects added/replaced lines;
+        // exact primary-key reads then detect removed or changed old lines.
+        // Avoid a locking range scan of every line: its end gap can deadlock
+        // another draft's inserts even after deletes use primary keys (#735).
+        $lines = ClientInvoiceLine::query()
+            ->forceIndex('client_invoice_lines_workspace_id_client_invoice_id_index')
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderBy('id');
+        $snapshot = (clone $lines)->get();
+        $latest = (clone $lines)->reorder()->tap(Locks::forUpdate())->max('id');
+        if ($latest !== null && ! is_numeric($latest)) {
+            throw new InvoiceChangedDuringGeneration;
+        }
+        $currentMaximum = $latest === null ? null : (int) $latest;
+        if ($currentMaximum !== $snapshot->last()?->id) {
+            throw new InvoiceChangedDuringGeneration;
+        }
+        $attributes = static fn (ClientInvoiceLine $line): array => $line->getAttributes();
+        $current = (clone $lines)->forceIndex('PRIMARY')->whereKey($snapshot->modelKeys())
+            ->tap(Locks::forUpdate())->get()->map($attributes)->all();
+        if ($snapshot->map($attributes)->all() !== $current) {
+            throw new InvoiceChangedDuringGeneration;
+        }
         $invoice->assertLineOwnership();
         $systemLines = ClientInvoiceLine::query()
             ->where('workspace_id', $invoice->workspace_id)
@@ -70,19 +98,34 @@ class InvoiceLineComposer
             // Time is linked through a pivot here, so releasing it is a detach
             // rather than nulling a column. Milestones keep a column, because a
             // deliverable is never split across lines.
-            $line->timeEntries()->wherePivot('workspace_id', $line->workspace_id)->detach();
+            // A range DELETE on (line_id, time_id) next-key-locks the next
+            // draft's allocation. Read the tenant/line range instead, then
+            // delete exact primary keys so concurrent drafts never inherit
+            // each other's delete gaps (#735).
+            $allocationIds = DB::table('client_invoice_line_time_entries')
+                ->forceIndex('cilte_ws_line_idx')
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_line_id', $line->id)
+                ->tap(Locks::forUpdate())
+                ->pluck('id');
+            foreach ($allocationIds as $allocationId) {
+                DB::table('client_invoice_line_time_entries')
+                    ->where('workspace_id', $invoice->workspace_id)
+                    ->where('id', $allocationId)->delete();
+            }
             ClientTask::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->where('client_invoice_line_id', $line->id)
                 ->update(['client_invoice_line_id' => null]);
         }
 
-        ClientInvoiceLine::query()
-            ->where('workspace_id', $invoice->workspace_id)
-            ->where('client_invoice_id', $invoice->id)
-            ->whereIn('type', InvoiceLineType::systemGeneratedValues())
-            ->when($preserveExpenseClaims, fn (Builder $query): Builder => $query->whereNotIn('id', ClientExpense::withTrashed()->where('workspace_id', $invoice->workspace_id)->whereNotNull('client_invoice_line_id')->select('client_invoice_line_id')))
-            ->delete();
+        foreach ($lineIds as $lineId) {
+            ClientInvoiceLine::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_id', $invoice->id)
+                ->whereKey($lineId)
+                ->delete();
+        }
 
     }
 

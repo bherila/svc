@@ -927,3 +927,58 @@ changes take the invoice lock and advance its revision; stale preview versions o
 a changed current coverage roll back both payment and receipt. Provider HTTP and
 dispute reads happen before the transaction. Settlement metadata is applied after
 the receipt transaction through the existing settlement recorder.
+
+### Generation follow-ups (#735)
+
+Draft regeneration deletes allocation and line rows by their primary keys. A
+range DELETE through a line/time secondary index can next-key-lock the next
+draft's allocation; after that is removed, the equivalent line-range DELETE can
+produce the same cycle. Allocation ids are read currently through
+`cilte_ws_line_idx`, and both deletes name the exact primary keys.
+
+Recombination during generation visits only the agreement's project scope. It
+locks selected roots in primary-key order, reads each root separately from its
+siblings through `time_entry_split_parent_idx`, and reads existing allocations
+through `invoice_time_entry_once`. The former root-or-sibling query could scan
+and lock the whole workspace, and an allocation scan could then wait for a
+second draft's detach while that draft waited for the first lineage lock.
+
+Compare-and-set UPDATEs acquire row locks. New monthly generation reserves its
+issue-month number before consultant release and late-work deferral. Non-monthly
+generation reserves numbering before those writes when it can create its own
+invoice or missing interim invoices. Existing monthly refreshes keep their number
+and do not acquire the counter. The short, standalone release transaction has
+no later numbering step.
+
+Selected-time creation inserts its invoice header before locking the selected
+work. Line preparation and totals are completed inside the same transaction,
+before the generated activity is recorded, so invalid selections roll the
+header back. An interim issuer may hold the client's invoice range before
+reaching time; a selected creator waiting for that range must hold no time row.
+The MariaDB regression overlaps these operations; whether the insert blocks
+varies with the optimizer's range plan, so a separate query-order assertion
+pins header-before-time on every engine.
+
+An interim ledger refuses a same-workspace time allocation outside its locked
+company-invoice line set, including legacy/imported allocations to another
+company. It takes the current allocation read after the time phase and before
+company credit locks, and a refusal leaves the draft and foreign allocation
+unchanged.
+
+Before a draft's exact-id reset, generation also verifies that its caller's
+snapshot contains the current line set. A locking `MAX(id)` detects newly
+allocated lines, then locking primary-key reads compare every snapshot line's
+raw attributes (including identity). A mismatch raises the retryable
+`InvoiceChangedDuringGeneration` before any detach or delete. This protects
+later snapshot-based totals as well as replacement membership. The caller owns
+the invoice lock; all legitimate line writers serialize on it, and every new
+line receives its database auto-increment id. No current writer reassigns a line
+id or reparents an existing line to another invoice.
+
+Normal expense claiming creates a new `Expense` line rather than linking an
+expense to a pre-existing generated line. A concurrent expense rebuild therefore
+changes that verified line set and is refused, preserving its claim without
+acquiring expense locks ahead of time. Legacy claims to generated lines have no
+current writer. Credit cleanup, whose production callers all compose a new
+header or a reset-verified draft, also deletes only its exact credit-line ids:
+an empty range DELETE was enough to scan and lock another draft's lines.

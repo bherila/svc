@@ -323,6 +323,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: select
+            script: scripts/check-select-layout.mjs
           - name: collaboration
             script: scripts/check-collaboration-layout.mjs
           - name: task organization

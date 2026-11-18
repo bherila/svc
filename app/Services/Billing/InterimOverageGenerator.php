@@ -23,6 +23,7 @@ use App\Support\Billing\Unattributable;
 use App\Support\Concurrency\Locks;
 use App\Support\WorkspaceClock;
 use Carbon\Carbon;
+use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
@@ -238,7 +239,7 @@ final class InterimOverageGenerator
                 $this->invoiceNumberAllocator->lockNumbering($company->workspace_id);
             }
 
-            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
+            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company, $agreement);
 
             $entries = ClientTimeEntry::query()
                 ->where('workspace_id', $company->workspace_id)
@@ -459,9 +460,25 @@ final class InterimOverageGenerator
      * The work those lines hold, read with a share lock: allocations rank
      * after time, so this comes after every time lock of the issue and before
      * the company's.
+     *
+     * @param  list<int>  $draftLineIds  the draft's already-locked lines
      */
-    public function lockLedgerAllocations(ClientInvoice $draft, InterimLedgerFingerprint $ledger): InterimLedgerFingerprint
+    public function lockLedgerAllocations(ClientInvoice $draft, InterimLedgerFingerprint $ledger, ClientAgreement $agreement, BillingCycle $cycle, array $draftLineIds): InterimLedgerFingerprint
     {
+        // Capacity placement follows any same-workspace allocation, while the
+        // fingerprint only covers this company's invoices. Legacy/imported
+        // allocations outside that locked set cannot be priced safely.
+        $timeIds = $this->ledgerTime($draft, $agreement, $cycle, locking: true)
+            ->pluck('id')->all();
+        $outside = DB::table('client_invoice_line_time_entries')
+            ->where('workspace_id', $draft->workspace_id)
+            ->whereIn('client_time_entry_id', $timeIds)
+            ->whereNotIn('client_invoice_line_id', [...$ledger->lineIds, ...$draftLineIds])
+            ->tap(Locks::forShare())->first(['id']);
+        if ($outside !== null) {
+            throw new DomainException('The interim ledger contains a time allocation outside this client company. Repair the allocation before issuing.');
+        }
+
         return $ledger->withAllocations(self::digest($this->ledgerAllocations($draft, $ledger->lineIds, locking: true)));
     }
 
@@ -704,6 +721,25 @@ final class InterimOverageGenerator
      */
     private function timeFingerprint(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, bool $locking): string
     {
+        $query = $this->ledgerTime($draft, $agreement, $cycle, $locking)
+            ->select([
+                'id', 'client_project_id', 'client_task_id', 'worked_on', 'minutes', 'status', 'is_billable',
+                'is_deferred', 'split_from_time_entry_id', 'subcontractor_billing_mode', 'deleted_at',
+                // A dispute or its settlement moves a row in or out of the
+                // ledger (docs/ux-overhaul.md 7b″) without touching any column
+                // above; the version moves with every write to the row.
+                'client_disputed_at', 'client_dispute_settlement', 'lock_version',
+            ]);
+
+        return hash('sha256', (string) json_encode($query->toBase()->get()->map(fn (object $row): array => array_map(
+            fn (mixed $value): string => $value === null ? "\0" : (is_scalar($value) ? (string) $value : ''),
+            (array) $row,
+        ))->all(), JSON_THROW_ON_ERROR));
+    }
+
+    /** @return Builder<ClientTimeEntry> */
+    private function ledgerTime(ClientInvoice $draft, ClientAgreement $agreement, BillingCycle $cycle, bool $locking): Builder
+    {
         $query = ClientTimeEntry::query()
             ->withTrashed()
             ->where('workspace_id', $draft->workspace_id)
@@ -714,23 +750,12 @@ final class InterimOverageGenerator
             ->forAgreementScope($agreement)
             ->whereDate('worked_on', '>=', Carbon::parse((string) $agreement->starts_on)->startOfMonth()->toDateString())
             ->whereDate('worked_on', '<=', $cycle->end->toDateString())
-            ->orderBy('id')
-            ->select([
-                'id', 'client_project_id', 'client_task_id', 'worked_on', 'minutes', 'status', 'is_billable',
-                'is_deferred', 'split_from_time_entry_id', 'subcontractor_billing_mode', 'deleted_at',
-                // A dispute or its settlement moves a row in or out of the
-                // ledger (docs/ux-overhaul.md 7b″) without touching any column
-                // above; the version moves with every write to the row.
-                'client_disputed_at', 'client_dispute_settlement', 'lock_version',
-            ]);
+            ->orderBy('id');
         if ($locking) {
             $query->tap(Locks::forUpdate());
         }
 
-        return hash('sha256', (string) json_encode($query->toBase()->get()->map(fn (object $row): array => array_map(
-            fn (mixed $value): string => $value === null ? "\0" : (is_scalar($value) ? (string) $value : ''),
-            (array) $row,
-        ))->all(), JSON_THROW_ON_ERROR));
+        return $query;
     }
 
     /**

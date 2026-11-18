@@ -2,9 +2,16 @@
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientInvoice;
+use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
 use App\Services\Billing\AllocationService;
+use App\Services\Billing\BillingMaintenance;
 use App\Services\Billing\ClientInvoicingService;
+use App\Services\Billing\InvoiceFromTimeService;
+use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Billing\InvoiceNumberAllocator;
+use App\Support\Concurrency\Locks;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
@@ -45,6 +52,12 @@ DB::purge('generation_snapshot');
 // Reported with the outcome, so a test that asks for an isolation level can
 // see its session got it rather than the server's default.
 $isolation = (string) DB::selectOne('select @@session.tx_isolation as level')->level;
+if (isset($input['connection_file'])) {
+    if (! is_string($input['connection_file']) || ! str_starts_with($input['connection_file'], $barrierPrefix)) {
+        exit(2);
+    }
+    file_put_contents($input['connection_file'], (string) DB::selectOne('select connection_id() as id')->id);
+}
 
 $workspace = Workspace::query()->whereKey((int) $input['workspace'])->firstOrFail();
 $company = ClientCompany::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['company'])->firstOrFail();
@@ -58,6 +71,9 @@ $armed = $pauseOn !== 'never';
 DB::listen(static function (QueryExecuted $query) use (&$armed, $input, $pauseOn): void {
     $sql = strtolower($query->sql);
     if (! $armed || DB::transactionLevel() < 1) {
+        return;
+    }
+    if (($input['pause_lock_only'] ?? false) && ! str_contains($sql, 'for update') && ! str_contains($sql, 'lock in share mode')) {
         return;
     }
     if (is_string($pauseOn) ? ! str_contains($sql, strtolower($pauseOn)) : (! str_starts_with(ltrim($sql), 'select')
@@ -78,12 +94,44 @@ DB::listen(static function (QueryExecuted $query) use (&$armed, $input, $pauseOn
 });
 
 try {
+    if (($input['operation'] ?? 'generate') === 'numbered-time-lock') {
+        DB::transaction(function () use ($workspace, $input): void {
+            BillingMaintenance::share($workspace->id);
+            app(InvoiceNumberAllocator::class)->lockNumbering($workspace->id);
+            ClientTimeEntry::query()->where('workspace_id', $workspace->id)
+                ->whereKey((int) $input['entry_id'])->tap(Locks::forUpdate())->firstOrFail();
+        });
+        echo json_encode(['outcome' => 'success'], JSON_THROW_ON_ERROR)."\n";
+        exit(0);
+    }
+    if (($input['operation'] ?? 'generate') === 'issue') {
+        $invoice = ClientInvoice::query()->where('workspace_id', $workspace->id)->findOrFail((int) $input['invoice']);
+        app(InvoiceLifecycleService::class)->issue($invoice, $workspace);
+        echo json_encode(['outcome' => 'success'], JSON_THROW_ON_ERROR)."\n";
+        exit(0);
+    }
+    if (($input['operation'] ?? 'generate') === 'selected') {
+        app(InvoiceFromTimeService::class)->create($workspace, $company, [
+            'invoice_number' => 'SYN-SELECTED-1', 'currency' => 'USD',
+        ], [(string) $input['entry']]);
+        echo json_encode(['outcome' => 'success'], JSON_THROW_ON_ERROR)."\n";
+        exit(0);
+    }
     if (($input['operation'] ?? 'generate') === 'recombine') {
         $merged = app(AllocationService::class)->recombineUnlinkedFragments($workspace, $company);
         echo json_encode(['outcome' => 'success', 'merged' => $merged], JSON_THROW_ON_ERROR)."\n";
         exit(0);
     }
-    $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+    if (($input['operation'] ?? 'generate') === 'snapshot-generate') {
+        $draft = DB::transaction(function () use ($workspace, $company, $agreement, $input) {
+            DB::table('client_invoice_lines')->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', (int) $input['invoice'])->get();
+
+            return app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+        });
+    } else {
+        $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+    }
     echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate, 'isolation' => $isolation], JSON_THROW_ON_ERROR)."\n";
 } catch (QueryException $failure) {
     echo json_encode(['outcome' => 'failed', 'class' => $failure::class, 'code' => $failure->errorInfo[1] ?? null, 'message' => $failure->getMessage()], JSON_THROW_ON_ERROR)."\n";

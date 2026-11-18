@@ -99,7 +99,8 @@ final class LateWork
      * Set a retainer agreement's late work aside before the ledger is read.
      * Call it inside the generating transaction, where
      * {@see ConsultantTimeReleaser} runs and for the same reason: each write is
-     * a compare-and-set, so it takes no row locks ahead of the numbering rows.
+     * a compare-and-set but still takes row locks. Reserve numbering first when
+     * the transaction can create an invoice.
      *
      * @return int how many rows were deferred
      */

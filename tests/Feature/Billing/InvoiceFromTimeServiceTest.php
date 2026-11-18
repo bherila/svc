@@ -14,7 +14,9 @@ use App\Support\AgentApi\AgentApiVersion;
 use App\Support\Billing\InvoiceLineDetail;
 use App\Support\Billing\SubcontractorBillingMode;
 use DomainException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 final class InvoiceFromTimeServiceTest extends TestCase
@@ -29,7 +31,16 @@ final class InvoiceFromTimeServiceTest extends TestCase
         $user = User::factory()->create();
         $entry = ClientTimeEntry::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id, 'user_id' => $user->id, 'worked_on' => '2026-08-23', 'minutes' => 60, 'description' => 'Approved work', 'is_billable' => true, 'status' => 'approved', 'billing_rate_amount' => 12000, 'currency' => 'USD']);
 
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = str_replace(['`', '"'], '', strtolower($query->sql));
+        });
         $invoice = app(InvoiceFromTimeService::class)->create($workspace, $company, ['invoice_number' => 'SVC-00001', 'currency' => 'USD'], [$entry->public_id]);
+        $headerInsert = array_find_key($statements, fn (string $sql): bool => str_starts_with($sql, 'insert into client_invoices '));
+        $timeRead = array_find_key($statements, fn (string $sql): bool => str_starts_with($sql, 'select ') && str_contains($sql, 'from client_time_entries '));
+        $this->assertNotNull($headerInsert);
+        $this->assertNotNull($timeRead);
+        $this->assertLessThan($timeRead, $headerInsert, 'The header must be inserted before selected time is locked.');
 
         $this->assertSame(12000, $invoice->total_amount);
         $this->assertSame($project->id, $invoice->lines->sole()->client_project_id);

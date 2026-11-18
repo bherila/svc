@@ -5,6 +5,7 @@ namespace Tests\Feature\Billing;
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
+use App\Models\ClientInvoiceLine;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
@@ -14,6 +15,7 @@ use App\Services\Billing\InterimOverageGenerator;
 use App\Services\Billing\InvoiceLedgerBuilder;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Support\Billing\InterimClaimRefused;
+use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -205,6 +207,44 @@ class InterimClaimValidityTest extends TestCase
         }
 
         $this->assertSame(20.0, $this->chargedInterimHours($agreement));
+    }
+
+    public function test_a_legacy_allocation_to_another_company_is_refused_before_issue(): void
+    {
+        $agreement = $this->legacyAgreement();
+        $this->worked('2024-01-10', 900);
+        $this->worked('2024-02-10', 900);
+        [$january] = $this->drafts($agreement);
+        $deferred = ClientTimeEntry::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $this->company->id,
+            'client_project_id' => $this->project->id, 'user_id' => $this->user->id,
+            'worked_on' => '2024-01-15', 'minutes' => 60, 'description' => 'Synthetic deferred work',
+            'is_billable' => true, 'is_deferred' => true, 'status' => 'approved', 'currency' => 'USD',
+        ]);
+        $other = ClientCompany::query()->create([
+            'workspace_id' => $this->workspace->id, 'name' => 'Synthetic other client', 'slug' => 'synthetic-other-client',
+        ]);
+        $invoice = ClientInvoice::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_company_id' => $other->id,
+            'invoice_number' => 'SYN-OTHER-1', 'invoice_kind' => 'ad_hoc', 'status' => 'issued', 'currency' => 'USD',
+        ]);
+        $line = ClientInvoiceLine::query()->create([
+            'workspace_id' => $this->workspace->id, 'client_invoice_id' => $invoice->id,
+            'type' => 'carried_deferred_applied', 'description' => 'Synthetic legacy allocation',
+            'quantity' => '1', 'unit_amount' => 0, 'total_amount' => 0, 'tax_amount' => 0,
+            'line_date' => '2024-02-01', 'hours' => '1', 'sort_order' => 0,
+        ]);
+        $line->timeEntries()->attach($deferred->id, ['workspace_id' => $this->workspace->id]);
+        $before = $this->fingerprint($january);
+        try {
+            $this->issue($january);
+            $this->fail('A foreign company allocation was accepted.');
+        } catch (DomainException $refusal) {
+            $this->assertStringContainsString('outside this client company', $refusal->getMessage());
+        }
+        $this->assertSame($before, $this->fingerprint($january));
+        $this->assertSame('draft', $january->fresh()->status);
+        $this->assertSame([$deferred->id], $line->timeEntries()->pluck('client_time_entries.id')->all());
     }
 
     private function legacyAgreement(): ClientAgreement

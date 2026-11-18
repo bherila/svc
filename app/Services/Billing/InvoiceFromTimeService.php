@@ -39,9 +39,21 @@ final class InvoiceFromTimeService
             BillingMaintenance::share($workspace->id);
             $attributes['currency'] = MoneyService::currency(strtoupper((string) ($attributes['currency'] ?? $workspace->default_currency)));
             $attributes['invoice_number'] ??= $this->numbers->next($workspace);
-            [$lines, $subtotalOverrides] = $this->prepareLines($workspace, $company, $attributes['currency'], $timeEntryIds, $manualLines);
-            $invoice = $this->invoices->createDraft($workspace, $company, $attributes, $lines, $subtotalOverrides);
-            $this->attachTime($invoice, $workspace, $lines);
+            $lines = [];
+            // An interim issue holds the client's invoice range before locking
+            // time. Insert our header before taking the selected time locks:
+            // waiting on that range must never hold the work the issuer needs.
+            $invoice = $this->invoices->createDraft(
+                $workspace, $company, $attributes, [],
+                beforeGenerationRecorded: function (ClientInvoice $draft) use ($workspace, &$lines): void {
+                    $this->attachTime($draft, $workspace, $lines);
+                },
+                prepareLinesAfterHeader: function () use ($workspace, $company, $attributes, $timeEntryIds, $manualLines, &$lines): array {
+                    [$lines, $subtotalOverrides] = $this->prepareLines($workspace, $company, $attributes['currency'], $timeEntryIds, $manualLines);
+
+                    return [$lines, $subtotalOverrides];
+                },
+            );
 
             return $invoice->fresh(['lines', 'clientCompany']);
         });

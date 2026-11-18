@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\AssertsNoBillingExternalEffects;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
  */
 final class RehearseGenerationTest extends TestCase
 {
+    use AssertsNoBillingExternalEffects;
     use RefreshDatabase;
 
     private Workspace $workspace;
@@ -77,6 +79,23 @@ final class RehearseGenerationTest extends TestCase
         $this->artisan('svc:billing:rehearse-generation', ['--workspace' => $this->workspace->public_id])
             ->expectsOutputToContain('No settled invoice was touched')
             ->assertSuccessful();
+    }
+
+    public function test_rehearsal_generates_without_external_calls_mail_notifications_or_jobs(): void
+    {
+        $this->travelTo('2024-03-01');
+        $this->settledHistory();
+        ClientAgreement::query()->where('workspace_id', $this->workspace->id)->update(['billing_cadence' => 'monthly']);
+        $this->company->forceFill(['billing_email' => 'billing@synthetic.example.test', 'automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $before = $this->fingerprint();
+        $this->recordBillingExternalEffects();
+
+        $this->assertSame(0, Artisan::call('svc:billing:rehearse-generation', ['--workspace' => $this->workspace->public_id, '--format' => 'json']));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertGreaterThan(0, $report['summary']['invoices_created'], 'The no-effects control must actually generate drafts.');
+        $this->assertSame(0, $report['summary']['generation_failures']);
+        $this->assertSame($before, $this->fingerprint());
+        $this->assertNoBillingExternalEffects();
     }
 
     /**

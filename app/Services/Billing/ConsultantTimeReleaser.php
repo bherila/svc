@@ -32,8 +32,8 @@ use Illuminate\Support\Facades\DB;
  * Which entries qualify is {@see ConsultantTimeRelease}; this class only finds
  * the candidates under the workspace and company, locks them, and writes.
  * Call it inside the generating transaction, before anything reads the ledger.
- * It takes no row locks (see the write below), so it is safe to call before
- * the numbering rows are locked.
+ * Its UPDATEs take row locks even when their predicates are compare-and-set;
+ * a transaction that can allocate an invoice number must reserve numbering first.
  */
 final class ConsultantTimeReleaser
 {
@@ -78,9 +78,8 @@ final class ConsultantTimeReleaser
             }
 
             // A compare-and-set rather than a read-modify-write under a lock:
-            // generation takes the numbering rows before it touches time, and
-            // locking entries here, ahead of them, would walk that order
-            // backwards. The status in the WHERE is what makes it safe - an
+            // generation reserves numbering before reaching these UPDATEs,
+            // which acquire row locks even without an explicit locking read. The status in the WHERE is what makes it safe - an
             // entry someone else moved meanwhile is simply not written. The
             // version too: the candidates are read through this transaction's
             // snapshot, and the rate written below is decided from that copy.
