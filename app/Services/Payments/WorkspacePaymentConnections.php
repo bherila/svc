@@ -51,11 +51,17 @@ final class WorkspacePaymentConnections
     /** Drop what this request has read; for anything that changes connections without this service. */
     public function forget(): void
     {
-        $this->rows = [];
-        $this->migrated = [];
+        $this->forgetRequest();
         foreach (PaymentProcessor::cases() as $processor) {
             Cache::forget(self::ANY_KEY.$processor->value);
         }
+    }
+
+    /** Reload this request's credential snapshots after observing another request's replacement. */
+    public function forgetRequest(): void
+    {
+        $this->rows = [];
+        $this->migrated = [];
     }
 
     /**

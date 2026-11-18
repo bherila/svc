@@ -387,6 +387,15 @@ final class AutopayConnectionRefusalTest extends TestCase
         $this->assertSame($row->id, $cached->credentialIdentity?->connectionId);
         $this->assertFalse(app(StripeConnectionHealth::class)->refuse($workspace, $cached));
         $this->assertNull(app(StripeConnectionHealth::class)->refusedAt($workspace));
+        $this->fakeAutopayStripe(function (string $method, string $path, array $params, array $headers): array {
+            $this->assertContains('Authorization: Bearer sk_test_synthetic_current_B', $headers);
+
+            return [['id' => 'pi_synthetic_current_B', 'object' => 'payment_intent', 'status' => 'succeeded']];
+        });
+        $service = app(AutopayChargeService::class);
+        $this->assertSame(AutopayChargeResult::Submitted, $service->run(50, true)[0]->result);
+        $this->assertCount(1, $this->autopayCharges());
+        $this->assertSame([], $service->run(50, true));
     }
 
     public function test_revocation_invalidates_an_in_flight_health_answer(): void

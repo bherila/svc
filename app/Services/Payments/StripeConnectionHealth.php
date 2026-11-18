@@ -104,6 +104,10 @@ final class StripeConnectionHealth
             $current = DB::table('workspaces')->where('id', $workspace->id)->tap(Locks::forUpdate())
                 ->first(['stripe_credential_version', 'stripe_refused_at', 'stripe_refused_credential_version']);
             if ($current === null || $current->stripe_credential_version !== $identity->connectionVersion()) {
+                // Another request may have replaced the row without invalidating
+                // this request's cache. The next charge must resolve B, not A.
+                $this->connections->forgetRequest();
+
                 return null;
             }
             if ($identity->connectionId === null) {
