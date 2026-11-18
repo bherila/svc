@@ -18,7 +18,6 @@ use App\Support\Access\AccessAuditAction;
 use App\Support\Access\AccessMutationContext;
 use App\Support\Access\StaffRole;
 use App\Support\Concurrency\Locks;
-use App\Support\SharedProjects\InvitationState;
 use App\Support\SharedProjects\InviteeAddress;
 use App\Support\WorkspaceClock;
 use App\Support\Workspaces\WorkspaceEdition;
@@ -124,7 +123,7 @@ final class SharedProjectParticipations
             return null;
         }
 
-        return $invitation->state($this->clock->now())->isOpen() ? $invitation : null;
+        return $invitation->isOpenInvitation($this->clock->now()) ? $invitation : null;
     }
 
     /** @return Collection<int, ClientProjectParticipationInvitation> */
@@ -136,8 +135,7 @@ final class SharedProjectParticipations
 
         return ClientProjectParticipationInvitation::query()
             ->where('email', InviteeAddress::normalize($user->email))
-            ->whereNull('accepted_at')->whereNull('declined_at')->whereNull('revoked_at')
-            ->where('expires_at', '>', $this->clock->now())
+            ->openInvitations($this->clock->now())
             ->with(['hostWorkspace', 'project'])
             ->orderBy('id')->limit(50)->get();
     }
@@ -151,7 +149,7 @@ final class SharedProjectParticipations
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation, $participant): ClientProjectParticipation {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
             $now = $this->clock->instant();
-            abort_unless($current->state($now)->isOpen() && InviteeAddress::matches($current->email, $actor->email), 404);
+            abort_unless($current->isOpenInvitation($now) && InviteeAddress::matches($current->email, $actor->email), 404);
             $this->requireOwnerOrAdmin($actor, $participant);
             $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($current->client_project_id)->firstOrFail();
 
@@ -192,7 +190,7 @@ final class SharedProjectParticipations
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation, $input): array {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
             $now = $this->clock->instant();
-            abort_unless($current->state($now)->isOpen() && InviteeAddress::matches($current->email, $actor->email), 404);
+            abort_unless($current->isOpenInvitation($now) && InviteeAddress::matches($current->email, $actor->email), 404);
             $project = ClientProject::query()->where('workspace_id', $locked->id)->whereKey($current->client_project_id)->firstOrFail();
 
             if ($this->managesAnotherWorkspace($actor, $locked)) {
@@ -273,7 +271,7 @@ final class SharedProjectParticipations
         return $this->locked($invitation->hostWorkspace, function (Workspace $locked) use ($actor, $invitation): ClientProjectParticipationInvitation {
             $current = ClientProjectParticipationInvitation::query()->where('host_workspace_id', $locked->id)->whereKey($invitation->id)->firstOrFail();
             $now = $this->clock->instant();
-            abort_unless($current->state($now)->isOpen(), 404);
+            abort_unless($current->isOpenInvitation($now), 404);
             $current->forceFill(['declined_at' => $now, 'resolved_by_user_id' => $actor->id])->save();
             $this->audit->record(AccessMutationContext::user($actor), $locked, AccessAuditAction::SharedProjectInvitationDeclined, $actor, ['invitation' => $current->public_id], null);
 
@@ -405,7 +403,7 @@ final class SharedProjectParticipations
 
     private function requireOpen(ClientProjectParticipationInvitation $invitation, CarbonImmutable $now): void
     {
-        abort_unless($invitation->state($now) === InvitationState::Pending, 404);
+        abort_unless($invitation->isOpenInvitation($now), 404);
     }
 
     /** The viewer must be the host's owner or admin, standing at a project of the host. */
