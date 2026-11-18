@@ -41,7 +41,7 @@ final class BillingEligibilityOrder
     }
 
     /**
-     * @param  list<int>  $ids
+     * @param  array<int, int>  $ids
      * @return array<int, BillingEligibilityPosition>
      */
     public function positions(int $workspaceId, int $companyId, array $ids): array

@@ -80,8 +80,8 @@ final class LateWork
                 $ids[] = $invoice->billing_eligibility_event_id;
             }
         }
-        $ids = array_values(array_unique($ids));
-        $positions = app(BillingEligibilityOrder::class)->positions((int) $agreement->workspace_id, (int) $agreement->client_company_id, $ids);
+        $ids = array_unique($ids);
+        $positions = app(BillingEligibilityOrder::class)->positions($agreement->workspace_id, $agreement->client_company_id, $ids);
         if (count($positions) !== count($ids)) {
             throw new LogicException('Billing eligibility history is missing or belongs to another client.');
         }
@@ -94,8 +94,15 @@ final class LateWork
             ->all());
     }
 
-    /** Did the invoice cover this row's date, and charge before the row could be billed? */
-    /** @param array<int, BillingEligibilityPosition> $positions */
+    /**
+     * Did the invoice cover this row's date, and charge before it could be billed?
+     * The public query requires both period bounds; removing either nullsafe
+     * operator here is equivalent. Public admission tests exercise null bounds.
+     *
+     * @infection-ignore NullSafeMethodCall
+     *
+     * @param  array<int, BillingEligibilityPosition>  $positions
+     */
     private function arrivedAfter(ClientTimeEntry $entry, ClientInvoice $invoice, array $positions): bool
     {
         $day = $entry->worked_on->toDateString();

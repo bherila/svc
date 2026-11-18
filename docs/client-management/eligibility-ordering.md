@@ -75,3 +75,13 @@ company/event parent during domain work; a non-null unknown or foreign pointer
 is refused. Supported single-company business operations cannot acquire another
 company parent at commit. Bulk approval locks all entries up front and writes no
 company row; commit-time company shares and counters are acquired in sorted order.
+
+## Deployment and existing drafts
+
+A generated draft recorded before this change can carry the old pricing digest.
+When that basis contains time rows, including the new nullable event pointer
+changes its digest even if every pointer is null. Issue safely refuses that draft
+with `PricingBasisChanged`; regenerate it through the normal draft rebuild before
+issuing. An empty time basis need not change. This does not rewrite charged
+invoices or automatically regenerate drafts. Already issued/imported history
+keeps its existing provenance exclusion and conservative equal-timestamp policy.

@@ -119,6 +119,7 @@ final class FillableCoverageTest extends TestCase
             'square_series_key' => 'The billed-in-Square marker (#438). Written only by SquareLinkService through forceFill, under the agreement lock, after the version check and the one-agreement-per-series check; assignable through the model, an agreement update could switch off SVC\'s collection paths with no confirmation and no history.',
         ],
         ClientInvoice::class => [
+            'billing_eligibility_event_id' => 'Frozen by InvoiceLifecycleService at first cadence issue through forceFill; caller mass assignment could falsify which work arrived after issue, and reissue must preserve the original boundary.',
             'hours_statement' => 'The hours statement the generator measured with the lines. Written only by ClientInvoicingService through forceFill in the generating transaction, and frozen at issue; a value assignable through the model could put figures on a client\'s invoice that no computation produced.',
         ],
         ClientInvoiceEmailDelivery::class => [
