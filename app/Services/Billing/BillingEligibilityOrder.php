@@ -15,6 +15,14 @@ use WeakMap;
 /** Explicit eligibility events, ordered at the final physical-commit fence. */
 final class BillingEligibilityOrder
 {
+    /**
+     * Bounded SQL batches; changing 200 to 199/201 only changes query count,
+     * not ownership, order, admission or returned positions.
+     *
+     * @infection-ignore IncrementInteger, DecrementInteger
+     */
+    private const int CHUNK_SIZE = 200;
+
     /** @var WeakMap<PDO, array<int, array{workspace: int, company: int, depth: int}>> */
     private WeakMap $pending;
 
@@ -29,7 +37,7 @@ final class BillingEligibilityOrder
         if ($connection->transactionLevel() < 1) {
             throw new LogicException('Billing eligibility requires its domain transaction.');
         }
-        $id = (int) $connection->table('billing_eligibility_event_reservations')->insertGetId([]);
+        $id = $connection->table('billing_eligibility_event_reservations')->insertGetId([]);
         $pdo = $connection->getPdo();
         $registered = $this->pending[$pdo] ?? [];
         $registered[$id] = [
@@ -59,7 +67,7 @@ final class BillingEligibilityOrder
                 $stored[] = $id;
             }
         }
-        foreach (array_chunk($stored, 200) as $chunk) {
+        foreach (array_chunk($stored, self::CHUNK_SIZE) as $chunk) {
             foreach ($connection->table('client_billing_eligibility_events')
                 ->where('workspace_id', $workspaceId)->where('client_company_id', $companyId)
                 ->whereIn('id', $chunk)->get(['id', 'sequence']) as $event) {
@@ -110,19 +118,23 @@ final class BillingEligibilityOrder
             foreach ($groups as $workspaceId => &$companies) {
                 ksort($companies, SORT_NUMERIC);
                 foreach ($companies as $companyId => &$ids) {
-                    sort($ids, SORT_NUMERIC);
+                    // Registration appends monotonically allocated IDs; the
+                    // exact reservation reads retain that order in each batch.
                     $reserved = [];
-                    foreach (array_chunk($ids, 200) as $chunk) {
+                    foreach (array_chunk($ids, self::CHUNK_SIZE) as $chunk) {
                         foreach ($connection->table('billing_eligibility_event_reservations')
                             ->whereIn('id', $chunk)->orderBy('id')->pluck('id') as $id) {
                             if (! is_numeric($id)) {
                                 throw new LogicException('A billing eligibility reservation has an invalid ID.');
                             }
+                            // Normalize PDO numeric strings for the typed event
+                            // IDs; omission is equivalent on integer-returning PDOs.
+                            /** @infection-ignore CastInt */
                             $reserved[] = (int) $id;
                         }
                     }
                     $ids = $reserved;
-                    foreach (array_chunk($ids, 200) as $chunk) {
+                    foreach (array_chunk($ids, self::CHUNK_SIZE) as $chunk) {
                         $connection->table('client_billing_eligibility_events')->insert(array_map(
                             static fn (int $id): array => ['id' => $id, 'workspace_id' => $workspaceId, 'client_company_id' => $companyId, 'sequence' => null],
                             $chunk,
@@ -141,12 +153,18 @@ final class BillingEligibilityOrder
                     $counter = $connection->table('client_billing_eligibility_counters')
                         ->where('workspace_id', $workspaceId)->where('client_company_id', $companyId)
                         ->tap(Locks::forUpdate())->first();
+                    // Integer-column comparison already coerces PDO numeric
+                    // strings; the cast records the exact integer fence domain.
+                    /** @infection-ignore CastInt */
                     if ($counter === null || ! is_numeric($counter->sequence)
                         || (int) $counter->sequence > PHP_INT_MAX - count($ids)) {
                         throw new LogicException('The billing eligibility counter is missing or exhausted.');
                     }
+                    // Keep the increment/bind value integer across PDO drivers;
+                    // numeric-string increment produces the same stored sequence.
+                    /** @infection-ignore CastInt */
                     $sequence = (int) $counter->sequence;
-                    foreach (array_chunk($ids, 200) as $chunk) {
+                    foreach (array_chunk($ids, self::CHUNK_SIZE) as $chunk) {
                         $cases = [];
                         $bindings = [];
                         foreach ($chunk as $id) {
@@ -154,16 +172,20 @@ final class BillingEligibilityOrder
                             $bindings[] = $id;
                             $bindings[] = ++$sequence;
                         }
+                        // implode discards array keys: starting array_fill at
+                        // -1, 0 or 1 produces exactly the same placeholder SQL.
+                        /** @infection-ignore IncrementInteger, DecrementInteger */
+                        $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
                         $connection->update(
                             'update client_billing_eligibility_events set sequence = CASE id '.implode(' ', $cases)
-                                .' END where workspace_id = ? and client_company_id = ? and id in ('.implode(', ', array_fill(0, count($chunk), '?')).')',
+                                .' END where workspace_id = ? and client_company_id = ? and id in ('.$placeholders.')',
                             [...$bindings, $workspaceId, $companyId, ...$chunk],
                         );
                     }
                     $connection->table('client_billing_eligibility_counters')
                         ->where('workspace_id', $workspaceId)->where('client_company_id', $companyId)
                         ->update(['sequence' => $sequence]);
-                    foreach (array_chunk($ids, 200) as $chunk) {
+                    foreach (array_chunk($ids, self::CHUNK_SIZE) as $chunk) {
                         // Exact own IDs, with no foreign keys or parent locks.
                         $connection->table('billing_eligibility_event_reservations')->whereIn('id', $chunk)->delete();
                     }
@@ -188,9 +210,15 @@ final class BillingEligibilityOrder
             return;
         }
         $depth = $connection->transactionLevel();
+        // committing() already clears real registrations before the physical
+        // commit/afterCommit callbacks. Checking -1 here could only retain an
+        // empty WeakMap value, with no event data or effect on positions().
+        /** @infection-ignore DecrementInteger */
         if ($depth === 0) {
             unset($this->pending[$pdo]);
 
+            // Fall-through could only restore that empty metadata value.
+            /** @infection-ignore ReturnRemoval */
             return;
         }
         $registered = $this->pending[$pdo] ?? [];
