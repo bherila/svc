@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use ReflectionMethod;
 use Symfony\Component\Console\Input\ArrayInput;
+use Tests\Concerns\AssertsNoBillingExternalEffects;
 use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
@@ -40,6 +41,7 @@ use Tests\TestCase;
  */
 final class ReplayInvoicesTest extends TestCase
 {
+    use AssertsNoBillingExternalEffects;
     use RefreshDatabase;
     use WritesLegacyCrossTenantRows;
 
@@ -342,6 +344,19 @@ final class ReplayInvoicesTest extends TestCase
         $this->assertSame($before, ClientInvoice::query()->where('workspace_id', $this->workspace->id)->count());
         $this->assertSame(1, Artisan::call('svc:billing:replay', ['--workspace' => 'synthetic-missing', '--format' => 'json']));
         $this->assertArrayHasKey('error', json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR));
+    }
+
+    public function test_replay_generates_without_external_calls_mail_notifications_or_jobs(): void
+    {
+        $this->generatedHistory();
+        $this->company->forceFill(['billing_email' => 'billing@synthetic.example.test', 'automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $this->recordBillingExternalEffects();
+
+        $this->assertSame(0, Artisan::call('svc:billing:replay', ['--workspace' => $this->workspace->public_id, '--format' => 'json']));
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertGreaterThan(0, $report['summary']['matched'], 'The no-effects control must actually replay generated history.');
+        $this->assertSame(0, $report['summary']['generation_failures']);
+        $this->assertNoBillingExternalEffects();
     }
 
     public function test_invoices_the_engine_produced_replay_to_the_cent(): void

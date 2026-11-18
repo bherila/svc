@@ -21,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\AssertsNoBillingExternalEffects;
 use Tests\Concerns\CallsMcp;
 use Tests\Support\OwnTables;
 use Tests\TestCase;
@@ -31,6 +32,7 @@ use Tests\TestCase;
  */
 final class AgentInvoicePeriodPreviewTest extends TestCase
 {
+    use AssertsNoBillingExternalEffects;
     use CallsMcp;
     use RefreshDatabase;
 
@@ -122,6 +124,34 @@ final class AgentInvoicePeriodPreviewTest extends TestCase
             ])->all();
         $this->assertSame($others, $data['other_invoices']);
         $this->assertSame(0, AgentMutationAudit::query()->where('operation', 'invoices.preview_period')->count());
+    }
+
+    /**
+     * @param  array<string, mixed>  $terms
+     * @param  list<array{string, int}>  $work
+     */
+    #[DataProvider('cadences')]
+    public function test_preview_generates_without_external_calls_mail_notifications_or_jobs(array $terms, string $period, array $work, string $serviceStart, string $serviceEnd): void
+    {
+        [$workspace, $owner, $company, $agreement, $project] = $this->fixture($terms);
+        foreach ($work as [$date, $minutes]) {
+            $this->entry($workspace, $company, $project, $date, $minutes);
+        }
+        $this->actingAsMcp($owner, self::SCOPES);
+        $session = $this->initialize();
+        $company->forceFill(['automatic_invoice_email_enabled' => true, 'automatic_invoice_email_delay_days' => 0])->save();
+        $before = $this->databaseFingerprint();
+        $this->recordBillingExternalEffects();
+
+        $preview = $this->getJson($this->previewUrl($workspace, $agreement, $period))->assertOk()->json('data');
+        $this->assertContains('additional_hours', array_column($preview['lines'], 'type'));
+        $this->assertSame($serviceStart, $preview['service_period_start']);
+        $this->assertSame($serviceEnd, $preview['service_period_end']);
+        $mcp = $this->callTool($session, 'invoices.preview_period', ['workspace_id' => $workspace->public_id, 'agreement_id' => $agreement->public_id, 'period_start' => $period]);
+        $this->assertFalse($mcp['result']['isError'] ?? true, json_encode($mcp));
+        $this->assertSame($preview, $mcp['result']['structuredContent']['data']);
+        $this->assertSame($before, $this->databaseFingerprint());
+        $this->assertNoBillingExternalEffects();
     }
 
     /**
