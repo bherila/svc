@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
-use App\Support\SharedProjects\InvitationState;
+use BWH\Auth\Invitations\HasInvitationLifecycle;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * The invitation's public id is the bearer of the accept link, so it is read
  * only together with a signed-in person whose address matches `email`.
+ *
+ * Its state (pending, accepted, declined, revoked, expired) is derived from the
+ * timestamps by the shared {@see HasInvitationLifecycle}.
  *
  * @property int $id
  * @property string $public_id
@@ -32,7 +35,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['id', 'host_workspace_id', 'client_project_id', 'invited_by_user_id', 'resolved_by_user_id'])]
 class ClientProjectParticipationInvitation extends Model
 {
-    use HasPublicId;
+    use HasInvitationLifecycle, HasPublicId;
 
     protected function casts(): array
     {
@@ -42,11 +45,6 @@ class ClientProjectParticipationInvitation extends Model
             'declined_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',
         ];
-    }
-
-    public function state(CarbonImmutable $now): InvitationState
-    {
-        return InvitationState::of($this->accepted_at, $this->declined_at, $this->revoked_at, $this->expires_at, $now);
     }
 
     /** @return BelongsTo<Workspace, $this> */
