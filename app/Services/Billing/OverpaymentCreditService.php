@@ -247,12 +247,22 @@ class OverpaymentCreditService
             throw new RuntimeException('The draft invoice does not belong to an available client company in its workspace.');
         }
 
-        // Remove any stale credit lines from a previous regeneration pass.
-        ClientInvoiceLine::query()
+        // Production callers compose a newly inserted invoice or a locked
+        // draft whose line snapshot resetSystemGeneratedLines verified. No
+        // other writer can add a credit line here. Delete exact ids: even an
+        // empty credit range DELETE can scan/lock a second draft's lines and
+        // deadlock its regeneration (#735).
+        $creditIds = ClientInvoiceLine::query()
             ->where('workspace_id', $invoice->workspace_id)
             ->where('client_invoice_id', $invoice->id)
             ->where('type', InvoiceLineType::Credit->value)
-            ->delete();
+            ->pluck('id');
+        foreach ($creditIds as $creditId) {
+            ClientInvoiceLine::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_id', $invoice->id)
+                ->whereKey($creditId)->delete();
+        }
 
         // The stored totals were reduced by the credit line just deleted, and
         // issue() trusts them. Recalculate on every path out of here, not only

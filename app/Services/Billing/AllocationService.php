@@ -51,11 +51,13 @@ final class AllocationService
             // can sever those visible fragments from the omitted root.
             $this->projectChainGuard->assertCompanyProjectChainsAgree($company);
 
-            $rootIds = ClientTimeEntry::query()
+            $roots = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
-                ->where('client_company_id', $company->id)
-                ->when($agreement !== null, fn ($query) => $query->forAgreementScope($agreement))
-                ->whereNotNull('split_from_time_entry_id')
+                ->where('client_company_id', $company->id);
+            if ($agreement !== null) {
+                $roots->forAgreementScope($agreement);
+            }
+            $rootIds = $roots->whereNotNull('split_from_time_entry_id')
                 ->distinct()
                 ->pluck('split_from_time_entry_id');
 

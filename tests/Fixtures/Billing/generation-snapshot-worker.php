@@ -122,7 +122,16 @@ try {
         echo json_encode(['outcome' => 'success', 'merged' => $merged], JSON_THROW_ON_ERROR)."\n";
         exit(0);
     }
-    $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+    if (($input['operation'] ?? 'generate') === 'snapshot-generate') {
+        $draft = DB::transaction(function () use ($workspace, $company, $agreement, $input) {
+            DB::table('client_invoice_lines')->where('workspace_id', $workspace->id)
+                ->where('client_invoice_id', (int) $input['invoice'])->get();
+
+            return app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+        });
+    } else {
+        $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse((string) $input['period']));
+    }
     echo json_encode(['outcome' => 'success', 'invoice' => $draft->id, 'hours' => (string) $draft->hours_billed_at_rate, 'isolation' => $isolation], JSON_THROW_ON_ERROR)."\n";
 } catch (QueryException $failure) {
     echo json_encode(['outcome' => 'failed', 'class' => $failure::class, 'code' => $failure->errorInfo[1] ?? null, 'message' => $failure->getMessage()], JSON_THROW_ON_ERROR)."\n";

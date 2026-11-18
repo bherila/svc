@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
+use App\Models\ClientExpense;
 use App\Models\ClientInvoice;
 use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InterimOverageGenerator;
+use App\Support\Billing\InvoiceChangedDuringGeneration;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -297,6 +299,100 @@ final class GenerationDeadlockTest extends TestCase
                 $worker->stop(0);
             }
             foreach (glob($barrier.'-*') ?: [] as $file) {
+                @unlink($file);
+            }
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function replacementLines(): iterable
+    {
+        yield 'retainer only' => ['replace'];
+        yield 'new expense claim' => ['expense'];
+        yield 'same maximum id, changed amount' => ['edit'];
+        yield 'empty snapshot, first current line' => ['empty'];
+    }
+
+    #[DataProvider('replacementLines')]
+    public function test_an_older_caller_snapshot_cannot_append_to_a_concurrently_regenerated_draft(string $change): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('A caller snapshot across a committed regeneration requires MariaDB.');
+        }
+        $this->bootProbeDatabase('generation_snapshot');
+        Artisan::call('migrate', ['--database' => 'generation_snapshot', '--force' => true]);
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('generation_snapshot');
+        Schema::clearResolvedInstance('db.schema');
+        $barrier = sys_get_temp_dir().'/svc-generation-snapshot-'.Str::lower(Str::random(16));
+        $worker = null;
+        try {
+            $workspace = Workspace::query()->create(['name' => 'Synthetic stale regeneration', 'slug' => 'synthetic-stale-regeneration']);
+            $company = ClientCompany::query()->create(['workspace_id' => $workspace->id, 'name' => 'Synthetic client', 'slug' => 'synthetic-client']);
+            $agreement = ClientAgreement::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'title' => 'Synthetic monthly retainer', 'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly',
+                'currency' => 'USD', 'hourly_rate_amount' => 10000, 'retainer_minutes' => 600, 'retainer_amount' => 60000,
+                'rollover_months' => 0, 'catch_up_threshold_minutes' => 0,
+            ]);
+            $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse('2026-02-01'));
+            $this->assertSame(1, $draft->lines()->count());
+            if ($change === 'empty') {
+                $draft->lines()->delete();
+                $draft->recalculateTotals();
+            }
+            $input = [
+                'connection' => config('database.connections.generation_snapshot'),
+                'workspace' => $workspace->id, 'company' => $company->id, 'agreement' => $agreement->id,
+                'operation' => 'snapshot-generate', 'period' => '2026-02-01', 'invoice' => $draft->id,
+                'pause_on' => 'from `client_invoice_lines`',
+                'paused' => $barrier.'-paused', 'release' => $barrier.'-release',
+            ];
+            $worker = new Process([PHP_BINARY, base_path('tests/Fixtures/Billing/generation-snapshot-worker.php'), base64_encode(json_encode($input, JSON_THROW_ON_ERROR))], base_path(), ['APP_ENV' => 'testing', 'LOG_CHANNEL' => 'null', 'MAIL_MAILER' => 'array'], null, 90);
+            $worker->start();
+            $deadline = microtime(true) + 30;
+            while (! is_file($barrier.'-paused') && $worker->isRunning() && microtime(true) < $deadline) {
+                usleep(10_000);
+            }
+            $this->assertFileExists($barrier.'-paused', $worker->getOutput().$worker->getErrorOutput());
+            $expense = $change === 'expense' ? ClientExpense::query()->create([
+                'workspace_id' => $workspace->id, 'client_company_id' => $company->id,
+                'spent_on' => '2026-01-15', 'amount' => 12345, 'currency' => 'USD',
+                'description' => 'Synthetic concurrent expense', 'status' => 'approved',
+            ]) : null;
+            if ($change === 'edit') {
+                $draft->lines()->update(['unit_amount' => 72000, 'total_amount' => 72000]);
+                $draft->recalculateTotals();
+                $current = $draft->fresh();
+            } else {
+                $current = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse('2026-02-01'));
+            }
+            $currentIds = $current->lines()->pluck('id')->all();
+            $expenseLine = $expense?->fresh()->client_invoice_line_id;
+            $expectedAmount = $change === 'edit' ? 72000 : 60000 + ($change === 'expense' ? 12345 : 0);
+            touch($barrier.'-release');
+            $worker->wait();
+            $output = $worker->getOutput().$worker->getErrorOutput();
+            $this->assertTrue($worker->isSuccessful(), $output);
+            $lines = explode("\n", trim($worker->getOutput()));
+            $result = json_decode(end($lines), true, flags: JSON_THROW_ON_ERROR);
+            DB::purge('generation_snapshot');
+            $this->assertSame($currentIds, $draft->lines()->pluck('id')->all(), $output);
+            $this->assertSame($expectedAmount, $draft->fresh()->total_amount);
+            $this->assertSame($expectedAmount, (int) $draft->lines()->sum('total_amount'));
+            if ($expense !== null) {
+                $this->assertNotNull($expenseLine);
+                $this->assertSame($expenseLine, $expense->fresh()->client_invoice_line_id);
+                $this->assertSame('invoiced', $expense->fresh()->status);
+            }
+            $this->assertSame('refused', $result['outcome'], $output);
+            $this->assertSame(InvoiceChangedDuringGeneration::class, $result['class'], $output);
+            $this->assertStringContainsString('changed', $result['message']);
+        } finally {
+            $worker?->stop(0);
+            foreach (glob($barrier.'*') ?: [] as $file) {
                 @unlink($file);
             }
             DB::setDefaultConnection($original);

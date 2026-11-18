@@ -16,6 +16,7 @@ use App\Support\Billing\DeferredTerminationPricing;
 use App\Support\Billing\FlatHourlyGroup;
 use App\Support\Billing\FlatHourlyPricing;
 use App\Support\Billing\HoursQuantity;
+use App\Support\Billing\InvoiceChangedDuringGeneration;
 use App\Support\Billing\InvoiceLineType;
 use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Concurrency\Locks;
@@ -37,6 +38,29 @@ class InvoiceLineComposer
      */
     public function resetSystemGeneratedLines(ClientInvoice $invoice, bool $preserveExpenseClaims = false): void
     {
+        // Exact-id deletes and later totals must describe the same line set.
+        // The invoice lock excludes current line writers, but the caller may
+        // already have an older RR snapshot. New lines always receive an
+        // auto-increment id: a current maximum detects added/replaced lines;
+        // exact primary-key reads then detect removed or changed old lines.
+        // Avoid a locking range scan of every line: its end gap can deadlock
+        // another draft's inserts even after deletes use primary keys (#735).
+        $lines = ClientInvoiceLine::query()
+            ->forceIndex('client_invoice_lines_workspace_id_client_invoice_id_index')
+            ->where('workspace_id', $invoice->workspace_id)
+            ->where('client_invoice_id', $invoice->id)
+            ->orderBy('id');
+        $snapshot = (clone $lines)->get();
+        $latest = (clone $lines)->reorder()->tap(Locks::forUpdate())->max('id');
+        if ((string) $latest !== (string) $snapshot->max('id')) {
+            throw new InvoiceChangedDuringGeneration;
+        }
+        $attributes = static fn (ClientInvoiceLine $line): array => $line->getAttributes();
+        $current = (clone $lines)->forceIndex('PRIMARY')->whereKey($snapshot->modelKeys())
+            ->tap(Locks::forUpdate())->get()->map($attributes)->all();
+        if ($snapshot->map($attributes)->all() !== $current) {
+            throw new InvoiceChangedDuringGeneration;
+        }
         $invoice->assertLineOwnership();
         $systemLines = ClientInvoiceLine::query()
             ->where('workspace_id', $invoice->workspace_id)

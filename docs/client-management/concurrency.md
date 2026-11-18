@@ -964,3 +964,21 @@ company-invoice line set, including legacy/imported allocations to another
 company. It takes the current allocation read after the time phase and before
 company credit locks, and a refusal leaves the draft and foreign allocation
 unchanged.
+
+Before a draft's exact-id reset, generation also verifies that its caller's
+snapshot contains the current line set. A locking `MAX(id)` detects newly
+allocated lines, then locking primary-key reads compare every snapshot line's
+raw attributes (including identity). A mismatch raises the retryable
+`InvoiceChangedDuringGeneration` before any detach or delete. This protects
+later snapshot-based totals as well as replacement membership. The caller owns
+the invoice lock; all legitimate line writers serialize on it, and every new
+line receives its database auto-increment id. No current writer reassigns a line
+id or reparents an existing line to another invoice.
+
+Normal expense claiming creates a new `Expense` line rather than linking an
+expense to a pre-existing generated line. A concurrent expense rebuild therefore
+changes that verified line set and is refused, preserving its claim without
+acquiring expense locks ahead of time. Legacy claims to generated lines have no
+current writer. Credit cleanup, whose production callers all compose a new
+header or a reset-verified draft, also deletes only its exact credit-line ids:
+an empty range DELETE was enough to scan and lock another draft's lines.
