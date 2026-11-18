@@ -70,19 +70,34 @@ class InvoiceLineComposer
             // Time is linked through a pivot here, so releasing it is a detach
             // rather than nulling a column. Milestones keep a column, because a
             // deliverable is never split across lines.
-            $line->timeEntries()->wherePivot('workspace_id', $line->workspace_id)->detach();
+            // A range DELETE on (line_id, time_id) next-key-locks the next
+            // draft's allocation. Read the tenant/line range instead, then
+            // delete exact primary keys so concurrent drafts never inherit
+            // each other's delete gaps (#735).
+            $allocationIds = DB::table('client_invoice_line_time_entries')
+                ->forceIndex('cilte_ws_line_idx')
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_line_id', $line->id)
+                ->tap(Locks::forUpdate())
+                ->pluck('id');
+            foreach ($allocationIds as $allocationId) {
+                DB::table('client_invoice_line_time_entries')
+                    ->where('workspace_id', $invoice->workspace_id)
+                    ->where('id', $allocationId)->delete();
+            }
             ClientTask::query()
                 ->where('workspace_id', $invoice->workspace_id)
                 ->where('client_invoice_line_id', $line->id)
                 ->update(['client_invoice_line_id' => null]);
         }
 
-        ClientInvoiceLine::query()
-            ->where('workspace_id', $invoice->workspace_id)
-            ->where('client_invoice_id', $invoice->id)
-            ->whereIn('type', InvoiceLineType::systemGeneratedValues())
-            ->when($preserveExpenseClaims, fn (Builder $query): Builder => $query->whereNotIn('id', ClientExpense::withTrashed()->where('workspace_id', $invoice->workspace_id)->whereNotNull('client_invoice_line_id')->select('client_invoice_line_id')))
-            ->delete();
+        foreach ($lineIds as $lineId) {
+            ClientInvoiceLine::query()
+                ->where('workspace_id', $invoice->workspace_id)
+                ->where('client_invoice_id', $invoice->id)
+                ->whereKey($lineId)
+                ->delete();
+        }
 
     }
 

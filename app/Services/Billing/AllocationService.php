@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
 use App\Models\ClientTimeEntry;
 use App\Models\Workspace;
@@ -40,9 +41,9 @@ final class AllocationService
      *
      * @return int Rows removed by merging
      */
-    public function recombineUnlinkedFragments(Workspace $workspace, ClientCompany $company): int
+    public function recombineUnlinkedFragments(Workspace $workspace, ClientCompany $company, ?ClientAgreement $agreement = null): int
     {
-        return DB::transaction(function () use ($workspace, $company): int {
+        return DB::transaction(function () use ($workspace, $company, $agreement): int {
             BillingMaintenance::share($workspace->id);
             // Discovering lineage roots through the current workspace would
             // hide a root moved elsewhere while leaving its siblings here.
@@ -53,10 +54,19 @@ final class AllocationService
             $rootIds = ClientTimeEntry::query()
                 ->where('workspace_id', $workspace->id)
                 ->where('client_company_id', $company->id)
+                ->when($agreement !== null, fn ($query) => $query->forAgreementScope($agreement))
                 ->whereNotNull('split_from_time_entry_id')
                 ->distinct()
                 ->pluck('split_from_time_entry_id');
 
+            // Lock the selected roots in primary-key order before visiting
+            // siblings. This also establishes the time phase when no lineage
+            // exists, before generation can move on to milestone tasks.
+            ClientTimeEntry::query()->forceIndex('PRIMARY')
+                ->where('workspace_id', $workspace->id)
+                ->where('client_company_id', $company->id)
+                ->whereKey($rootIds->all())->orderBy('id')
+                ->tap(Locks::forUpdate())->get(['id']);
             $recombined = 0;
 
             foreach ($rootIds as $rootId) {
@@ -89,15 +99,24 @@ final class AllocationService
      */
     private function group(Workspace $workspace, ClientCompany $company, int $rootId): array
     {
-        $group = ClientTimeEntry::query()
+        // Keep the primary-key root lookup separate from the lineage range.
+        // The OR formerly made MariaDB scan and lock the whole workspace,
+        // coupling otherwise independent project regenerations (#735).
+        $root = ClientTimeEntry::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
-            ->where(function ($query) use ($rootId): void {
-                $query->whereKey($rootId)->orWhere('split_from_time_entry_id', $rootId);
-            })
+            ->whereKey($rootId)
+            ->tap(Locks::forUpdate())->first();
+        $group = ClientTimeEntry::query()
+            ->forceIndex('time_entry_split_parent_idx')
+            ->where('workspace_id', $workspace->id)
+            ->where('client_company_id', $company->id)
+            ->where('split_from_time_entry_id', $rootId)
             ->orderBy('id')
-            ->tap(Locks::forUpdate())
-            ->get();
+            ->tap(Locks::forUpdate())->get();
+        if ($root !== null) {
+            $group->prepend($root);
+        }
         $ids = $group->modelKeys();
         // Scoped to the workspace so the read is a bounded lookup on
         // (workspace_id, client_time_entry_id) - unscoped, the locking scan
@@ -107,6 +126,7 @@ final class AllocationService
         // writes such rows now, so no snapshot can be behind them.
         $allocated = $ids === [] ? [] : array_values(array_unique(array_map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0, [
             ...DB::table('client_invoice_line_time_entries')
+                ->forceIndex('invoice_time_entry_once')
                 ->where('workspace_id', $workspace->id)
                 ->whereIn('client_time_entry_id', $ids)
                 ->orderBy('id')

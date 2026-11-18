@@ -854,12 +854,6 @@ final class ClientInvoicingService
             BillingMaintenance::share($company->workspace_id);
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
-            $this->consultantTime->release($company, $agreement);
-            $this->lateWork->deferFromThePool($company, $agreement, $periodStart, ...$this->segmentHandovers($company, $agreement));
-            $this->handovers->forAgreement($agreement)?->assertClear(
-                $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
-            );
-
             // Looked up under the lock, not before it. Two workers generating
             // the same month could both read `null` outside the transaction;
             // the agreement lock then serialised them, but the second still
@@ -869,6 +863,16 @@ final class ClientInvoicingService
             // kind, cycle) to reject the second write, so the ordering is the
             // whole guard.
             $invoice = $this->findRefreshableMonthlyInvoice($company, $agreement, $periodStart, $periodEnd, $retainerMonthStart);
+
+            // UPDATE takes row locks even for compare-and-set writes. A new
+            // draft reserves numbering before releasing or deferring time.
+            $invoiceNumber = $invoice instanceof ClientInvoice ? null
+                : $this->invoiceNumberAllocator->forIssueMonth($company, $retainerMonthStart);
+            $this->consultantTime->release($company, $agreement);
+            $this->lateWork->deferFromThePool($company, $agreement, $periodStart, ...$this->segmentHandovers($company, $agreement));
+            $this->handovers->forAgreement($agreement)?->assertClear(
+                $retainerMonthStart->toDateString(), $retainerMonthStart->copy()->endOfMonth()->toDateString(), true,
+            );
 
             if ($invoice instanceof ClientInvoice && $invoice->isImmutable()) {
                 throw new RuntimeException(
@@ -954,7 +958,7 @@ final class ClientInvoicingService
                 $invoice = ClientInvoice::query()->create($invoiceData + [
                     'workspace_id' => $company->workspace_id,
                     'client_company_id' => $company->id,
-                    'invoice_number' => $this->invoiceNumberAllocator->forIssueMonth($company, $retainerMonthStart),
+                    'invoice_number' => $invoiceNumber,
                     'currency' => (string) $agreement->currency,
                     'subtotal_amount' => 0,
                     'tax_amount' => 0,
@@ -967,7 +971,7 @@ final class ClientInvoicingService
             // Fragments left over from a previous draft are put back together
             // before anything is allocated, or the same work would be measured
             // as several smaller entries.
-            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
+            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company, $agreement);
 
             $priorMonthEntries = $this->unbilledEntriesBetween($company, $agreement, $periodStart, $periodEnd);
 
@@ -1308,6 +1312,22 @@ final class ClientInvoicingService
             // agreement row is what serializes concurrent generation.
             $agreement = ClientAgreement::query()->where('workspace_id', $company->workspace_id)
                 ->where('client_company_id', $company->id)->whereKey($agreement->getKey())->tap(Locks::forUpdate())->firstOrFail();
+            $invoice = $this->scopedInvoices($company)
+                ->where('client_agreement_id', $agreement->id)
+                ->where(fn (Builder $kind): Builder => $kind
+                    ->whereNull('invoice_kind')
+                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
+                ->whereDate('service_period_start', $periodStart->toDateString())
+                ->whereDate('service_period_end', $periodEnd->toDateString())
+                ->whereIn('status', InvoiceStatus::live())
+                ->tap(Locks::forUpdate())
+                ->first();
+
+            // Missing interim creation can number an invoice too, so reserve
+            // its counter before any compare-and-set time write in this run.
+            if ($generateMissingInterims || ! $invoice instanceof ClientInvoice) {
+                $this->invoiceNumberAllocator->lockNumbering($company->workspace_id);
+            }
             $this->consultantTime->release($company, $agreement);
             // Moving work out of a pool changes what a ledger the bulk walk
             // measured before reaching this cycle would say.
@@ -1334,17 +1354,6 @@ final class ClientInvoicingService
             // someone - so work held by a draft was invisible to the selector
             // and absent from the reconciliation, and nothing billed it.
             $this->interimOverageGenerator->releaseUnchargedInterimClaims($company, $agreement, $workCycle);
-
-            $invoice = $this->scopedInvoices($company)
-                ->where('client_agreement_id', $agreement->id)
-                ->where(fn (Builder $kind): Builder => $kind
-                    ->whereNull('invoice_kind')
-                    ->orWhere('invoice_kind', InvoiceKind::CadencePeriod->value))
-                ->whereDate('service_period_start', $periodStart->toDateString())
-                ->whereDate('service_period_end', $periodEnd->toDateString())
-                ->whereIn('status', InvoiceStatus::live())
-                ->tap(Locks::forUpdate())
-                ->first();
 
             if ($invoice instanceof ClientInvoice && $invoice->isImmutable()) {
                 throw new RuntimeException(
@@ -1394,7 +1403,7 @@ final class ClientInvoicingService
             }
 
             $sortOrder = 1;
-            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company);
+            $this->allocationService->recombineUnlinkedFragments($company->workspace, $company, $agreement);
 
             $ledger ??= $this->invoiceLedgerBuilder->buildAgreementLedgerThrough(
                 $company,
