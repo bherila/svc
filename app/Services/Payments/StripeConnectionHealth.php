@@ -53,7 +53,7 @@ final class StripeConnectionHealth
 
             return $stored->stripe_refused_credential_version === $version ? $refused : null;
         }
-        // Timestamp-only legacy observations predate credential attribution.
+        // Timestamp-only pre-upgrade observations predate credential attribution.
         // Keep their conservative warning/backoff until a repair or fresh answer.
         $saved = $this->connections->activeRow($workspace, PaymentProcessor::Stripe)?->connected_at;
 

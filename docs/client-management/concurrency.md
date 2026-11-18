@@ -1010,7 +1010,11 @@ The refusal marker also records the effective generation, including a keyed
 nonsecret environment-key version for the legacy path. Reads compare that
 identity before showing a warning or applying backoff, so replacing an already
 refused environment key immediately admits the replacement. Timestamp-only
-legacy markers created before this migration have no recoverable key identity;
+markers created before this migration have no recoverable key identity;
 they retain their previous conservative backoff until expiry or a fresh answer.
-Existing owned/reused markers are attributed during backfill only while the
-workspace's selected generation still matches; no secret is read by migration.
+This compatibility fallback applies to every retained pre-upgrade marker,
+including owned/reused connections: the original race could write old A's
+refusal after B saved, so the current row cannot prove the historical key.
+Migration backfills only the current connection fence, never the refusal owner;
+concurrent new health writes retain their actual request attribution. No secret
+is read by migration.

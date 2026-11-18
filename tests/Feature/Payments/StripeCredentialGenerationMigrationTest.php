@@ -55,11 +55,45 @@ final class StripeCredentialGenerationMigrationTest extends TestCase
             $this->assertSame('2030-12-01 15:00:00', $source->fresh()->getRawOriginal('stripe_refused_at'));
             $this->assertSame('2030-12-01 15:00:00', $borrower->fresh()->getRawOriginal('stripe_refused_at'));
             $this->assertNull($obsolete->fresh()->getRawOriginal('stripe_refused_at'));
-            $this->assertSame('connection:'.$own->id.':source:'.$own->id, $source->fresh()->getRawOriginal('stripe_refused_credential_version'));
-            $this->assertSame('connection:'.$reused->id.':source:'.$own->id, $borrower->fresh()->getRawOriginal('stripe_refused_credential_version'));
+            $this->assertNull($source->fresh()->getRawOriginal('stripe_refused_credential_version'));
+            $this->assertNull($borrower->fresh()->getRawOriginal('stripe_refused_credential_version'));
             $this->assertNull($legacy->fresh()->getRawOriginal('stripe_refused_credential_version'));
             $this->assertArrayNotHasKey('stripe_credential_version', $source->fresh()->toArray());
             $this->assertArrayNotHasKey('stripe_refused_credential_version', $source->fresh()->toArray());
+        } finally {
+            DB::setDefaultConnection($original);
+            Schema::clearResolvedInstance('db.schema');
+        }
+    }
+
+    public function test_an_old_a_refusal_arriving_after_b_was_saved_is_not_attributed_to_b_by_migration(): void
+    {
+        $this->bootProbeDatabase('stripe_credential_migration');
+        $this->assertSame(0, Artisan::call('migrate', ['--database' => 'stripe_credential_migration', '--force' => true]));
+        $original = DB::getDefaultConnection();
+        DB::setDefaultConnection('stripe_credential_migration');
+        Schema::clearResolvedInstance('db.schema');
+        try {
+            $this->travelTo('2030-12-01 15:01:00');
+            $migration = require database_path('migrations/2026_11_23_090000_bind_stripe_health_to_credential_generation.php');
+            $migration->down();
+            $workspace = $this->workspace('old-response-after-save');
+            $old = $this->connection($workspace, ['active_slot' => null, 'secret' => null,
+                'connected_at' => '2030-12-01 13:00:00', 'revoked_at' => '2030-12-01 14:00:00']);
+            $replacement = $this->connection($workspace, ['secret' => 'sk_test_synthetic_preupgrade_B', 'connected_at' => '2030-12-01 14:00:00']);
+            // Reconstruct the old bug: A's in-flight response wrote only this
+            // timestamp after B saved. The old schema retained no key identity.
+            DB::table('workspaces')->where('id', $workspace->id)->update(['stripe_refused_at' => '2030-12-01 15:00:00']);
+
+            $migration->up();
+
+            $this->assertNotSame($old->id, $replacement->id);
+            $this->assertSame('connection:'.$replacement->id.':source:'.$replacement->id, $workspace->fresh()->getRawOriginal('stripe_credential_version'));
+            $this->assertNull($workspace->fresh()->getRawOriginal('stripe_refused_credential_version'), 'Current B cannot prove which key produced the historical timestamp.');
+            $this->assertSame('2030-12-01 15:00:00', $workspace->fresh()->getRawOriginal('stripe_refused_at'));
+            $health = new StripeConnectionHealth(new WorkspacePaymentConnections);
+            $this->assertNotNull($health->refusedAt($workspace), 'Unknown historical markers keep the previous conservative compatibility behavior.');
+            $this->assertTrue($health->pauses($workspace));
         } finally {
             DB::setDefaultConnection($original);
             Schema::clearResolvedInstance('db.schema');
@@ -122,6 +156,7 @@ final class StripeCredentialGenerationMigrationTest extends TestCase
                 $this->assertNotNull($replacement);
                 $this->assertSame('connection:'.$replacement->id.':source:'.$replacement->id, $workspace->fresh()->getRawOriginal('stripe_credential_version'));
                 $this->assertSame('2031-01-01 12:00:00', $workspace->fresh()->getRawOriginal('stripe_refused_at'));
+                $this->assertSame('connection:'.$replacement->id.':source:'.$replacement->id, $workspace->fresh()->getRawOriginal('stripe_refused_credential_version'));
             }
         } finally {
             DB::setDefaultConnection($original);

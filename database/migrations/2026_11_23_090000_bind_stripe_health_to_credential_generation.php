@@ -13,6 +13,8 @@ return new class extends Migration
             // Nonsecret row identities, never a key or a hash of stored credentials.
             // Null means no stored Stripe connection has ever replaced the legacy path.
             $table->string('stripe_credential_version', 96)->nullable();
+            // Old timestamps have no provable credential attribution, even when
+            // a current owned connection exists. Only real new responses set it.
             $table->string('stripe_refused_credential_version', 96)->nullable();
         });
         Schema::table('workspace_payment_connections', function (Blueprint $table): void {
@@ -51,10 +53,6 @@ return new class extends Migration
                         DB::table('workspaces')->where('id', $row->workspace_id)
                             ->where('stripe_credential_version', $version)
                             ->where('stripe_refused_at', '<', $row->connected_at)->update(['stripe_refused_at' => null]);
-                        DB::table('workspaces')->where('id', $row->workspace_id)
-                            ->where('stripe_credential_version', $version)
-                            ->whereNotNull('stripe_refused_at')->whereNull('stripe_refused_credential_version')
-                            ->update(['stripe_refused_credential_version' => $version]);
                     }
                 }
             }, 'local.id', 'id');
