@@ -6,6 +6,7 @@ use App\Models\Workspace;
 use App\Models\WorkspacePaymentConnection;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Payments\StripeCredentialIdentity;
 
 /**
  * Which credentials a workspace's payments use.
@@ -27,7 +28,7 @@ final class PaymentConnectionResolver
             return $this->stripeAccessOf($row);
         }
         if ($this->environmentMayServe($workspace, PaymentProcessor::Stripe)) {
-            return $this->stripeEnvironment();
+            return $this->stripeEnvironment($workspace);
         }
 
         return null;
@@ -36,17 +37,22 @@ final class PaymentConnectionResolver
     /** The key behind a connection (its own, or the one it borrows). */
     public function stripeAccessOf(WorkspacePaymentConnection $connection): ?StripeAccess
     {
-        $secret = $this->connections->credentialSource($connection)?->secret();
+        $source = $this->connections->credentialSource($connection);
+        $secret = $source?->secret();
 
-        return $secret === null ? null : StripeAccess::forKey($secret);
+        return $secret === null || $source === null ? null : StripeAccess::forKey($secret, new StripeCredentialIdentity(
+            (int) $connection->workspace_id, (int) $connection->id, (int) $source->id,
+        ));
     }
 
     /** The deployment's own key, as today's environment path uses it. */
-    public function stripeEnvironment(): ?StripeAccess
+    public function stripeEnvironment(?Workspace $workspace = null): ?StripeAccess
     {
         $value = config('services.stripe.secret_key');
 
-        return is_string($value) && $value !== '' ? StripeAccess::forKey($value) : null;
+        return is_string($value) && $value !== ''
+            ? StripeAccess::forKey($value, $workspace === null ? null : StripeCredentialIdentity::environment($workspace->id, $value))
+            : null;
     }
 
     /**

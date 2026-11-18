@@ -4,6 +4,8 @@ namespace App\Services\Payments;
 
 use App\Models\Workspace;
 use App\Support\Payments\PaymentProcessor;
+use App\Support\Payments\StripeCredentialIdentity;
+use App\Support\Payments\StripeHealthRefusal;
 use App\Support\WorkspaceClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +15,7 @@ use Illuminate\Support\Facades\DB;
  *
  * One marker per workspace, `workspaces.stripe_refused_at`, set when an
  * autopay charge is refused because of the connection. It stands until the
- * connection is saved again (a `connected_at` after the marker) or Stripe next
+ * connection is saved again or that same effective key next
  * answers an ordinary call, and while it stands the scheduled command leaves
  * the workspace's autopay charges alone for {@see BACKOFF_HOURS}, so a broken
  * key is not hammered every fifteen minutes. The warning shown to the provider
@@ -51,18 +53,55 @@ final class StripeConnectionHealth
             && $refused->addHours(self::BACKOFF_HOURS)->greaterThan($this->clock->now()->utc());
     }
 
-    /** Note a refusal; true when the connection was not already marked as refused. */
-    public function refuse(Workspace $workspace): bool
+    /** Note a current key's refusal; true only for the first notice of this breakage. */
+    public function refuse(Workspace $workspace, StripeAccess $access): bool
     {
-        $fresh = $this->refusedAt($workspace) === null;
-        DB::table('workspaces')->where('id', $workspace->id)->update(['stripe_refused_at' => $this->clock->now()->utc()]);
-
-        return $fresh;
+        return $this->recordRefusal($workspace, $access) === StripeHealthRefusal::First;
     }
 
-    /** Stripe accepted the key: whatever was marked is over. */
-    public function accepted(Workspace $workspace): void
+    public function recordRefusal(Workspace $workspace, StripeAccess $access): StripeHealthRefusal
     {
-        DB::table('workspaces')->where('id', $workspace->id)->whereNotNull('stripe_refused_at')->update(['stripe_refused_at' => null]);
+        return match ($this->apply($workspace, $access, refused: true)) {
+            null => StripeHealthRefusal::Obsolete,
+            true => StripeHealthRefusal::First,
+            false => StripeHealthRefusal::Repeated,
+        };
+    }
+
+    /** A working answer may clear only the key that actually answered. */
+    public function accepted(Workspace $workspace, StripeAccess $access): void
+    {
+        $this->apply($workspace, $access, refused: false);
+    }
+
+    private function apply(Workspace $workspace, StripeAccess $access, bool $refused): ?bool
+    {
+        $identity = $access->credentialIdentity;
+        if ($identity === null || $identity->workspaceId !== $workspace->id) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($workspace, $identity, $refused): ?bool {
+            // A locking read sees the current generation even when the caller's
+            // REPEATABLE READ snapshot predates reconnect. Connection writers
+            // save this fence and reset the marker in their own transaction.
+            $current = DB::table('workspaces')->where('id', $workspace->id)->lockForUpdate()
+                ->first(['stripe_credential_version', 'stripe_refused_at']);
+            if ($current === null || $current->stripe_credential_version !== $identity->connectionVersion()) {
+                return null;
+            }
+            if ($identity->connectionId === null) {
+                $secret = config('services.stripe.secret_key');
+                if (! is_string($secret) || $secret === '' || $identity->environmentVersion !== StripeCredentialIdentity::environment($workspace->id, $secret)->environmentVersion) {
+                    return null;
+                }
+            }
+            $fresh = $current->stripe_refused_at === null;
+            DB::table('workspaces')->where('id', $workspace->id)->update([
+                'stripe_refused_at' => $refused ? $this->clock->now()->utc() : null,
+            ]);
+
+            return $refused && $fresh;
+        });
     }
 }

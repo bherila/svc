@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
  * @property string $timezone
  */
 #[Fillable(['name', 'slug', 'timezone', 'default_currency'])]
+#[Hidden(['stripe_credential_version'])]
 class Workspace extends Model
 {
     use HasPublicId;
