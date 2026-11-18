@@ -195,6 +195,61 @@ final class BillingEligibilityOrderConcurrencyTest extends TestCase
         return [$workspace, $company];
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function creationOrders(): iterable
+    {
+        yield 'issue before creation' => ['issue'];
+        yield 'creation before issue control' => ['create'];
+    }
+
+    #[DataProvider('creationOrders')]
+    public function test_actual_time_creation_and_issue_keep_company_foreign_keys_before_the_final_fence(string $heldMode): void
+    {
+        [$workspace, $company] = $this->company();
+        $owner = User::factory()->create();
+        $author = User::factory()->create();
+        $workspace->memberships()->create(['user_id' => $owner->id, 'role' => 'owner']);
+        $workspace->memberships()->create(['user_id' => $author->id, 'role' => 'member']);
+        $project = ClientProject::query()->create(['workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'name' => 'Synthetic concurrent creation']);
+        $agreement = ClientAgreement::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'title' => 'Synthetic creation agreement',
+            'status' => 'active', 'starts_on' => '2026-01-01', 'billing_cadence' => 'monthly', 'currency' => 'USD',
+            'hourly_rate_amount' => 10000, 'retainer_minutes' => 0, 'retainer_amount' => 0,
+        ]);
+        ClientTimeEntry::query()->create([
+            'workspace_id' => $workspace->id, 'client_company_id' => $company->id, 'client_project_id' => $project->id,
+            'user_id' => $author->id, 'worked_on' => '2026-01-10', 'minutes' => 60, 'description' => 'Synthetic preexisting work',
+            'status' => 'approved', 'is_billable' => true, 'is_deferred' => false, 'billing_rate_amount' => 10000, 'currency' => 'USD',
+        ]);
+        $draft = app(ClientInvoicingService::class)->generateCadencePeriod($company, $agreement, Carbon::parse('2026-02-01'));
+        $inputs = ['company' => $company->id, 'actor' => $owner->id, 'author' => $author->id, 'project' => $project->id, 'invoice' => $draft->id];
+        $otherMode = $heldMode === 'issue' ? 'create' : 'issue';
+        [$held, $ready, $release] = $this->worker($workspace, ['mode' => $heldMode] + $inputs, pause: true);
+        [$other, , , $started] = $this->worker($workspace, ['mode' => $otherMode] + $inputs, pause: false);
+        $held->start();
+        $this->awaitFile($held, $ready);
+        $other->start();
+        $this->awaitFile($other, $started);
+        $otherSession = json_decode(file_get_contents($started), true, flags: JSON_THROW_ON_ERROR)['connection_id'];
+        $this->assertTrue($this->awaitBlockedOrFinished($other, $otherSession), 'The real company/time foreign-key locks serialize creation and issue.');
+        $this->assertTrue(touch($release));
+        $held->wait();
+        $other->wait();
+        $heldResult = $this->workerResult($held);
+        $otherResult = $this->workerResult($other);
+        $this->assertSame('success', $heldResult['outcome'], json_encode($heldResult));
+        $this->assertSame('success', $otherResult['outcome'], json_encode($otherResult));
+        $creation = $heldMode === 'create' ? $heldResult : $otherResult;
+        $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey($creation['entry_id'])->firstOrFail();
+        $invoice = $draft->fresh();
+        $this->assertSame('approved', $entry->status);
+        $this->assertSame('issued', $invoice->status);
+        $this->assertSame($entry->created_at?->format('Y-m-d H:i:s'), $invoice->issued_at?->format('Y-m-d H:i:s'));
+        $this->assertSame($heldMode === 'issue' ? [$entry->id] : [], app(LateWork::class)->ids(
+            ClientTimeEntry::query()->whereKey($entry->id)->unbilled(), $agreement, Carbon::parse('2026-03-01'),
+        ));
+    }
+
     private function counter(Workspace $workspace, ClientCompany $company): int
     {
         return (int) DB::table('client_billing_eligibility_counters')->where('workspace_id', $workspace->id)->where('client_company_id', $company->id)->value('sequence');

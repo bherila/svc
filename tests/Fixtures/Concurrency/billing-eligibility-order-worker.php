@@ -1,12 +1,14 @@
 <?php
 
 use App\Models\ClientInvoice;
+use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\TimeEntryMutationService;
 use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\InvoiceLifecycleService;
+use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -45,11 +47,22 @@ if (! file_put_contents($input['started'], json_encode(['connection_id' => $conn
 }
 
 try {
-    $eventId = DB::transaction(function () use ($input, $workspace, $connectionId): int {
+    $createdEntryId = null;
+    $eventId = DB::transaction(function () use ($input, $workspace, $connectionId, &$createdEntryId): int {
         if ($input['mode'] === 'event') {
             $eventId = app(BillingEligibilityOrder::class)->record($workspace->id, (int) $input['company']);
-        } elseif ($input['mode'] === 'approve') {
-            $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['entry'])->firstOrFail();
+        } elseif (in_array($input['mode'], ['approve', 'create'], true)) {
+            if ($input['mode'] === 'create') {
+                $project = ClientProject::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['project'])->firstOrFail();
+                $author = User::query()->whereKey((int) $input['author'])->firstOrFail();
+                $entry = app(TimeEntryWorkflow::class)->create($workspace, $project, $author, [
+                    'worked_on' => '2026-01-15', 'minutes' => 30, 'description' => 'Synthetic concurrent late creation',
+                    'billing_rate_amount' => 10000, 'currency' => 'USD',
+                ]);
+                $createdEntryId = $entry->id;
+            } else {
+                $entry = ClientTimeEntry::query()->where('workspace_id', $workspace->id)->whereKey((int) $input['entry'])->firstOrFail();
+            }
             $actor = User::query()->whereKey((int) $input['actor'])->firstOrFail();
             app(TimeEntryMutationService::class)->approve($workspace, $actor, [['id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry)]]);
             $eventId = (int) $entry->fresh()->billing_eligibility_event_id;
@@ -80,7 +93,7 @@ try {
         return $eventId;
     });
     $sequence = DB::table('client_billing_eligibility_events')->where('workspace_id', $workspace->id)->where('id', $eventId)->value('sequence');
-    echo json_encode(['outcome' => 'success', 'event_id' => $eventId, 'sequence' => (int) $sequence, 'connection_id' => $connectionId], JSON_THROW_ON_ERROR)."\n";
+    echo json_encode(['outcome' => 'success', 'event_id' => $eventId, 'sequence' => (int) $sequence, 'connection_id' => $connectionId, 'entry_id' => $createdEntryId], JSON_THROW_ON_ERROR)."\n";
 } catch (HttpExceptionInterface|DomainException $exception) {
     echo json_encode(['outcome' => 'refused', 'class' => $exception::class, 'message' => $exception->getMessage(), 'connection_id' => $connectionId], JSON_THROW_ON_ERROR)."\n";
 } catch (Throwable $exception) {

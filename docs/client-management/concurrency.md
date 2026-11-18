@@ -1029,5 +1029,6 @@ counters in that same order. Only own event/counter updates and own anonymous
 reservation cleanup follow; no business or foreign-key parent lock follows a
 counter. This orders commits rather than ID allocation, including a lower-ID
 transaction that commits later. Nested/savepoint events remain provisional to
-the registering connection until the actual outer commit. The four physical
-MariaDB cases exercise both reversed commit orders and approval versus issue.
+the registering connection until the actual outer commit. The six physical
+MariaDB cases exercise reversed commit orders, approval versus issue and actual
+time creation versus issue.

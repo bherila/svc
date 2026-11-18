@@ -12,6 +12,7 @@ use App\Models\ExternalImportRun;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\TimeEntryMutationService;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\LateWork;
@@ -236,6 +237,31 @@ final class LateWorkTest extends TestCase
         $this->assertSame(15000, (int) $draft->total_amount);
         $this->assertSame([], $this->invoicesCarrying($unchanged));
         $this->assertSame([$draft->id], $this->invoicesCarrying($moved));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function invalidEventPointers(): iterable
+    {
+        yield 'unknown event' => [false];
+        yield 'another clients pending event' => [true];
+    }
+
+    #[DataProvider('invalidEventPointers')]
+    public function test_nonnull_missing_or_foreign_eligibility_history_is_refused(bool $foreign): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        $entry = $this->orderedHours('2026-01-15', 30);
+        $id = PHP_INT_MAX;
+        if ($foreign) {
+            $other = ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic foreign ordering', 'slug' => 'synthetic-foreign-ordering']);
+            $id = app(BillingEligibilityOrder::class)->record($this->workspace->id, $other->id);
+        }
+        ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->whereKey($entry->id)->update(['billing_eligibility_event_id' => $id]);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Billing eligibility history is missing or belongs to another client.');
+        app(LateWork::class)->ids(ClientTimeEntry::query()->whereKey($entry->id)->unbilled(), $agreement, Carbon::parse('2026-03-01'));
     }
 
     /** @return iterable<string, array{array<string, mixed>, string, string, string}> */
