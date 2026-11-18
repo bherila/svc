@@ -1,3 +1,10 @@
 {
-    "exceptions": []
+    "exceptions": [
+        {
+            "id": "GHSA-fc5q-39xc-vjpf",
+            "package": "picomatch",
+            "reason": "ReDoS in picomatch <=4.0.7 with no patched release yet. It reaches the app only through the Vite build toolchain (vite, tinyglobby/fdir, vite-plugin-full-reload), which matches globs from build config, never request input. Remove once a patched picomatch is published and locked.",
+            "expires": "2026-12-18"
+        }
+    ]
 }
