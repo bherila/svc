@@ -74,6 +74,10 @@ final class BillingEligibilityOrder
                 if ($event->sequence === null) {
                     throw new LogicException('A published billing eligibility event has no commit order.');
                 }
+                // PDO may return integer columns as numeric strings. PHP
+                // normalizes numeric array keys and these typed constructor
+                // arguments identically; retain explicit DTO normalization.
+                /** @infection-ignore CastInt */
                 $positions[(int) $event->id] = new BillingEligibilityPosition((int) $event->id, (int) $event->sequence);
             }
         }
