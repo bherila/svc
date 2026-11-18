@@ -48,6 +48,10 @@ other application or installed-package `TransactionCommitting` listeners.
   requires the same event as part of its unchanged-fragment signature.
 - `InvoiceLifecycleService::issue`: records the first cadence issue once, in its
   existing invoice transaction. Reissue retains that original boundary.
+- `PricingBasisRecorder`: digests the eligibility pointer as a pricing input;
+  approval or date/billable round trips can restore every ordinary column while
+  changing whether older work belongs on this later draft. Such a draft must be
+  rebuilt before issue.
 - Void/reopen and rollback-only replay restore previously eligible statuses and
   keep their event; they do not manufacture newly logged or newly approved work.
 - Imports and existing rows start without ordering evidence. A missing event uses

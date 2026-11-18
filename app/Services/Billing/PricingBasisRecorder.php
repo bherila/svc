@@ -273,6 +273,7 @@ final class PricingBasisRecorder
                 'client_time_entries.client_project_id', 'client_time_entries.client_task_id', 'client_time_entries.deleted_at',
                 'client_time_entries.client_disputed_at', 'client_time_entries.client_dispute_settlement',
                 'client_time_entries.subcontractor_cost_amount',
+                'client_time_entries.billing_eligibility_event_id',
             ]);
         if ($locking) {
             $entries->tap(Locks::forUpdate());
@@ -290,6 +291,7 @@ final class PricingBasisRecorder
                 self::int($row->billing_rate_amount), self::text($row->currency), self::int($row->client_project_id), self::int($row->client_task_id),
                 $row->deleted_at !== null, $row->client_disputed_at !== null, self::text($row->client_dispute_settlement),
                 $row->subcontractor_cost_amount !== null, implode(',', $lines),
+                self::int($row->billing_eligibility_event_id),
             ];
         }
 

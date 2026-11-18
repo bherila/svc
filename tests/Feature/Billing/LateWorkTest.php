@@ -18,6 +18,7 @@ use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\LateWork;
 use App\Services\Engagement\TimeEntryWorkflow;
 use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\PricingBasisChanged;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -136,6 +137,37 @@ final class LateWorkTest extends TestCase
             $this->assertSame([$draft->id], $this->invoicesCarrying($entry));
             $this->assertSame('invoiced', $entry->fresh()?->status);
         }
+    }
+
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('hourlyCadences')]
+    public function test_an_eligibility_round_trip_refuses_the_stale_later_draft_before_collecting_the_work_once(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $this->hours('2026-01-10', 60);
+        $firstDraft = $this->generate($agreement, $first);
+        $control = $this->orderedHours('2026-01-15', 30);
+        app(InvoiceLifecycleService::class)->issue($firstDraft, $this->workspace);
+        $this->hours($nextWork, 60);
+        $stale = $this->generate($agreement, $next);
+        $this->assertSame(10000, (int) $stale->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($control));
+
+        $draftEntry = app(TimeEntryMutationService::class)->unapprove($this->workspace, $control, $this->owner, AgentApiVersion::for($control));
+        $this->approve($draftEntry);
+        // Status/date/rate return to their original values, but this newly
+        // approved work now follows the first issue and changes the later bill.
+        try {
+            app(InvoiceLifecycleService::class)->issue($stale, $this->workspace);
+            $this->fail('The earlier eligibility event must be part of the pricing basis.');
+        } catch (PricingBasisChanged) {
+            $this->assertSame('draft', $stale->fresh()?->status);
+        }
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($stale);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame(15000, (int) $rebuilt->total_amount);
+        app(InvoiceLifecycleService::class)->issue($rebuilt, $this->workspace);
+        $this->assertSame([$rebuilt->id], $this->invoicesCarrying($control));
     }
 
     /** @param array<string, mixed> $terms */

@@ -40,7 +40,7 @@ final class IssueDigestCoverageTest extends TestCase
 
     /** Columns neither digest reads, and why that is safe. */
     private const array IGNORED_BY_BOTH = [
-        'billing_eligibility_event_id' => 'ordering metadata recorded atomically with creation or eligibility inputs already covered by the digest; splits inherit it',
+        'billing_eligibility_event_id' => 'cross-period admission is included in the cadence pricing basis; the interim fingerprint covers writer revisions, and the held-work basis covers dispute state only',
         'id' => 'identity; a different id is a different row',
         'workspace_id' => 'composite tenant keys refuse a row moving workspace without its company and project, which both digests scope on',
         'public_id' => 'identity for the API',
