@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  * @property string $timezone
  */
 #[Fillable(['name', 'slug', 'timezone', 'default_currency'])]
-#[Hidden(['stripe_credential_version'])]
+#[Hidden(['stripe_credential_version', 'stripe_refused_credential_version'])]
 class Workspace extends Model
 {
     use HasPublicId;

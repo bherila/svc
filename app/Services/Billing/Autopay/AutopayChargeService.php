@@ -326,14 +326,14 @@ final class AutopayChargeService
         $this->release($workspace, $attempt);
         // Keep the once-per-breakage activity in the guarded health transition's
         // transaction; reconnect cannot replace the key between the two writes.
-        $health = DB::transaction(function () use ($workspace, $company, $invoice, $access, $failure, $amount): StripeHealthRefusal {
+        $health = DB::transaction(function () use ($workspace, $company, $invoice, $access, $failure, $amount, $attempt): StripeHealthRefusal {
             $health = $this->health->recordRefusal($workspace, $access);
             if ($health === StripeHealthRefusal::First) {
                 $this->activities->record($workspace, $company, 'invoice.autopay_connection_refused', $invoice, [
                     'code' => mb_substr($failure['code'], 0, 64),
                     'amount' => $amount,
                     'currency' => $invoice->currency,
-                ]);
+                ], null, $attempt->public_id);
             }
 
             return $health;

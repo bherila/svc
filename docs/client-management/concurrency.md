@@ -1005,3 +1005,12 @@ revoker's ordinary snapshot. Each dependent's generation is invalidated in the
 same transaction as revocation, including source reconnects and same-second
 replacements. The MariaDB two-session controls in
 `StripeCredentialGenerationSnapshotTest` exercise those current-read boundaries.
+
+The refusal marker also records the effective generation, including a keyed
+nonsecret environment-key version for the legacy path. Reads compare that
+identity before showing a warning or applying backoff, so replacing an already
+refused environment key immediately admits the replacement. Timestamp-only
+legacy markers created before this migration have no recoverable key identity;
+they retain their previous conservative backoff until expiry or a fresh answer.
+Existing owned/reused markers are attributed during backfill only while the
+workspace's selected generation still matches; no secret is read by migration.

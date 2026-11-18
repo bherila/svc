@@ -20,6 +20,11 @@ final readonly class StripeCredentialIdentity
         return $this->connectionId === null ? null : 'connection:'.$this->connectionId.':source:'.$this->sourceConnectionId;
     }
 
+    public function healthVersion(): string
+    {
+        return $this->connectionVersion() ?? 'environment:'.$this->environmentVersion;
+    }
+
     public static function environment(int $workspaceId, #[SensitiveParameter] string $secret): self
     {
         return new self($workspaceId, null, null, hash_hmac('sha256', $secret, (string) config('app.key')));

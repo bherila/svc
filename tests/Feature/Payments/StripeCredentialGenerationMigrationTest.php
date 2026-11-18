@@ -55,7 +55,11 @@ final class StripeCredentialGenerationMigrationTest extends TestCase
             $this->assertSame('2030-12-01 15:00:00', $source->fresh()->getRawOriginal('stripe_refused_at'));
             $this->assertSame('2030-12-01 15:00:00', $borrower->fresh()->getRawOriginal('stripe_refused_at'));
             $this->assertNull($obsolete->fresh()->getRawOriginal('stripe_refused_at'));
+            $this->assertSame('connection:'.$own->id.':source:'.$own->id, $source->fresh()->getRawOriginal('stripe_refused_credential_version'));
+            $this->assertSame('connection:'.$reused->id.':source:'.$own->id, $borrower->fresh()->getRawOriginal('stripe_refused_credential_version'));
+            $this->assertNull($legacy->fresh()->getRawOriginal('stripe_refused_credential_version'));
             $this->assertArrayNotHasKey('stripe_credential_version', $source->fresh()->toArray());
+            $this->assertArrayNotHasKey('stripe_refused_credential_version', $source->fresh()->toArray());
         } finally {
             DB::setDefaultConnection($original);
             Schema::clearResolvedInstance('db.schema');

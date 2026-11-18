@@ -322,6 +322,51 @@ final class AutopayConnectionRefusalTest extends TestCase
         $this->assertTrue($health->pauses($workspace));
     }
 
+    public function test_a_refused_legacy_key_does_not_pause_its_environment_replacement(): void
+    {
+        [$workspace, , $invoice] = $this->dueInvoice();
+        $this->fakeAutopayStripe(fn (): array => self::refusal(401, 'authentication_error'));
+        $service = app(AutopayChargeService::class);
+        $this->assertSame(AutopayChargeResult::ConnectionNeedsAttention, $service->run(50, true)[0]->result);
+        $this->assertTrue(app(StripeConnectionHealth::class)->pauses($workspace));
+        $this->assertNotNull(app(AutopayPresenter::class)->invoice($workspace, $invoice, forProvider: true)['connection_problem']);
+        $this->autopayStripeCalls = [];
+        $this->fakeAutopayStripe(function (string $method, string $path, array $params, array $headers): array {
+            $this->assertContains('Authorization: Bearer sk_test_synthetic_legacy_repaired_B', $headers);
+
+            return [['id' => 'pi_synthetic_legacy_repaired_B', 'object' => 'payment_intent', 'status' => 'succeeded']];
+        });
+        config(['services.stripe.secret_key' => 'sk_test_synthetic_legacy_repaired_B']);
+        $this->assertNull(app(StripeConnectionHealth::class)->refusedAt($workspace));
+        $this->assertFalse(app(StripeConnectionHealth::class)->pauses($workspace));
+        $this->assertNull(app(AutopayPresenter::class)->invoice($workspace, $invoice, forProvider: true)['connection_problem']);
+
+        $this->assertSame(AutopayChargeResult::Submitted, $service->run(50, true)[0]->result);
+        $this->assertCount(1, $this->autopayCharges());
+        $this->assertSame([], $service->run(50, true));
+        $this->assertSame(1, ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('action', 'invoice.autopay_connection_refused')->count());
+        $this->assertNull(DB::table('workspaces')->where('id', $workspace->id)->value('stripe_refused_credential_version'));
+    }
+
+    public function test_each_refused_legacy_key_has_one_notice_and_its_own_backoff(): void
+    {
+        [$workspace] = $this->dueInvoice();
+        $this->fakeAutopayStripe(fn (): array => self::refusal(401, 'authentication_error'));
+        $service = app(AutopayChargeService::class);
+        $service->run(50, true);
+        $old = DB::table('workspaces')->where('id', $workspace->id)->value('stripe_refused_credential_version');
+        $this->assertIsString($old);
+        $this->assertStringStartsWith('environment:', $old);
+        config(['services.stripe.secret_key' => 'sk_test_synthetic_legacy_still_refused_B']);
+        $this->assertFalse(app(StripeConnectionHealth::class)->pauses($workspace));
+        $this->assertSame(AutopayChargeResult::ConnectionNeedsAttention, $service->run(50, true)[0]->result);
+        $this->assertTrue(app(StripeConnectionHealth::class)->pauses($workspace));
+        $this->assertNotSame($old, DB::table('workspaces')->where('id', $workspace->id)->value('stripe_refused_credential_version'));
+        $service->run(50, true);
+        $this->assertCount(2, $this->autopayCharges(), 'B is tried once, then its own refusal suppresses repeats.');
+        $this->assertSame(2, ClientCompanyActivity::query()->where('workspace_id', $workspace->id)->where('action', 'invoice.autopay_connection_refused')->count());
+    }
+
     public function test_a_cached_key_is_bound_to_its_own_generation_even_after_another_request_reconnects(): void
     {
         [$workspace] = $this->dueInvoice();

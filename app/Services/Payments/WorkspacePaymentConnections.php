@@ -480,6 +480,7 @@ final class WorkspacePaymentConnections
             DB::table('workspaces')->where('id', $connection->workspace_id)->update([
                 'stripe_credential_version' => 'disconnected',
                 'stripe_refused_at' => null,
+                'stripe_refused_credential_version' => null,
             ]);
         }
         $connection->refresh();
@@ -523,6 +524,7 @@ final class WorkspacePaymentConnections
             DB::table('workspaces')->where('id', $connection->workspace_id)->update([
                 'stripe_credential_version' => $identity->connectionVersion(),
                 'stripe_refused_at' => null,
+                'stripe_refused_credential_version' => null,
             ]);
         }
     }

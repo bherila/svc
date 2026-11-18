@@ -35,11 +35,26 @@ final class StripeConnectionHealth
     /** When Stripe refused the connection and nothing has fixed it since, or null. */
     public function refusedAt(Workspace $workspace): ?CarbonImmutable
     {
-        $stored = DB::table('workspaces')->where('id', $workspace->id)->value('stripe_refused_at');
-        if (! is_string($stored) || $stored === '') {
+        $stored = DB::table('workspaces')->where('id', $workspace->id)
+            ->first(['stripe_refused_at', 'stripe_refused_credential_version', 'stripe_credential_version']);
+        if ($stored === null || ! is_string($stored->stripe_refused_at) || $stored->stripe_refused_at === '') {
             return null;
         }
-        $refused = CarbonImmutable::parse($stored, 'UTC');
+        $refused = CarbonImmutable::parse($stored->stripe_refused_at, 'UTC');
+        if ($stored->stripe_refused_credential_version !== null) {
+            $version = $stored->stripe_credential_version;
+            if ($version === null) {
+                $secret = config('services.stripe.secret_key');
+                if (! is_string($secret) || $secret === '') {
+                    return null;
+                }
+                $version = StripeCredentialIdentity::environment($workspace->id, $secret)->healthVersion();
+            }
+
+            return $stored->stripe_refused_credential_version === $version ? $refused : null;
+        }
+        // Timestamp-only legacy observations predate credential attribution.
+        // Keep their conservative warning/backoff until a repair or fresh answer.
         $saved = $this->connections->activeRow($workspace, PaymentProcessor::Stripe)?->connected_at;
 
         return $saved !== null && $saved->utc()->greaterThan($refused) ? null : $refused;
@@ -87,7 +102,7 @@ final class StripeConnectionHealth
             // REPEATABLE READ snapshot predates reconnect. Connection writers
             // save this fence and reset the marker in their own transaction.
             $current = DB::table('workspaces')->where('id', $workspace->id)->tap(Locks::forUpdate())
-                ->first(['stripe_credential_version', 'stripe_refused_at']);
+                ->first(['stripe_credential_version', 'stripe_refused_at', 'stripe_refused_credential_version']);
             if ($current === null || $current->stripe_credential_version !== $identity->connectionVersion()) {
                 return null;
             }
@@ -97,9 +112,12 @@ final class StripeConnectionHealth
                     return null;
                 }
             }
-            $fresh = $current->stripe_refused_at === null;
+            $version = $identity->healthVersion();
+            $fresh = $current->stripe_refused_at === null
+                || ($current->stripe_refused_credential_version !== null && $current->stripe_refused_credential_version !== $version);
             DB::table('workspaces')->where('id', $workspace->id)->update([
                 'stripe_refused_at' => $refused ? $this->clock->now()->utc() : null,
+                'stripe_refused_credential_version' => $refused ? $version : null,
             ]);
 
             return $refused && $fresh;
