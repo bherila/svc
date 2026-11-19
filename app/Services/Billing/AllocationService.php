@@ -209,6 +209,7 @@ final class AllocationService
             'billing_rate_source' => $entry->billing_rate_source,
             'approved_by_user_id' => $entry->approved_by_user_id,
             'approved_at' => $entry->approved_at?->toIso8601String(),
+            'billing_eligibility_event_id' => $entry->billing_eligibility_event_id,
             // A fragment the client has decided on is no longer the same
             // piece of work as one they have not: merging would delete the
             // decision with the loser.

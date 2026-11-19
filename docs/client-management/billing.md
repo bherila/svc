@@ -257,6 +257,16 @@ rolls it forward by how it is priced:
   ledger reads work by its date and would count it in its own month as well.
   With no capacity free it waits in the backlog and adds no overage to the draft.
 
+New work and approvals are ordered against the first issue by per-company commit
+sequence, including operations in the same stored second. Entry creation,
+approval, system release and changes to its eligibility record explicit events;
+wording edits and unchanged eligibility do not. An already allocated entry is
+still excluded, and reissuing an invoice preserves its first issue boundary.
+Existing rows without ordering evidence retain the strict timestamp rule: equal
+legacy timestamps are ambiguous and require an explicit operator correction,
+not automatic rebilling. [Eligibility ordering](eligibility-ordering.md) records
+the transaction boundary, supported writers and rollback behavior.
+
 Only a charged cadence invoice of the same agreement makes a row late. A period
 that is drafted or voided still bills its own work. An issued invoice with no
 linked time still closes its period: work logged afterwards rolls forward by

@@ -11,9 +11,14 @@ use App\Models\ExternalImportItem;
 use App\Models\ExternalImportRun;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\AgentApi\TimeEntryMutationService;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\ClientInvoicingService;
 use App\Services\Billing\InvoiceLifecycleService;
 use App\Services\Billing\LateWork;
+use App\Services\Engagement\TimeEntryWorkflow;
+use App\Support\AgentApi\AgentApiVersion;
+use App\Support\Billing\PricingBasisChanged;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,6 +97,220 @@ final class LateWorkTest extends TestCase
         $this->assertSame((int) round(90 * self::RATE / 60), (int) $rebuilt->total_amount, 'Regenerating must not charge it twice.');
         $this->assertSame([$rebuilt->id], $this->invoicesCarrying($late));
         $this->assertFalse((bool) $late->fresh()?->is_deferred);
+    }
+
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('hourlyCadences')]
+    public function test_same_second_new_and_newly_approved_work_is_carried_exactly_once(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $allocated = $this->hours('2026-01-10', 60);
+        $awaiting = $this->hours('2026-01-16', 30, ['status' => 'draft', 'approved_at' => null, 'subcontractor_billing_mode' => 'retainer']);
+        $firstDraft = $this->generate($agreement, $first);
+        // Eligible before issue but deliberately absent from the already priced
+        // draft: equal timestamps alone must never make this old work late.
+        $earlier = $this->orderedHours('2026-01-17', 30);
+        Carbon::setTestNow('2027-02-01 12:00:00.100000');
+        CarbonImmutable::setTestNow('2027-02-01 12:00:00.100000');
+        $issued = app(InvoiceLifecycleService::class)->issue($firstDraft, $this->workspace);
+
+        Carbon::setTestNow('2027-02-01 12:00:00.900000');
+        CarbonImmutable::setTestNow('2027-02-01 12:00:00.900000');
+        $late = $this->orderedHours('2026-01-15', 30);
+        $this->approve($awaiting);
+        $this->assertSame($issued->fresh()?->issued_at?->format('Y-m-d H:i:s.u'), $late->fresh()?->created_at?->format('Y-m-d H:i:s.u'));
+        $this->assertSame($issued->fresh()?->issued_at?->format('Y-m-d H:i:s.u'), $awaiting->fresh()?->approved_at?->format('Y-m-d H:i:s.u'));
+        $this->hours($nextWork, 60);
+
+        $draft = $this->generate($agreement, $next);
+        $this->assertSame(20000, (int) $draft->total_amount);
+        $this->assertSame([$issued->id], $this->invoicesCarrying($allocated));
+        $this->assertSame([], $this->invoicesCarrying($earlier));
+        foreach ([$late, $awaiting] as $entry) {
+            $this->assertSame([$draft->id], $this->invoicesCarrying($entry));
+        }
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($draft);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame(20000, (int) $rebuilt->total_amount);
+        app(InvoiceLifecycleService::class)->issue($rebuilt, $this->workspace);
+        foreach ([$late, $awaiting] as $entry) {
+            $this->assertSame([$draft->id], $this->invoicesCarrying($entry));
+            $this->assertSame('invoiced', $entry->fresh()?->status);
+        }
+    }
+
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('hourlyCadences')]
+    public function test_an_eligibility_round_trip_refuses_the_stale_later_draft_before_collecting_the_work_once(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $this->hours('2026-01-10', 60);
+        $firstDraft = $this->generate($agreement, $first);
+        $control = $this->orderedHours('2026-01-15', 30);
+        app(InvoiceLifecycleService::class)->issue($firstDraft, $this->workspace);
+        $this->hours($nextWork, 60);
+        $stale = $this->generate($agreement, $next);
+        $this->assertSame(10000, (int) $stale->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($control));
+
+        $draftEntry = app(TimeEntryMutationService::class)->unapprove($this->workspace, $control, $this->owner, AgentApiVersion::for($control));
+        $this->approve($draftEntry);
+        // Status/date/rate return to their original values, but this newly
+        // approved work now follows the first issue and changes the later bill.
+        try {
+            app(InvoiceLifecycleService::class)->issue($stale, $this->workspace);
+            $this->fail('The earlier eligibility event must be part of the pricing basis.');
+        } catch (PricingBasisChanged) {
+            $this->assertSame('draft', $stale->fresh()?->status);
+        }
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($stale);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame(15000, (int) $rebuilt->total_amount);
+        app(InvoiceLifecycleService::class)->issue($rebuilt, $this->workspace);
+        $this->assertSame([$rebuilt->id], $this->invoicesCarrying($control));
+    }
+
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('retainerCadences')]
+    public function test_same_second_retainer_work_is_deferred_and_uses_later_capacity_once(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $this->hours('2026-01-10', $this->pool($terms));
+        $firstDraft = $this->generate($agreement, $first);
+        app(InvoiceLifecycleService::class)->issue($firstDraft, $this->workspace);
+        $late = $this->orderedHours('2026-01-15', 120);
+        $event = $late->billing_eligibility_event_id;
+        $this->hours($nextWork, 60);
+
+        $draft = $this->generate($agreement, $next);
+        $this->assertTrue((bool) $late->fresh()?->is_deferred);
+        $this->assertSame([$draft->id], $this->invoicesCarrying($late));
+        $this->assertSame($this->retainerCharge($terms), (int) $draft->total_amount);
+        $rebuilt = app(ClientInvoicingService::class)->regenerateDraftInvoice($draft);
+        $this->assertNotNull($rebuilt);
+        $this->assertSame($this->retainerCharge($terms), (int) $rebuilt->total_amount);
+        app(InvoiceLifecycleService::class)->issue($rebuilt, $this->workspace);
+        $this->assertSame([$draft->id], $this->invoicesCarrying($late));
+        $this->assertSame($event, $late->fresh()?->billing_eligibility_event_id);
+    }
+
+    /** @param array<string, mixed> $terms */
+    #[DataProvider('retainerCadences')]
+    public function test_an_empty_issued_period_still_orders_same_second_work(array $terms, string $first, string $next, string $nextWork): void
+    {
+        $agreement = $this->agreement($terms);
+        $firstDraft = $this->generate($agreement, $first);
+        $issued = app(InvoiceLifecycleService::class)->issue($firstDraft, $this->workspace);
+        $this->assertNotNull($issued->billing_eligibility_event_id);
+        $late = $this->orderedHours('2026-01-15', 30);
+        $this->hours($nextWork, 60);
+        $nextDraft = $this->generate($agreement, $next);
+        $this->assertSame([$nextDraft->id], $this->invoicesCarrying($late));
+        $this->assertTrue((bool) $late->fresh()?->is_deferred);
+    }
+
+    public function test_reissue_preserves_the_first_issue_eligibility_event(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->orderedHours('2026-01-10', 60);
+        $issued = app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        $firstEvent = $issued->billing_eligibility_event_id;
+        $this->assertNotNull($firstEvent);
+        $reopened = app(InvoiceLifecycleService::class)->reopen($issued, 'Synthetic correction', $this->workspace);
+        $this->assertSame($firstEvent, $reopened->billing_eligibility_event_id);
+        $reissued = app(InvoiceLifecycleService::class)->issue($reopened, $this->workspace);
+        $this->assertSame($firstEvent, $reissued->billing_eligibility_event_id);
+        $late = $this->orderedHours('2026-01-15', 30);
+        $draft = $this->generate($agreement, '2026-03-01');
+        $this->assertSame([$draft->id], $this->invoicesCarrying($late));
+    }
+
+    public function test_ambiguous_legacy_rows_keep_the_strict_timestamp_policy(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $issued = app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        ClientInvoice::query()->where('workspace_id', $this->workspace->id)->whereKey($issued->id)
+            ->update(['billing_eligibility_event_id' => null]);
+        $legacy = $this->hours('2026-01-15', 30);
+        $ordered = $this->orderedHours('2026-01-16', 30);
+        $this->assertNull($issued->fresh()?->billing_eligibility_event_id);
+        $this->assertNotNull($ordered->billing_eligibility_event_id);
+        $this->hours('2026-02-10', 60);
+        $draft = $this->generate($agreement, '2026-03-01');
+        $this->assertSame(10000, (int) $draft->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($legacy));
+        $this->assertSame([], $this->invoicesCarrying($ordered));
+    }
+
+    public function test_an_entry_without_ordering_evidence_is_not_guessed_from_equal_seconds(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $issued = app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        $legacy = $this->hours('2026-01-15', 30);
+        $this->assertNotNull($issued->billing_eligibility_event_id);
+        $this->assertNull($legacy->billing_eligibility_event_id);
+        $this->assertSame($issued->issued_at?->format('Y-m-d H:i:s'), $legacy->created_at?->format('Y-m-d H:i:s'));
+        $this->hours('2026-02-10', 60);
+        $draft = $this->generate($agreement, '2026-03-01');
+        $this->assertSame(10000, (int) $draft->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($legacy));
+    }
+
+    public function test_only_real_eligibility_edits_move_an_existing_entries_order(): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        $future = app(TimeEntryWorkflow::class)->create($this->workspace, $this->project, $this->owner, [
+            'worked_on' => '2026-02-15', 'minutes' => 30, 'description' => 'Synthetic not yet billable', 'is_billable' => false,
+        ]);
+        $first = $this->generate($agreement, '2026-02-01');
+        $unchanged = app(TimeEntryWorkflow::class)->create($this->workspace, $this->project, $this->owner, [
+            'worked_on' => '2026-01-15', 'minutes' => 30, 'description' => 'Synthetic unchanged eligibility', 'is_billable' => false,
+        ]);
+        $oldEvent = $unchanged->billing_eligibility_event_id;
+        app(InvoiceLifecycleService::class)->issue($first, $this->workspace);
+
+        $edited = app(TimeEntryMutationService::class)->update($this->workspace, $unchanged, $this->owner, [
+            'expected_version' => AgentApiVersion::for($unchanged), 'description' => 'Synthetic wording edit',
+            'worked_on' => $unchanged->worked_on->toDateString(), 'is_billable' => false, 'is_deferred' => false,
+        ]);
+        $this->assertSame($oldEvent, $edited->billing_eligibility_event_id);
+        $moved = app(TimeEntryMutationService::class)->update($this->workspace, $future, $this->owner, [
+            'expected_version' => AgentApiVersion::for($future), 'worked_on' => '2026-01-16', 'is_billable' => true,
+        ]);
+        $this->assertNotSame($future->billing_eligibility_event_id, $moved->billing_eligibility_event_id);
+        $this->hours('2026-02-10', 60);
+        $draft = $this->generate($agreement, '2026-03-01');
+        $this->assertSame(15000, (int) $draft->total_amount);
+        $this->assertSame([], $this->invoicesCarrying($unchanged));
+        $this->assertSame([$draft->id], $this->invoicesCarrying($moved));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function invalidEventPointers(): iterable
+    {
+        yield 'unknown event' => [false];
+        yield 'another clients pending event' => [true];
+    }
+
+    #[DataProvider('invalidEventPointers')]
+    public function test_nonnull_missing_or_foreign_eligibility_history_is_refused(bool $foreign): void
+    {
+        $agreement = $this->agreement(self::HOURLY);
+        $this->hours('2026-01-10', 60);
+        app(InvoiceLifecycleService::class)->issue($this->generate($agreement, '2026-02-01'), $this->workspace);
+        $entry = $this->orderedHours('2026-01-15', 30);
+        $id = PHP_INT_MAX;
+        if ($foreign) {
+            $other = ClientCompany::query()->create(['workspace_id' => $this->workspace->id, 'name' => 'Synthetic foreign ordering', 'slug' => 'synthetic-foreign-ordering']);
+            $id = app(BillingEligibilityOrder::class)->record($this->workspace->id, $other->id);
+        }
+        ClientTimeEntry::query()->where('workspace_id', $this->workspace->id)->whereKey($entry->id)->update(['billing_eligibility_event_id' => $id]);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Billing eligibility history is missing or belongs to another client.');
+        app(LateWork::class)->ids(ClientTimeEntry::query()->whereKey($entry->id)->unbilled(), $agreement, Carbon::parse('2026-03-01'));
     }
 
     /** @return iterable<string, array{array<string, mixed>, string, string, string}> */
@@ -401,6 +620,26 @@ final class LateWorkTest extends TestCase
             'client_visible_description' => 'Synthetic client text', 'is_visible_to_client' => true,
             'status' => 'approved', 'is_billable' => true, 'is_deferred' => false, 'billing_rate_amount' => self::RATE, 'currency' => 'USD',
         ]);
+    }
+
+    private function orderedHours(string $day, int $minutes): ClientTimeEntry
+    {
+        $entry = app(TimeEntryWorkflow::class)->create($this->workspace, $this->project, $this->owner, [
+            'worked_on' => $day, 'minutes' => $minutes, 'description' => 'Synthetic ordered work',
+            'billing_rate_amount' => self::RATE, 'currency' => 'USD',
+        ]);
+        $this->approve($entry);
+
+        return $entry->fresh() ?? $entry;
+    }
+
+    private function approve(ClientTimeEntry $entry): void
+    {
+        $reviewer = User::factory()->create();
+        $this->workspace->memberships()->create(['user_id' => $reviewer->id, 'role' => 'admin']);
+        app(TimeEntryMutationService::class)->approve($this->workspace, $reviewer, [[
+            'id' => $entry->public_id, 'expected_version' => AgentApiVersion::for($entry->fresh() ?? $entry),
+        ]]);
     }
 
     private function generate(ClientAgreement $agreement, string $period): ClientInvoice

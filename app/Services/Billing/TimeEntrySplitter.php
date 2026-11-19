@@ -181,6 +181,7 @@ class TimeEntrySplitter
                 'subcontractor_cost_metadata' => $entry->subcontractor_cost_metadata,
                 'approved_by_user_id' => $entry->approved_by_user_id,
                 'approved_at' => $entry->approved_at,
+                'billing_eligibility_event_id' => $entry->billing_eligibility_event_id,
                 // The client's say-so is about the work, so it covers both
                 // halves of a split.
                 'client_approved_at' => $entry->client_approved_at,

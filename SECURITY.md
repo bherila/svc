@@ -123,3 +123,13 @@ Nothing checks this at runtime. A new connection must set the same `timezone`, a
 mix `NOW()` or `CURRENT_TIMESTAMP` with workspace-local times. Values stored before the pin were
 deliberately not converted; docs/client-management/timestamps.md lists which read off and by how
 much.
+
+
+Billing eligibility ordering uses explicit domain writers, not arbitrary model
+or SQL updates. The commit coordinator is the only application/installed-package
+`TransactionCommitting` listener and its counter fence is the final lock phase.
+Pending event positions are connection/savepoint local; final events and counters
+have composite tenant foreign keys. Nullable business pointers publish before
+their event parent and therefore cannot carry an immediate FK: `LateWork` refuses
+a non-null missing or foreign event. Existing null pointers keep conservative
+legacy timestamp semantics. See [the writer and lock inventory](docs/client-management/eligibility-ordering.md).

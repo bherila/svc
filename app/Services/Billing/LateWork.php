@@ -7,12 +7,14 @@ use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\ClientTimeEntry;
 use App\Support\Approval\LateAnswer;
+use App\Support\Billing\BillingEligibilityPosition;
 use App\Support\Billing\InvoiceKind;
 use App\Support\Billing\InvoiceStatus;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Work that arrived after the invoice for its own period was charged
@@ -58,32 +60,66 @@ final class LateWork
                 ->whereColumn('external_import_runs.workspace_id', 'client_invoices.workspace_id')
                 ->where('external_import_items.target_type', 'invoice')
                 ->whereColumn('external_import_items.target_public_id', 'client_invoices.public_id'))
-            ->get(['service_period_start', 'service_period_end', 'issued_at']);
+            ->get(['service_period_start', 'service_period_end', 'issued_at', 'billing_eligibility_event_id']);
 
         if ($charged->isEmpty()) {
             return [];
         }
 
-        return array_values($work->whereDate('worked_on', '<', $before->toDateString())
-            ->get(['id', 'worked_on', 'created_at', 'approved_at'])
+        $entries = $work->where('workspace_id', $agreement->workspace_id)->where('client_company_id', $agreement->client_company_id)
+            ->whereDate('worked_on', '<', $before->toDateString())
+            ->get(['id', 'worked_on', 'created_at', 'approved_at', 'billing_eligibility_event_id']);
+        $ids = [];
+        foreach ($entries as $entry) {
+            if ($entry->billing_eligibility_event_id !== null) {
+                $ids[] = $entry->billing_eligibility_event_id;
+            }
+        }
+        foreach ($charged as $invoice) {
+            if ($invoice->billing_eligibility_event_id !== null) {
+                $ids[] = $invoice->billing_eligibility_event_id;
+            }
+        }
+        $ids = array_unique($ids);
+        $positions = app(BillingEligibilityOrder::class)->positions($agreement->workspace_id, $agreement->client_company_id, $ids);
+        if (count($positions) !== count($ids)) {
+            throw new LogicException('Billing eligibility history is missing or belongs to another client.');
+        }
+
+        return array_values($entries
             ->filter(fn (ClientTimeEntry $entry): bool => $charged->contains(
-                fn (ClientInvoice $invoice): bool => $this->arrivedAfter($entry, $invoice),
+                fn (ClientInvoice $invoice): bool => $this->arrivedAfter($entry, $invoice, $positions),
             ))
             ->map(static fn (ClientTimeEntry $entry): int => (int) $entry->id)
             ->all());
     }
 
-    /** Did the invoice cover this row's date, and charge before the row could be billed? */
-    private function arrivedAfter(ClientTimeEntry $entry, ClientInvoice $invoice): bool
+    /**
+     * Did the invoice cover this row's date, and charge before it could be billed?
+     * The public query requires both period bounds; removing either nullsafe
+     * operator here is equivalent. Public admission tests exercise null bounds.
+     *
+     * @infection-ignore NullSafeMethodCall
+     *
+     * @param  array<int, BillingEligibilityPosition>  $positions
+     */
+    private function arrivedAfter(ClientTimeEntry $entry, ClientInvoice $invoice, array $positions): bool
     {
         $day = $entry->worked_on->toDateString();
         $issued = $invoice->issued_at;
 
-        return $issued !== null
-            && $day >= $invoice->service_period_start?->toDateString()
-            && $day <= $invoice->service_period_end?->toDateString()
-            && (($entry->created_at !== null && $entry->created_at->gt($issued))
-                || ($entry->approved_at !== null && $entry->approved_at->gt($issued)));
+        if ($issued === null || $day < $invoice->service_period_start?->toDateString()
+            || $day > $invoice->service_period_end?->toDateString()) {
+            return false;
+        }
+        if ($entry->billing_eligibility_event_id !== null && $invoice->billing_eligibility_event_id !== null) {
+            return $positions[$entry->billing_eligibility_event_id]->after($positions[$invoice->billing_eligibility_event_id]);
+        }
+
+        // Legacy/imported ordering cannot be reconstructed from equal stored
+        // seconds. Keep strict evidence and require explicit correction there.
+        return ($entry->created_at !== null && $entry->created_at->gt($issued))
+            || ($entry->approved_at !== null && $entry->approved_at->gt($issued));
     }
 
     /**

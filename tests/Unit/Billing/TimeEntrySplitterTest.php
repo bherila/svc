@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Billing\BillingEligibilityOrder;
 use App\Services\Billing\TimeEntrySplitter;
 use App\Support\Billing\TimeChangedDuringBilling;
 use App\Support\Concurrency\LockMode;
@@ -198,6 +199,19 @@ class TimeEntrySplitterTest extends TestCase
         $this->assertEquals(60, $fragments[1]->minutes);
         $this->assertEquals('2024-01-20', $fragments[2]->dateWorked);
         $this->assertEquals(30, $fragments[2]->minutes);
+    }
+
+    public function test_both_fragments_preserve_the_original_eligibility_event(): void
+    {
+        $entry = $this->createTimeEntry($this->createUser()->id, 180, '2026-08-14');
+        app(BillingEligibilityOrder::class)->recordEntry($entry);
+        $event = $entry->fresh()->billing_eligibility_event_id;
+        $this->assertNotNull($event);
+
+        $result = $this->splitter->splitEntry($entry->fresh(), 120);
+
+        $this->assertSame($event, $result['primary']->fresh()->billing_eligibility_event_id);
+        $this->assertSame($event, $result['overflow']->fresh()->billing_eligibility_event_id);
     }
 
     public function test_split_entry_creates_two_entries(): void

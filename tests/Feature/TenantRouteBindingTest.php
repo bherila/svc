@@ -13,17 +13,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\WritesLegacyCrossTenantRows;
 use Tests\TestCase;
 
 final class TenantRouteBindingTest extends TestCase
 {
     use RefreshDatabase;
+    use WritesLegacyCrossTenantRows;
 
     public function test_foreign_company_is_never_materialized_by_a_real_workspace_request(): void
     {
         [$user, $workspace, $company] = $this->fixture();
         $other = Workspace::query()->create(['name' => 'Other synthetic workspace', 'slug' => 'other']);
-        $company->update(['workspace_id' => $other->id]);
+        $this->writingLegacyCrossTenantRows(fn () => $company->update(['workspace_id' => $other->id]));
         $queries = $this->capture();
 
         $this->actingAs($user)->getJson("/workspaces/{$workspace->public_id}/clients/{$company->public_id}")->assertNotFound();

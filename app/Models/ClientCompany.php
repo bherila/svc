@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @property int $id
@@ -38,6 +39,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ClientCompany extends Model implements WorkspaceOwned
 {
     use BelongsToWorkspace, HasPublicId, IncrementsAgentRevision;
+
+    protected static function booted(): void
+    {
+        static::created(static function (self $company): void {
+            DB::table('client_billing_eligibility_counters')->insert([
+                'workspace_id' => $company->workspace_id, 'client_company_id' => $company->id, 'sequence' => 0,
+            ]);
+        });
+    }
 
     protected function casts(): array
     {

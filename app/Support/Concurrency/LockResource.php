@@ -214,6 +214,10 @@ enum LockResource: string
     case ClientStripeCustomer = 'client_stripe_customers';
     case ClientStripePaymentMethod = 'client_stripe_payment_methods';
 
+    // Assigned only in TransactionCommitting, after every business/parent
+    // lock. Counters are preseeded; only own event rows are updated afterwards.
+    case BillingEligibilityCounter = 'client_billing_eligibility_counters';
+
     /**
      * Where this resource sits in the acquisition order.
      *
