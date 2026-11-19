@@ -15,6 +15,11 @@ cd "$HOME/$app_dir"
 
 "$php" artisan svc:storage:status --apply --format=json
 
+# Once the provider identity cutover is recorded, enforcement stays on whatever the setting says. Stop a
+# candidate whose configuration disagrees (setting off, or the provider client incomplete) instead of
+# activating a release that would answer every protected request 503. Passes when no cutover is recorded.
+"$php" artisan bherila-auth:provider-identity-cutover check
+
 # The Stripe, Brevo and Square probes exit 1 for "not configured" (Square also for a failed last sync),
 # which is not a deploy failure; anything else is. A probe that crashed also exits 1, so 1 counts as a
 # report only when the probe printed its JSON object.
