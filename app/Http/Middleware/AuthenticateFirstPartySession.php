@@ -82,7 +82,7 @@ final class AuthenticateFirstPartySession
     private function refuseEndedProviderSession(Request $request, User $user): ?Response
     {
         // Asks the package, not the setting: a recorded cutover keeps enforcement on even when
-        // bherila-auth.provider_identity.enabled is false.
+        // the enforcement setting is off.
         if (! app(ProviderIdentityEnforcement::class)->enabled()) {
             return null;
         }
