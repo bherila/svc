@@ -562,7 +562,7 @@ final class AgentExpenseParityTest extends TestCase
             $sql = str_replace(['`', '"', '[', ']'], '', strtolower($query));
             preg_match_all('/\b(?:from|into|update|join)\s+([a-z0-9_]+)/i', $sql, $matches);
             foreach (array_unique($matches[1]) as $table) {
-                if (in_array($table, ['users', 'workspaces'], true)) {
+                if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                     continue;
                 }
                 $touched[$table] = true;

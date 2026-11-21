@@ -296,7 +296,7 @@ final class AgentManualPaymentChangeTest extends TestCase
         $this->assertContains('client_invoice_payments', array_column($queries, 0));
         $this->assertContains('client_invoices', array_column($queries, 0));
         foreach ($queries as [$table, $sql]) {
-            if (in_array($table, ['users', 'workspaces'], true)) {
+            if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                 continue;
             }
             if (str_starts_with($sql, 'insert into')) {

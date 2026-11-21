@@ -299,7 +299,7 @@ final class AgentRefundReversalTest extends TestCase
 
         $this->assertContains('client_invoice_payment_refunds', array_column($queries, 0));
         foreach ($queries as [$table, $sql]) {
-            if (in_array($table, ['users', 'workspaces'], true)) {
+            if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                 continue;
             }
             if (str_starts_with($sql, 'insert into')) {

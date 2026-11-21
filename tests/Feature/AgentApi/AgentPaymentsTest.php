@@ -388,7 +388,7 @@ final class AgentPaymentsTest extends TestCase
         $this->assertContains('agent_mutation_receipts', array_column($queries, 0));
         foreach ($queries as [$table, $sql]) {
             // These identity roots have no owning workspace column.
-            if (in_array($table, ['users', 'workspaces'], true)) {
+            if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                 continue;
             }
             if (str_starts_with($sql, 'insert into')) {
