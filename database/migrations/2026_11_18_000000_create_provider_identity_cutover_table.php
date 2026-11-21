@@ -24,8 +24,11 @@ return new class extends Migration
         Schema::create('provider_identity_cutover', function (Blueprint $table): void {
             $table->unsignedTinyInteger('id')->primary();
             $table->string('provider', 64);
-            $table->timestamp('recorded_at');
-            $table->timestamp('withdrawn_at')->nullable();
+            // dateTime, not timestamp: MariaDB with explicit_defaults_for_timestamp off declares a
+            // table's first required TIMESTAMP column ON UPDATE current_timestamp(), so withdrawing
+            // (an UPDATE) would overwrite when the cutover was recorded.
+            $table->dateTime('recorded_at');
+            $table->dateTime('withdrawn_at')->nullable();
             $table->timestamps();
         });
     }
