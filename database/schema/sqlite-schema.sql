@@ -3464,6 +3464,15 @@ CREATE TABLE "client_agreement_revisions"(
   foreign key("workspace_id", "client_company_id") references "client_companies"("workspace_id", "id") on delete cascade,
   primary key("workspace_id", "client_company_id")
 );
+CREATE TABLE "provider_identity_cutover"(
+  "id" integer not null,
+  "provider" varchar not null,
+  "recorded_at" datetime not null,
+  "withdrawn_at" datetime,
+  "created_at" datetime,
+  "updated_at" datetime,
+  primary key("id")
+);
 
 INSERT INTO migrations VALUES(1,'0001_01_01_000000_create_users_table',1);
 INSERT INTO migrations VALUES(2,'0001_01_01_000001_create_cache_table',1);
@@ -3609,3 +3618,4 @@ INSERT INTO migrations VALUES(141,'2026_11_19_090000_add_agreement_index_to_clie
 INSERT INTO migrations VALUES(142,'2026_11_20_090000_create_client_email_budget_locks',1);
 INSERT INTO migrations VALUES(143,'2026_11_21_090000_add_pricing_basis_to_client_invoices',1);
 INSERT INTO migrations VALUES(144,'2026_11_22_090000_create_client_agreement_revisions',1);
+INSERT INTO migrations VALUES(145,'2026_11_18_000000_create_provider_identity_cutover_table',1);

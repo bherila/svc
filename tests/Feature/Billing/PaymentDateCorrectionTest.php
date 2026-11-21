@@ -425,12 +425,16 @@ final class PaymentDateCorrectionTest extends TestCase
      * parent. `users` is the other thing a workspace does not own - a person
      * belongs to as many workspaces as they are a member of, which is what
      * `workspace_memberships` records, and that table does carry one.
+     * `provider_identity_cutover` is the installation's single row recording that
+     * it relies on the identity provider: every request reads it (by its fixed
+     * key) to decide whether provider enforcement is on, and it belongs to no
+     * workspace because it describes the whole installation.
      *
      * Nothing else is exempt. A table added to this list is a claim that has to
      * be argued for, which is the point of the list being here rather than of
      * the assertion being narrower.
      */
-    private const TABLES_WITHOUT_AN_OWNING_WORKSPACE = ['workspaces', 'users'];
+    private const TABLES_WITHOUT_AN_OWNING_WORKSPACE = ['workspaces', 'users', 'provider_identity_cutover'];
 
     /** Identifier quoting is the driver's business: SQLite quotes, MariaDB backticks. */
     private function withoutIdentifierQuoting(string $sql): string

@@ -43,7 +43,7 @@ final class PaymentTenantScopingTest extends TestCase
             preg_match_all('/\b(?:from|into|update|join)\s+([a-z0-9_]+)/i', $normal, $matches);
             foreach ($matches[1] as $table) {
                 // The tenant itself and global user identities have no workspace_id.
-                if (in_array($table, ['workspaces', 'users'], true)) {
+                if (in_array($table, ['workspaces', 'users', 'provider_identity_cutover'], true)) {
                     continue;
                 }
                 if (preg_match('/^insert/i', $normal)) {

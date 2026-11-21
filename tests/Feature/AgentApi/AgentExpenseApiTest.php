@@ -318,8 +318,9 @@ final class AgentExpenseApiTest extends TestCase
             $sql = str_replace(['`', '"', '[', ']'], '', strtolower($query));
             preg_match_all('/\b(?:from|into|update|join)\s+([a-z0-9_]+)/i', $sql, $matches);
             foreach (array_unique($matches[1]) as $table) {
-                // People and workspaces are global roots, not tenant-owned rows.
-                if (in_array($table, ['users', 'workspaces'], true)) {
+                // People, workspaces and the installation's provider identity cutover row are
+                // global, not tenant-owned rows.
+                if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                     continue;
                 }
                 $touched[$table] = true;

@@ -6,6 +6,7 @@ use App\Models\AgentPrincipal;
 use App\Models\User;
 use App\Support\AgentApi\FirstPartySession;
 use BWH\Auth\OAuth\Session\ProviderBindingResolver;
+use BWH\Auth\OAuth\Session\ProviderIdentityEnforcement;
 use BWH\Auth\OAuth\Session\ProviderSession;
 use BWH\Auth\OAuth\Session\ProviderSessionExpired;
 use BWH\Auth\OAuth\Session\ProviderStatusUnavailable;
@@ -75,12 +76,14 @@ final class AuthenticateFirstPartySession
      * signs the session out (401), and an unavailable provider is a retryable
      * 503 that keeps the session. Unsafe methods check freshly, so a write the
      * website makes is never authorized on a stale observation. A no-op until
-     * provider identity enforcement is enabled; unbound accounts are left to
-     * the login policy.
+     * provider identity enforcement is on (the setting, or a recorded cutover);
+     * unbound accounts are left to the login policy.
      */
     private function refuseEndedProviderSession(Request $request, User $user): ?Response
     {
-        if (! (bool) config('bherila-auth.provider_identity.enabled', false)) {
+        // Asks the package, not the setting: a recorded cutover keeps enforcement on even when
+        // the enforcement setting is off.
+        if (! app(ProviderIdentityEnforcement::class)->enabled()) {
             return null;
         }
 

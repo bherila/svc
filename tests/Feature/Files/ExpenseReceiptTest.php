@@ -114,7 +114,7 @@ class ExpenseReceiptTest extends TestCase
         $this->assertContains('client_companies', array_column($queries, 0));
         foreach ($queries as [$table, $sql]) {
             // Identity roots have no workspace_id column.
-            if (in_array($table, ['users', 'workspaces'], true)) {
+            if (in_array($table, ['users', 'workspaces', 'provider_identity_cutover'], true)) {
                 continue;
             }
             if (str_starts_with($sql, 'insert into')) {

@@ -65,6 +65,12 @@ class DeploymentSafetyTest extends TestCase
         $this->assertStringContainsString('quiesce-script: scripts/deploy/quiesce.sh', $workflow);
         $this->assertStringContainsString('pre-migrate-script: scripts/deploy/pre-migrate.sh', $workflow);
         $this->assertStringContainsString('post-deploy-script: scripts/deploy/post-deploy.sh', $workflow);
+        $postDeploy = file_get_contents(__DIR__.'/../../scripts/deploy/post-deploy.sh');
+        $this->assertIsString($postDeploy);
+        // A candidate whose configuration disagrees with a recorded provider identity cutover is
+        // stopped before activation, under set -e.
+        $this->assertStringContainsString('set -euo pipefail', $postDeploy);
+        $this->assertStringContainsString('"$php" artisan bherila-auth:provider-identity-cutover check', $postDeploy);
         $this->assertStringContainsString('verification-script: scripts/deploy/verify-live.sh', $workflow);
         $this->assertStringNotContainsString('deployed-mcp-smoke:', $workflow);
 

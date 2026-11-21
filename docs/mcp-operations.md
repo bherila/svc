@@ -307,8 +307,18 @@ it does not silently run `artisan up`.
    to sign in or authorize again once enforcement is on.
 4. Clear the configuration cache after changing the switch. With it on, an
    unavailable provider answers `503` with `Retry-After` and keeps sessions and
-   tokens; turning the switch off again restores the previous behaviour without
-   any data change.
+   tokens. Until the cutover is recorded (step 5), turning the switch off again
+   restores the previous behaviour without any data change.
+5. Once enforcement is verified in production, record the cutover once on the
+   host: `php artisan bherila-auth:provider-identity-cutover record`. From then on
+   enforcement stays on even if the switch is false, so a rollback or a stale
+   `deployment.env` cannot quietly turn it off. Every deploy runs
+   `bherila-auth:provider-identity-cutover check` in `scripts/deploy/post-deploy.sh`
+   and stops a candidate whose switch is off or whose provider client is
+   incomplete. `status` shows the state; `withdraw` is the only way back, for
+   leaving the provider on purpose, never for an outage. After restoring the
+   database from a backup taken before the cutover, record it again. See
+   auth-laravel's `docs/provider-identity-cutover.md`.
 
 ## Security release checks
 

@@ -15,6 +15,7 @@ use App\Models\ClientTimeEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AgentApi\ProjectRole;
+use BWH\Auth\OAuth\Session\ProviderIdentityEnforcement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -410,6 +411,10 @@ final class PaletteKindsTest extends TestCase
     private function queriesFor(User $viewer): int
     {
         $this->actingAs($viewer);
+        // Each production request starts with a fresh application, so it reads the provider
+        // identity cutover once. The test application lives across requests and would answer
+        // later ones from its memo, so start every measured request the way production does.
+        app(ProviderIdentityEnforcement::class)->forget();
         DB::flushQueryLog();
         DB::enableQueryLog();
         $this->getJson('/search?q=zeppelin')->assertOk();
