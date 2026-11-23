@@ -2,18 +2,19 @@
 
 namespace App\Console\Commands\Square;
 
+use App\Console\Commands\Concerns\FindsUserByPublicId;
 use App\Console\Commands\MutationCommand;
-use App\Models\User;
 use App\Services\Square\SquareCoveredPaymentService;
 use DomainException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /** Review by default; the actor, exact reviewed facts and --apply --confirm authorize one record. */
 final class CoveredSquarePaymentsCommand extends MutationCommand
 {
+    use FindsUserByPublicId;
+
     protected $signature = 'svc:square:covered-payments {workspace} {invoice} {square_invoice}
         {--actor= : Current workspace manager public id}
         {--payment= : Reviewed Square payment id to record}
@@ -27,9 +28,8 @@ final class CoveredSquarePaymentsCommand extends MutationCommand
     public function handle(SquareCoveredPaymentService $payments): int
     {
         $workspace = $this->workspaceByPublicId((string) $this->argument('workspace'));
-        $actorId = $this->option('actor');
-        $actor = is_string($actorId) && Str::isUuid($actorId) ? User::query()->where('public_id', $actorId)->first() : null;
-        if ($workspace === null || $actor === null) {
+        $actor = $this->userByPublicId((string) $this->option('actor'));
+        if ($workspace === null || is_int($actor)) {
             $this->error('Give a workspace public id and --actor with a current manager public id.');
 
             return self::INVALID;

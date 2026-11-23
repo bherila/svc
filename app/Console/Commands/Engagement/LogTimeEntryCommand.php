@@ -7,6 +7,7 @@ use App\Models\ClientProject;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\AgentApi\TimeEntryMutationService;
+use App\Support\Auth\OperatorActorIdentity;
 use App\Support\Engagement\TimeEntryCreationRules;
 use App\Support\WorkspaceClock;
 use DomainException;
@@ -29,7 +30,9 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  *
  * Exit codes: 0 logged; 2 (`INVALID`) the input was refused, as the API's
  * 422; 1 (`FAILURE`) the workspace, project, task or worker was not found or
- * may not log this time, as the API's 404 and 403.
+ * may not log this time, as the API's 404 and 403, or - under provider
+ * identity enforcement - the worker's identity has ended or cannot be
+ * confirmed now ({@see OperatorActorIdentity}).
  */
 class LogTimeEntryCommand extends MutationCommand
 {
@@ -242,6 +245,8 @@ class LogTimeEntryCommand extends MutationCommand
             return 'The worker is not a member of this workspace.';
         }
 
-        return $worker;
+        // The entry is the worker's: under provider identity enforcement, never log it as
+        // someone whose identity has ended, or while the provider cannot say.
+        return app(OperatorActorIdentity::class)->refusal($worker) ?? $worker;
     }
 }

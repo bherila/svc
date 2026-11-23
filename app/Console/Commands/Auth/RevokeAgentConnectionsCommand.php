@@ -60,7 +60,7 @@ final class RevokeAgentConnectionsCommand extends MutationCommand
 
             return self::FAILURE;
         }
-        $user = $this->userByPublicId((string) $this->argument('user_public_id'));
+        $user = $this->credentialOwnerByPublicId((string) $this->argument('user_public_id'));
         if (is_int($user)) {
             return $user;
         }

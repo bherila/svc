@@ -82,7 +82,7 @@ marks a path that acts as a person and is not checked against the provider; see
 | CSP reports, OAuth discovery, dynamic client registration, `/api/openapi.json`, `/up` | Anyone | No | **Not applicable**: anonymous |
 | Queued jobs | — | — | **None exist.** Nothing implements `ShouldQueue`, and no queue worker runs (see `AGENTS.md`) |
 | Scheduled commands, run from `routes/console.php` | The workspace, carrying out a decision a person made earlier | — | **Not re-checked: standing decisions.** See gap 2. These are `charge-autopay` (the client's recorded consent), `dispatch-invoice-emails` (automatic delivery chosen at issue), `send-payment-reminders`, `generate-cadence-drafts`, and the service-package and agreement-termination jobs. The rest (Square sync, processor movements, pruning, `passport:purge`) act for no one |
-| Artisan commands that act as a named person (`--actor=` or `--user=`: `svc:tasks*`, `svc:collaboration`, `svc:attachments*`, `svc:clients:contacts`, `svc:square:covered-payments`, `svc:finance:*`, `svc:billing:deferred-buydown`, `svc:engagement:log-time`) | The operator, acting as the named account | The named account usually is | **Gap 1.** The account is resolved by public id (`FindsUserByPublicId`) and authorized on its current memberships. Its provider identity is never consulted |
+| Artisan commands that act as a named person (`--actor=` or `--user=`: `svc:tasks*`, `svc:collaboration`, `svc:attachments*`, `svc:clients:contacts`, `svc:square:covered-payments`, `svc:finance:*`, `svc:billing:deferred-buydown`, `svc:engagement:log-time`) | The operator, acting as the named account | The named account usually is | **Covered** (gap 1, closed). Every one resolves the account through `FindsUserByPublicId::userByPublicId` or, for log-time, `LogTimeEntryCommand::resolveWorker`, and both ask `OperatorActorIdentity`: under enforcement, a bound account is checked freshly with the provider before anything runs. An ended identity or a broken binding fails the command, and an unavailable provider fails it with a retry message; nothing is written either way. Unbound accounts are not checked. Credential commands (issue and revoke) use `credentialOwnerByPublicId`, which never asks, so an ended person's credentials can still be revoked during an outage |
 | Other artisan commands (issue and revoke credentials, billing, Square, audits) | The operator with shell access | n/a | **Not applicable**: not a web credential. Issuing a credential checks the named person's identity (above) |
 
 ## What enforcement does not do
@@ -103,15 +103,19 @@ marks a path that acts as a person and is not checked against the provider; see
 
 ## Gaps
 
-They are ranked by risk. Gap 2 is the owner's decision. Gap 3 is closed, as its entry says.
+They are ranked by risk. Gap 2 is the owner's decision; gaps 1 and 3 are closed, as each entry says.
 
-1. **Operator commands that act as a named person** (low). An operator can still act as someone
-   whose identity has ended: logging time, reconciling payments, editing tasks, deleting a
-   receipt. The record is then attributed to that person. The operator is trusted with the shell
-   anyway, so the harm is a misattributed audit trail rather than an escalation. *Suggested fix:*
-   when enforcement is on, have `FindsUserByPublicId` (and `LogTimeEntryCommand::resolveWorker`)
-   refuse a bound account whose identity has ended, using
-   `ProviderIdentityPolicy::verify(..., fresh: true)`. An outage is then a refusal, not a pass.
+1. **Operator commands that acted as a named person** (low; closed). An operator could act as
+   someone whose identity had ended: logging time, reconciling payments, editing tasks,
+   deleting a receipt, with the record attributed to that person. Now, with enforcement on,
+   `App\Support\Auth\OperatorActorIdentity` asks the provider for a bound account's status
+   before the command acts (`FindsUserByPublicId::userByPublicId` and
+   `LogTimeEntryCommand::resolveWorker` both call it). An ended identity or broken binding is
+   refused, and an outage is a refusal to retry, not a pass. Only liveness is checked: the
+   command holds no credential with a generation to compare. auth-laravel v0.30.2 has no
+   `ProviderIdentityPolicy::current()`, so the check calls `ProviderIdentityStatusClient`
+   directly, as issuing a token does; it does not share the cached observation. Tested in
+   `tests/Feature/Auth/OperatorActorProviderIdentityTest.php`.
 2. **Scheduled work on a decision made by someone whose identity has since ended** (low; owner
    decision). Autopay keeps charging the client's saved card on the consent a client contact gave
    in the portal, or a workspace manager recorded with the client's attestation
@@ -154,4 +158,4 @@ They are ranked by risk. Gap 2 is the owner's decision. Gap 3 is closed, as its 
 | Sanctum tokens | `app/Support/Auth/PersonalAccessTokenIdentity.php`, registered in `app/Providers/AppServiceProvider.php` |
 | Delegated access | `app/Services/Access/DelegatedStaffAccess.php` |
 | Configuration | `config/bherila-auth.php`, `provider_identity` |
-| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` (no session-authenticated route skips the check), `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |
+| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` (no session-authenticated route skips the check), `tests/Feature/Auth/OperatorActorProviderIdentityTest.php` (commands acting as a named person), `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |
