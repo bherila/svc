@@ -133,15 +133,15 @@ None of these is fixed here; they are listed for the owner to decide. They are r
 ## Unsure
 
 - **Signed URLs.** [SECURITY.md](../SECURITY.md#security-assumption-signed-urls-are-bearer-tokens-and-app_key-stays-secret)
-  says a `signed:relative` route "accepts any URL signed with `APP_KEY` until it expires" and that
-  nothing else checks who presents it. In `routes/api.php`, every signed route is inside the
-  group that carries `AuthenticateFirstPartySession` and `auth:api` (lines 104 and 271). The
-  controllers also require an authenticated principal (`AgentExpenseReceiptController::actor`,
-  `AgentInvoiceOperationsController::principal`). That would make a signed URL useless without a
-  covered bearer or session, as [the MCP product contract](mcp-product-contract.md) says. This
-  could not be confirmed with `php artisan route:list` here, and the tests fetch these URLs while
-  already authenticated. If a bearer-less fetch does work, these URLs outlive an ended identity
-  by up to ten minutes (five for invoice PDFs). Either way, one of the two documents is wrong.
+  treats a `signed:relative` URL as a bearer token that nothing else checks. Every signed REST
+  route today is stricter than that: the `v1` group opened at `routes/api.php:102` closes after
+  line 271, so `AuthenticateFirstPartySession` and `auth:api` run before `signed:relative`, and
+  the controllers also require an authenticated principal (`AgentExpenseReceiptController::actor`,
+  `AgentInvoiceOperationsController::principal`). A signed URL is therefore useless without a
+  covered bearer or session, as [the MCP product contract](mcp-product-contract.md) says.
+  SECURITY.md's assumption remains the conservative rule for any signed route added outside that
+  group. Not confirmed with `route:list` here (no runnable PHP 8.5 environment); the tests fetch
+  these URLs while authenticated.
 
 ## Code and tests
 
