@@ -46,7 +46,7 @@ marks a path that acts as a person and is not checked against the provider; see
 | Path | Who it represents | Provider-bound? | Treatment |
 |---|---|---|---|
 | Sign-in (`/login`, `/oauth/redirect`, `/oauth/callback`, `OAuthLoginController` over the package's `RelyingPartyLoginController`) | A staff member or a client contact | Yes, by subject | **Covered.** `ProviderSession::establish()` records the login generation, also while enforcement is off. Under enforcement, a login that cannot be verified is undone and answered 503 |
-| Every `web` route: workspace screens, client screens, the client portal (`/portal/...`), approvals, reviewer grants, shared-project invitations, account and MCP-credential settings, payment-key screens, file and PDF downloads, exports, search and the palette | The signed-in account | Yes (smoke principal excepted, which cannot sign in) | **Covered.** `RequireActiveProviderSession` is appended to the whole `web` group (`bootstrap/app.php:68`), so it runs on every route file `routes/web.php` loads, whether or not the route has `auth` |
+| Every `web` route: workspace screens, client screens, the client portal (`/portal/...`), approvals, reviewer grants, shared-project invitations, account and MCP-credential settings, payment-key screens, file and PDF downloads, exports, search and the palette | The signed-in account | Yes (smoke principal excepted, which cannot sign in) | **Covered.** `RequireActiveProviderSession` is appended to the whole `web` group (`bootstrap/app.php:68`), so it runs on every route file `routes/web.php` loads, whether or not the route has `auth`. `ProviderSessionRouteCensusTest` fails a session route registered anywhere else |
 | Client portal writes: proposal acceptance, approve or dispute, autopay on or off, saving a card (Stripe SetupIntent), service enrolment, cancellation, invoice payment (`stripe-payment-intent`) | A client contact, as the session's account | Yes | **Covered**, freshly on each of these, since all are unsafe methods. Portal users sign in through the provider like staff; there is no separate portal login |
 | Website session into `/api/v1` (`AuthenticateFirstPartySession`) | The signed-in account, as a synthetic `svc-web` token with REST scopes | Yes | **Covered.** It runs the same check itself, in JSON (`AuthenticateFirstPartySession::refuseEndedProviderSession`), freshly on unsafe methods. It is not admitted to the finance, credential-disposal or MCP routes |
 | Sign-out (`POST /logout`) | The session being ended | — | Never checked (`provider_identity.except_routes`), so a person can sign out during a provider outage |
@@ -103,7 +103,7 @@ marks a path that acts as a person and is not checked against the provider; see
 
 ## Gaps
 
-None of these is fixed here; they are listed for the owner to decide. They are ranked by risk.
+They are ranked by risk. Gap 2 is the owner's decision. Gap 3 is closed, as its entry says.
 
 1. **Operator commands that act as a named person** (low). An operator can still act as someone
    whose identity has ended: logging time, reconciling payments, editing tasks, deleting a
@@ -122,13 +122,14 @@ None of these is fixed here; they are listed for the owner to decide. They are r
    authorization does not lapse when the employee who gave it leaves. *Suggested fix:* confirm
    this is accepted. If it is not, have `AutopayChargeService` hold a charge for review when the
    consent's actor is a client contact whose provider identity has ended.
-3. **No census holds the session check to the `web` group** (hardening; no current gap). Every
-   session-authenticated route is in `web` today, and `AuthenticateFirstPartySession` is the only
-   session path outside it. A future route that starts a session outside `web` would bypass
-   `RequireActiveProviderSession` with nothing failing. *Suggested fix:* a route census like the
-   one other applications on this stack use. It would fail a route that runs `StartSession` or
-   authenticates the `web` guard without `RequireActiveProviderSession` or the first-party
-   session check.
+3. **No census held the session check to the `web` group** (hardening; closed).
+   `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` now fails any route that starts or
+   reads a session, or authenticates a session guard (`auth`, `auth:web`, `auth.basic`, or
+   `auth:sanctum` with a session started), without `RequireActiveProviderSession`, which only
+   the `web` group carries. `AuthenticateFirstPartySession` stands in for it only on a route
+   where it is the one use of a session: no session middleware of its own and no session
+   guard, so a group that hands the website's session to `/api/v1` any other way fails too.
+   Its allowlist is empty, and an entry needs a reason.
 
 ## Unsure
 
@@ -153,4 +154,4 @@ None of these is fixed here; they are listed for the owner to decide. They are r
 | Sanctum tokens | `app/Support/Auth/PersonalAccessTokenIdentity.php`, registered in `app/Providers/AppServiceProvider.php` |
 | Delegated access | `app/Services/Access/DelegatedStaffAccess.php` |
 | Configuration | `config/bherila-auth.php`, `provider_identity` |
-| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |
+| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` (no session-authenticated route skips the check), `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |
