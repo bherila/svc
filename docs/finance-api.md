@@ -127,7 +127,8 @@ identity is disabled, deleted, reset or ungranted at the provider (`401`); while
 provider cannot be asked the request answers a retryable `503` with `Retry-After`.
 Writes check the provider freshly. A bound user's token issued before this stamping
 existed is refused once enforcement is on, so reissue it first. Tokens of users with
-no provider binding are unaffected.
+no provider binding are unaffected. See [provider identity enforcement](provider-identity.md)
+for every other credential.
 
 ### OAuth and personal API tokens
 

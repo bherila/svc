@@ -21,7 +21,8 @@ The current alpha establishes:
 
 See [the architecture](docs/architecture.md), [the interface guide](docs/ui.md),
 [the product roadmap](docs/onboarding-import-plan.md),
-[the private file storage plan](docs/file-storage-plan.md), and
+[the private file storage plan](docs/file-storage-plan.md),
+[provider identity enforcement and the credential inventory](docs/provider-identity.md), and
 [the retired external data import](docs/external-data-import.md).
 
 For the billing rules themselves — retainer draw-down, rollover, cadence
