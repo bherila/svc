@@ -81,7 +81,8 @@ marks a path that acts as a person and is not checked against the provider; see
 | Workspace payment connections (stored Stripe and Square keys) | The workspace, at its processor | No | **Not applicable**: a machine credential entered on a covered session page |
 | CSP reports, OAuth discovery, dynamic client registration, `/api/openapi.json`, `/up` | Anyone | No | **Not applicable**: anonymous |
 | Queued jobs | — | — | **None exist.** Nothing implements `ShouldQueue`, and no queue worker runs (see `AGENTS.md`) |
-| Scheduled commands, run from `routes/console.php` | The workspace, carrying out a decision a person made earlier | — | **Not re-checked: standing decisions.** See gap 2. These are `charge-autopay` (the client's recorded consent), `dispatch-invoice-emails` (automatic delivery chosen at issue), `send-payment-reminders`, `generate-cadence-drafts`, and the service-package and agreement-termination jobs. The rest (Square sync, processor movements, pruning, `passport:purge`) act for no one |
+| Autopay (`svc:billing:charge-autopay`, scheduled from `routes/console.php`) | The client, on the consent in force (`client_autopay_consents`, latest row) | The consenting client contact usually is | **Covered** (gap 2, closed). Under enforcement, when the consent in force is a client contact's own, `AutopayChargeService` asks the provider about that contact (`ProviderIdentityLiveness`, freshly, once per consent per run) before claiming a charge. An ended identity or broken binding holds the invoice's attempt for review without calling Stripe; an unavailable provider leaves the invoice uncharged for the next run. Consent a workspace manager recorded with the client's attestation, and an unbound contact's, are not checked |
+| Other scheduled commands, run from `routes/console.php` | The workspace, carrying out a decision a person made earlier | — | **Not re-checked: standing decisions.** These are `dispatch-invoice-emails` (automatic delivery chosen at issue), `send-payment-reminders`, `generate-cadence-drafts`, and the service-package and agreement-termination jobs; see gap 2. The rest (Square sync, processor movements, pruning, `passport:purge`) act for no one |
 | Artisan commands that act as a named person (`--actor=` or `--user=`: `svc:tasks*`, `svc:collaboration`, `svc:attachments*`, `svc:clients:contacts`, `svc:square:covered-payments`, `svc:finance:*`, `svc:billing:deferred-buydown`, `svc:engagement:log-time`) | The operator, acting as the named account | The named account usually is | **Covered** (gap 1, closed). Every one resolves the account through `FindsUserByPublicId::userByPublicId` or, for log-time, `LogTimeEntryCommand::resolveWorker`, and both ask `OperatorActorIdentity`: under enforcement, a bound account is checked freshly with the provider before anything runs. An ended identity or a broken binding fails the command, and an unavailable provider fails it with a retry message; nothing is written either way. Unbound accounts are not checked. Credential commands (issue and revoke) use `credentialOwnerByPublicId`, which never asks, so an ended person's credentials can still be revoked during an outage |
 | Other artisan commands (issue and revoke credentials, billing, Square, audits) | The operator with shell access | n/a | **Not applicable**: not a web credential. Issuing a credential checks the named person's identity (above) |
 
@@ -103,7 +104,7 @@ marks a path that acts as a person and is not checked against the provider; see
 
 ## Gaps
 
-They are ranked by risk. Gap 2 is the owner's decision; gaps 1 and 3 are closed, as each entry says.
+They are ranked by risk. All three are closed, as each entry says.
 
 1. **Operator commands that acted as a named person** (low; closed). An operator could act as
    someone whose identity had ended: logging time, reconciling payments, editing tasks,
@@ -113,19 +114,41 @@ They are ranked by risk. Gap 2 is the owner's decision; gaps 1 and 3 are closed,
    `LogTimeEntryCommand::resolveWorker` both call it). An ended identity or broken binding is
    refused, and an outage is a refusal to retry, not a pass. Only liveness is checked: the
    command holds no credential with a generation to compare. auth-laravel v0.30.2 has no
-   `ProviderIdentityPolicy::current()`, so the check calls `ProviderIdentityStatusClient`
-   directly, as issuing a token does; it does not share the cached observation. Tested in
+   `ProviderIdentityPolicy::current()`, so the check (`ProviderIdentityLiveness`, shared with
+   autopay's consent check) calls `ProviderIdentityStatusClient` directly, as issuing a token
+   does; it does not share the cached observation. Tested in
    `tests/Feature/Auth/OperatorActorProviderIdentityTest.php`.
-2. **Scheduled work on a decision made by someone whose identity has since ended** (low; owner
-   decision). Autopay keeps charging the client's saved card on the consent a client contact gave
-   in the portal, or a workspace manager recorded with the client's attestation
-   (`client_autopay_consents.actor_user_id`). Automatic invoice delivery,
-   reminders, scheduled package invoices and scheduled agreement terminations also carry on after
-   the person who set them up has gone. These are the business's or the client's standing
-   decisions rather than a person's session, so carrying on is arguably correct: a card
-   authorization does not lapse when the employee who gave it leaves. *Suggested fix:* confirm
-   this is accepted. If it is not, have `AutopayChargeService` hold a charge for review when the
-   consent's actor is a client contact whose provider identity has ended.
+2. **Scheduled work on a decision made by someone whose identity has since ended** (low;
+   decided and closed for autopay). Autopay charged the client's saved card on the consent in
+   force (`client_autopay_consents`, latest row) whoever gave it. The owner decided that autopay
+   must not charge on consent a client contact gave in the portal once the provider reports that
+   contact's identity ended (they left the client company, say). Now, with enforcement on,
+   `AutopayChargeService` reads the consent in force before claiming a charge; when its
+   `actor_role` is `client`, it asks the provider about `actor_user_id` through
+   `App\Support\Auth\ProviderIdentityLiveness`, the liveness check `OperatorActorIdentity`
+   uses too (freshly, once per consent per run).
+   - **Ended identity or broken binding:** the invoice's one attempt is claimed and held for
+     review (`claimed`, no PaymentIntent, `failure_code` `consent_identity_ended`), the same
+     held state as a charge Stripe gave no answer for, and Stripe is never called. The run
+     records an `invoice.autopay_held` activity and reports the attempt with the other held
+     attempts at once (`needs_review`, reason `consent_identity_ended`), telling the workspace
+     manager to re-confirm consent with the client. Recording new consent (turning autopay off
+     and on again, or changing its limit) releases the hold on the next run, which decides the
+     invoice afresh on the new consent; or the manager closes it out as not charged
+     (`invoices.autopay.resolve`, available at once since nothing is in flight) and collects by
+     hand.
+   - **Provider unavailable:** the invoice is not charged and no attempt is spent; the run
+     counts it (`consent_check_unavailable`) and the next run asks again. An unknown answer
+     never charges.
+   - **Unchanged:** consent a workspace manager recorded with the client's attestation (the
+     client's agreement given outside SVC, not a contact's), a contact with no provider binding
+     or whose account here was deleted, other clients and their invoices, and everything
+     while enforcement is off.
+
+   Automatic invoice delivery, reminders, scheduled package invoices and scheduled agreement
+   terminations still carry on after the person who set them up has gone: they are the
+   business's standing decisions, not a person's session, and they charge no one. Tested in
+   `tests/Feature/Billing/Autopay/AutopayConsentIdentityTest.php`.
 3. **No census held the session check to the `web` group** (hardening; closed).
    `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` now fails any route that starts or
    reads a session, or authenticates a session guard (`auth`, `auth:web`, `auth.basic`, or
@@ -156,6 +179,7 @@ They are ranked by risk. Gap 2 is the owner's decision; gaps 1 and 3 are closed,
 | Session check | `RequireActiveProviderSession`, appended to `web` in `bootstrap/app.php`; `app/Http/Middleware/AuthenticateFirstPartySession.php` for `/api/v1` |
 | OAuth tokens | package `ProviderIdentityTokens` and its repositories; `app/Support/AgentApi/ProviderIdentityWrites.php`; `app/Http/Middleware/EnsureOperationDeployed.php`; `app/Services/Mcp/McpRateLimitedCallToolHandler.php`; `app/Services/Credentials/AgentTokenIssuer.php` |
 | Sanctum tokens | `app/Support/Auth/PersonalAccessTokenIdentity.php`, registered in `app/Providers/AppServiceProvider.php` |
+| Operator commands and autopay consent | `app/Support/Auth/ProviderIdentityLiveness.php`, used by `app/Support/Auth/OperatorActorIdentity.php` and `app/Services/Billing/Autopay/AutopayChargeService.php` |
 | Delegated access | `app/Services/Access/DelegatedStaffAccess.php` |
 | Configuration | `config/bherila-auth.php`, `provider_identity` |
-| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` (no session-authenticated route skips the check), `tests/Feature/Auth/OperatorActorProviderIdentityTest.php` (commands acting as a named person), `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |
+| Tests | `tests/Feature/Auth/ProviderIdentityEnforcementTest.php`, `tests/Feature/Auth/ProviderIdentityCutoverTest.php`, `tests/Feature/Auth/ProviderSessionRouteCensusTest.php` (no session-authenticated route skips the check), `tests/Feature/Auth/OperatorActorProviderIdentityTest.php` (commands acting as a named person), `tests/Feature/Billing/Autopay/AutopayConsentIdentityTest.php` (autopay on an ended contact's consent), `tests/Unit/Auth/ProviderIdentityWiringTest.php`, `tests/Unit/Auth/ProviderIdentityEnforcementCensusTest.php` (application code asks `ProviderIdentityEnforcement::enabled()`, never the setting) |

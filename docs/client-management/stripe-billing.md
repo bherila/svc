@@ -161,6 +161,26 @@ ends when the connection is saved again (a `connected_at` after it) or when Stri
 answers an ordinary call (a charge, a decline, a different request error); the warning
 stays until then, past the six hours, when the next run tries once more.
 
+### When the consenting client contact has gone
+
+With provider identity enforcement on ([provider identity](../provider-identity.md), gap
+2), each run reads the consent in force (the company's latest `client_autopay_consents`
+row) before claiming a charge. When a client contact gave it in the portal and the
+identity provider now reports that contact's identity ended, or their binding is broken,
+the invoice is not charged: its attempt is claimed and held at once (`claimed`, no
+PaymentIntent, `failure_code` `consent_identity_ended`, the reason in `failure_reason`),
+Stripe is never called, and an `invoice.autopay_held` activity is recorded. The command
+lists it with the held attempts from that run on (`needs_review` with reason
+`consent_identity_ended` in JSON, a "Held for consent" warning in text), and the invoice's
+Autopay card shows the reason. A workspace manager re-confirms consent with the client and
+records it as new consent (autopay off and on again, or a new limit): the next run releases
+the hold and decides the invoice afresh on that consent. Or they close it out as not
+charged (below), without the ten-minute wait. When the provider cannot answer, the invoice
+is not charged and no attempt is made; the run counts it (`consent_check_unavailable`) and
+the next run asks again. Consent a manager recorded with the client's attestation, a
+contact with no provider binding, and every company while enforcement is off, are charged
+as before. The provider is asked once per consent per run.
+
 ### Closing out a held attempt
 
 An attempt left `claimed` with no PaymentIntent (Stripe's answer was never read) is listed

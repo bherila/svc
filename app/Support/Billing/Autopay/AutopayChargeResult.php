@@ -23,6 +23,17 @@ enum AutopayChargeResult: string
      * invoice is charged on the first run after the connection is fixed.
      */
     case ConnectionNeedsAttention = 'connection_needs_attention';
+    /**
+     * The consent in force was given by a client contact whose provider identity has ended.
+     * Nothing was sent to Stripe: the invoice's attempt is held for review, exactly as an
+     * attempt Stripe gave no answer for, until consent is re-confirmed or it is closed out.
+     */
+    case HeldForConsent = 'held_for_consent';
+    /**
+     * The identity provider could not say whether the client contact who consented is still
+     * active. Nothing was charged and no attempt was spent: the next run asks again.
+     */
+    case ConsentCheckUnavailable = 'consent_check_unavailable';
     /** Not charged now; the verdict says why. */
     case Withheld = 'withheld';
 }

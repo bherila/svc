@@ -484,6 +484,31 @@ describe('autopay on an operator invoice', () => {
         ).toBeVisible();
     });
 
+    it('gives the reason the server sent for an attempt held before Stripe was called', () => {
+        render(
+            <InvoiceAutopayCard
+                autopay={invoice({
+                    state: 'needs_review',
+                    state_label: 'Autopay needs review',
+                    attempt: {
+                        ...invoice().attempt!,
+                        state: 'claimed',
+                        failure_code: 'consent_identity_ended',
+                        failure_reason:
+                            'Held for review; nothing was sent to Stripe. Re-confirm consent with the client.',
+                    },
+                })}
+            />,
+        );
+
+        expect(
+            screen.getByText(/Re-confirm consent with the client/),
+        ).toBeVisible();
+        expect(
+            screen.queryByText(/Check Stripe, then record what you found/),
+        ).not.toBeInTheDocument();
+    });
+
     it('warns the provider that the Stripe connection needs attention, with the way to fix it', () => {
         render(
             <InvoiceAutopayCard

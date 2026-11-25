@@ -594,6 +594,18 @@ function resultWords(
         );
     }
 
+    if (state === 'needs_review' && attempt.failure_reason !== null) {
+        // Held before Stripe was called (a consent hold): the server says why.
+        return (
+            <>
+                <span className="font-medium text-destructive">
+                    Needs review
+                </span>{' '}
+                · {attempt.failure_reason}
+            </>
+        );
+    }
+
     if (state === 'needs_review') {
         return (
             <>
