@@ -327,6 +327,43 @@ final class ProviderIdentityEnforcementTest extends TestCase
         $this->assertSame(0, DB::table('personal_access_tokens')->count());
     }
 
+    public function test_sanctum_tokens_capture_the_epoch_and_refuse_a_restore_or_withdrawn_epoch(): void
+    {
+        $user = $this->boundUser('person-restore');
+        $workspace = Workspace::query()->create(['name' => 'Synthetic restore', 'slug' => 'synthetic-restore']);
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoice-payments";
+        $this->providerIdentity('person-restore', 4, 2);
+
+        $plain = $this->issueSanctumToken($user);
+        $stored = PersonalAccessToken::findToken($plain);
+        $this->assertNotNull($stored);
+        $this->assertSame(2, (int) $stored->getAttribute('provider_epoch'));
+        $this->bearer($plain)->getJson($path)->assertOk();
+
+        $this->providerIdentity('person-restore', 4, 3);
+        $this->travel(6)->minutes();
+        $this->bearer($plain)->getJson($path)->assertUnauthorized();
+
+        $this->providerIdentity('person-restore', 4);
+        $this->travel(6)->minutes();
+        $this->bearer($plain)->getJson($path)->assertUnauthorized();
+    }
+
+    public function test_sanctum_credentials_issued_without_an_epoch_keep_the_legacy_contract(): void
+    {
+        $user = $this->boundUser('person-legacy-epoch');
+        $workspace = Workspace::query()->create(['name' => 'Synthetic legacy', 'slug' => 'synthetic-legacy']);
+        $workspace->memberships()->create(['user_id' => $user->id, 'role' => 'owner']);
+        $path = "/api/v1/workspaces/{$workspace->public_id}/invoice-payments";
+        $this->providerIdentity('person-legacy-epoch', 4);
+        $plain = $this->issueSanctumToken($user);
+
+        $this->providerIdentity('person-legacy-epoch', 4, 3);
+        $this->travel(6)->minutes();
+        $this->bearer($plain)->getJson($path)->assertOk();
+    }
+
     public function test_unbound_accounts_are_left_alone_the_deploy_smoke_principal_included(): void
     {
         Artisan::call('svc:mcp:deploy-smoke-credentials', ['--apply' => true]);

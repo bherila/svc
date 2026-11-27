@@ -37,7 +37,7 @@ final readonly class PersonalAccessTokenIdentity
     /**
      * The columns to record on a token about to be issued to this user.
      *
-     * @return array{provider_subject?: string, provider_generation?: int}
+     * @return array{provider_subject?: string, provider_generation?: int, provider_epoch?: int|null}
      *
      * @throws DomainException when the token must not be issued
      * @throws ProviderStatusUnavailable when enforcement is on and the provider cannot answer
@@ -72,6 +72,7 @@ final readonly class PersonalAccessTokenIdentity
         return [
             ProviderIdentityTokens::SUBJECT_COLUMN => $binding->subject,
             ProviderIdentityTokens::GENERATION_COLUMN => $status->credentialVersion,
+            ProviderIdentityTokens::EPOCH_COLUMN => $status->recoveryEpoch,
         ];
     }
 
@@ -107,7 +108,8 @@ final readonly class PersonalAccessTokenIdentity
         }
 
         try {
-            $this->policy->verify($binding->subject, $generation, fresh: ! request()->isMethodSafe());
+            $this->policy->verify($binding->subject, $generation,
+                fresh: ! request()->isMethodSafe(), epoch: ProviderIdentityTokens::epochOf($token));
         } catch (ProviderSessionExpired) {
             return false;
         }
