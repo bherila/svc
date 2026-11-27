@@ -27,6 +27,9 @@ trait FakesProviderIdentity
     /** @var array<string, int|null> subject => credential generation, null when inactive */
     private array $providerIdentities = [];
 
+    /** @var array<string, int|null> subject => optional recovery epoch */
+    private array $providerEpochs = [];
+
     private bool $providerOffline = false;
 
     private int $providerStatusRequests = 0;
@@ -56,7 +59,8 @@ trait FakesProviderIdentity
 
                 return Http::response($generation === null
                     ? ['contract_version' => 1, 'active' => false]
-                    : ['contract_version' => 1, 'active' => true, 'subject' => $subject, 'credential_version' => $generation]);
+                    : ['contract_version' => 1, 'active' => true, 'subject' => $subject, 'credential_version' => $generation,
+                        ...(isset($this->providerEpochs[$subject]) ? ['recovery_epoch' => $this->providerEpochs[$subject]] : [])]);
             }
             if ($request->url() === self::PROVIDER_URL.'/oauth/token') {
                 return Http::response(['access_token' => 'synthetic-provider-access-token']);
@@ -70,9 +74,10 @@ trait FakesProviderIdentity
     }
 
     /** A person the provider knows, active at this generation. */
-    protected function providerIdentity(string $subject, ?int $generation = 1): void
+    protected function providerIdentity(string $subject, ?int $generation = 1, ?int $epoch = null): void
     {
         $this->providerIdentities[$subject] = $generation;
+        $this->providerEpochs[$subject] = $epoch;
     }
 
     protected function disableProviderIdentity(string $subject): void
