@@ -271,7 +271,8 @@ that is fresh for under five minutes, and writes - website, REST or MCP - ask th
 provider freshly; an MCP write tool asks once per call. An unavailable provider is a
 retryable `503` that keeps the session and the token. Credentials issued before
 stamping are refused once enforcement is on and must be re-authorized. Accounts with
-no provider binding, such as the deployment's smoke principal, are left alone.
+no provider binding, such as the deployment's smoke principal, are left alone. The full
+credential inventory is in [provider identity enforcement](provider-identity.md).
 
 Behind a CDN, per-client limits key on the real client address. The auth
 package's trusted-proxy helper (`bherila-auth.trusted_proxies`, `TRUSTED_PROXIES`:

@@ -2,14 +2,19 @@
 
 namespace App\Services\Billing\Autopay;
 
+use App\Models\ClientAutopayConsent;
 use App\Models\ClientCompany;
 use App\Models\ClientInvoice;
 use App\Models\InvoiceAutopayAttempt;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Activity\ClientActivityRecorder;
 use App\Services\Billing\StripeGateway;
 use App\Services\Payments\StripeAccess;
 use App\Services\Payments\StripeConnectionHealth;
+use App\Support\Auth\ProviderIdentityLiveness;
+use App\Support\Auth\ProviderLiveness;
+use App\Support\Billing\Autopay\AutopayActorRole;
 use App\Support\Billing\Autopay\AutopayAttemptState;
 use App\Support\Billing\Autopay\AutopayChargeOutcome;
 use App\Support\Billing\Autopay\AutopayChargeResult;
@@ -53,11 +58,30 @@ use Throwable;
  * `claimed` with no PaymentIntent. That is reported for review and never
  * retried: whether Stripe charged is a question for a person and the Stripe
  * dashboard, not for a loop.
+ *
+ * **Consent whose giver has gone** (docs/provider-identity.md, gap 2). Before
+ * any of that, with provider identity enforcement on, the consent in force is
+ * read: when a client contact gave it and the provider now says their identity
+ * has ended (they left the client, say), the invoice is not charged. Its
+ * attempt is claimed and held for review at once, marked
+ * {@see CONSENT_HOLD_CODE}, Stripe is never called, and the run reports it
+ * with the other held attempts for a workspace manager to re-confirm consent
+ * with the client. Recording new consent releases the hold on the next run,
+ * which then decides the invoice afresh; closing it out as not charged
+ * (`invoices.autopay.resolve`) leaves it for manual collection. When the
+ * provider cannot answer, the invoice is left alone for the next run. Consent
+ * a workspace manager recorded with the client's attestation, and consent of
+ * a contact with no provider binding, are not checked.
  */
 final class AutopayChargeService
 {
     /** A claim this old with no PaymentIntent is reported for review. */
     public const int REVIEW_AFTER_MINUTES = 10;
+
+    /** Marks an attempt held because the consent's client contact no longer has a live identity. */
+    public const string CONSENT_HOLD_CODE = 'consent_identity_ended';
+
+    public const string CONSENT_HOLD_REASON = 'Held for review; nothing was sent to Stripe. The client contact whose consent autopay relies on no longer has an active identity, so re-confirm consent with the client.';
 
     public function __construct(
         private readonly AutopayReader $reader,
@@ -65,6 +89,7 @@ final class AutopayChargeService
         private readonly AutopayLedger $ledger,
         private readonly StripeConnectionHealth $health,
         private readonly ClientActivityRecorder $activities,
+        private readonly ProviderIdentityLiveness $identities,
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
@@ -81,6 +106,11 @@ final class AutopayChargeService
         $attempted = 0;
         /** @var array<int, Workspace|null> $workspaces */
         $workspaces = [];
+        /** @var array<int, ProviderLiveness> $consentGivers consent id => its client contact's liveness, asked once per run */
+        $consentGivers = [];
+        if ($apply) {
+            $this->releaseSupersededHolds();
+        }
 
         foreach ($this->candidates() as $invoice) {
             if ($attempted >= $limit) {
@@ -102,9 +132,24 @@ final class AutopayChargeService
 
                 continue;
             }
+            $consent = $this->consentInForce($workspace, $context->company);
+            $giver = $this->consentGiver($consent, $consentGivers);
+            if ($giver === ProviderLiveness::Unavailable) {
+                // Never charged on an unknown answer, and no attempt is spent: the next run asks again.
+                $outcomes[] = $this->outcome($workspace, $invoice, AutopayChargeResult::ConsentCheckUnavailable, $verdict, $context->facts->balance, 'Not charged yet: the identity provider could not confirm that the client contact who consented to autopay is still active; autopay asks again on the next run.');
+
+                continue;
+            }
+            if ($consent !== null && $giver->ended()) {
+                $outcomes[] = $apply
+                    ? $this->hold($workspace, $context, $consent)
+                    : $this->outcome($workspace, $invoice, AutopayChargeResult::HeldForConsent, $verdict, $context->facts->balance, 'Would hold for review: '.self::CONSENT_HOLD_REASON);
+
+                continue;
+            }
             $attempted++;
             $outcomes[] = $apply
-                ? $this->charge($workspace, $context)
+                ? $this->charge($workspace, $context, $consent)
                 : $this->outcome($workspace, $invoice, AutopayChargeResult::WouldCharge, $verdict, $context->facts->balance, 'Would charge '.$this->reader->methodLabel($context->method));
         }
 
@@ -114,6 +159,8 @@ final class AutopayChargeService
     /**
      * Claims old enough, with no PaymentIntent: Stripe may or may not have been
      * called. Reported by the command on every run until someone resolves them.
+     * A consent hold is reported at once: nothing was sent, so nothing is in
+     * flight to wait for.
      *
      * @return list<InvoiceAutopayAttempt>
      */
@@ -122,7 +169,10 @@ final class AutopayChargeService
         return array_values(InvoiceAutopayAttempt::query()
             ->where('state', AutopayAttemptState::Claimed->value)
             ->whereNull('payment_intent_id')
-            ->where('claimed_at', '<=', $this->clock->now()->utc()->subMinutes(self::REVIEW_AFTER_MINUTES))
+            ->where(function ($held): void {
+                $held->where('claimed_at', '<=', $this->clock->now()->utc()->subMinutes(self::REVIEW_AFTER_MINUTES))
+                    ->orWhere('failure_code', self::CONSENT_HOLD_CODE);
+            })
             ->orderBy('id')
             ->limit($limit)
             ->get()
@@ -160,7 +210,15 @@ final class AutopayChargeService
             ->lazyById(200, 'client_invoices.id', 'id');
     }
 
-    private function charge(Workspace $workspace, AutopayContext $context): AutopayChargeOutcome
+    /** Whether the attempt is held because its consent's client contact no longer has a live identity. */
+    public static function isConsentHold(InvoiceAutopayAttempt $attempt): bool
+    {
+        return $attempt->state === AutopayAttemptState::Claimed
+            && $attempt->payment_intent_id === null
+            && $attempt->failure_code === self::CONSENT_HOLD_CODE;
+    }
+
+    private function charge(Workspace $workspace, AutopayContext $context, ?ClientAutopayConsent $consent): AutopayChargeOutcome
     {
         $invoice = $context->invoice;
         $method = $context->method;
@@ -170,7 +228,7 @@ final class AutopayChargeService
         }
         $label = $this->reader->methodLabel($method);
 
-        $attempt = $this->claim($workspace, $context, $amount, $label);
+        $attempt = $this->claim($workspace, $context, $amount, $label, $consent);
         if ($attempt === null) {
             return $this->outcome($workspace, $invoice, AutopayChargeResult::AlreadyClaimed, AutopayVerdict::AlreadyAttempted);
         }
@@ -181,7 +239,9 @@ final class AutopayChargeService
             $stillCharges = $again !== null
                 && $this->reader->verdict($again)->charges()
                 && $again->facts->balance === $amount
-                && $again->method?->stripe_payment_method_id === $method->stripe_payment_method_id;
+                && $again->method?->stripe_payment_method_id === $method->stripe_payment_method_id
+                // The consent whose giver was checked is still the one in force.
+                && $this->consentInForce($workspace, $again->company)?->id === $consent?->id;
         } catch (Throwable $failure) {
             // Nothing has been sent: leaving the claim would consume the one
             // attempt on a failure that charged no one.
@@ -191,16 +251,17 @@ final class AutopayChargeService
         if (! $stillCharges) {
             $this->release($workspace, $attempt);
 
-            return $this->outcome($workspace, $invoice, AutopayChargeResult::Released, null, $amount, 'The invoice changed after it was claimed; nothing was sent.');
+            return $this->outcome($workspace, $invoice, AutopayChargeResult::Released, null, $amount, 'The invoice or its autopay consent changed after it was claimed; nothing was sent.');
         }
 
         return $this->submit($workspace, $invoice, $context->company, $method->stripe_payment_method_id, $method->customer?->stripe_customer_id, $attempt, $amount);
     }
 
-    private function claim(Workspace $workspace, AutopayContext $context, int $amount, string $label): ?InvoiceAutopayAttempt
+    /** @param array<string, string> $hold the hold marker, for an attempt claimed only to be held */
+    private function claim(Workspace $workspace, AutopayContext $context, int $amount, string $label, ?ClientAutopayConsent $consent, array $hold = []): ?InvoiceAutopayAttempt
     {
         try {
-            return InvoiceAutopayAttempt::query()->create([
+            return InvoiceAutopayAttempt::query()->create($hold + [
                 'workspace_id' => $workspace->id,
                 'client_invoice_id' => $context->invoice->id,
                 'client_company_id' => $context->company->id,
@@ -208,7 +269,7 @@ final class AutopayChargeService
                 'amount' => $amount,
                 'currency' => $context->invoice->currency,
                 'limit_amount' => $context->company->autopay_limit_amount,
-                'consent_public_id' => $this->consentPublicId($workspace, $context->company),
+                'consent_public_id' => $consent?->public_id,
                 'payment_method_label' => mb_substr($label, 0, 120),
                 'claimed_at' => $this->clock->now($workspace)->utc(),
             ]);
@@ -217,15 +278,104 @@ final class AutopayChargeService
         }
     }
 
-    private function consentPublicId(Workspace $workspace, ClientCompany $company): ?string
+    /** The company's latest consent record: the one autopay is charging on. */
+    private function consentInForce(Workspace $workspace, ClientCompany $company): ?ClientAutopayConsent
     {
-        $id = DB::table('client_autopay_consents')
+        return ClientAutopayConsent::query()
             ->where('workspace_id', $workspace->id)
             ->where('client_company_id', $company->id)
             ->orderByDesc('id')
-            ->value('public_id');
+            ->first();
+    }
 
-        return is_string($id) ? $id : null;
+    /**
+     * Whether the person who gave the consent in force still has a live provider identity.
+     * Only a client contact's own consent is checked: a manager's attestation records the
+     * client's agreement given outside SVC, not a contact's, and SVC's own records turn
+     * autopay off. A contact whose account here was deleted, or that has no provider
+     * binding, is not the provider's to answer for.
+     *
+     * @param  array<int, ProviderLiveness>  $asked  answers already given this run, by consent id
+     */
+    private function consentGiver(?ClientAutopayConsent $consent, array &$asked): ProviderLiveness
+    {
+        if ($consent === null || $consent->actor_user_id === null) {
+            return ProviderLiveness::NotChecked;
+        }
+        $checked = match ($consent->actor_role) {
+            AutopayActorRole::Client => true,
+            AutopayActorRole::Provider, AutopayActorRole::System => false,
+        };
+        if (! $checked) {
+            return ProviderLiveness::NotChecked;
+        }
+        if (! array_key_exists($consent->id, $asked)) {
+            $contact = User::query()->find($consent->actor_user_id);
+            $asked[$consent->id] = $contact === null ? ProviderLiveness::NotChecked : $this->identities->of($contact);
+        }
+
+        return $asked[$consent->id];
+    }
+
+    /**
+     * Hold the invoice's one attempt for review without calling Stripe: claimed, no
+     * PaymentIntent, marked as a consent hold. The activity and the run's report tell a
+     * workspace manager to re-confirm consent with the client.
+     */
+    private function hold(Workspace $workspace, AutopayContext $context, ClientAutopayConsent $consent): AutopayChargeOutcome
+    {
+        $invoice = $context->invoice;
+        $amount = $context->facts->balance;
+        $label = $context->method === null ? '' : $this->reader->methodLabel($context->method);
+        $attempt = $this->claim($workspace, $context, $amount, $label, $consent, [
+            'failure_code' => self::CONSENT_HOLD_CODE,
+            'failure_reason' => self::CONSENT_HOLD_REASON,
+        ]);
+        if ($attempt === null) {
+            return $this->outcome($workspace, $invoice, AutopayChargeResult::AlreadyClaimed, AutopayVerdict::AlreadyAttempted);
+        }
+        $this->activities->record($workspace, $context->company, 'invoice.autopay_held', $invoice, [
+            'code' => self::CONSENT_HOLD_CODE,
+            'amount' => $amount,
+            'currency' => $invoice->currency,
+            'consent_id' => $consent->public_id,
+        ], null, $attempt->public_id);
+        Log::warning('An autopay charge was held for review: the client contact who consented no longer has an active identity.', ['attempt' => $attempt->public_id]);
+
+        return $this->outcome($workspace, $invoice, AutopayChargeResult::HeldForConsent, AutopayVerdict::Charge, $amount, self::CONSENT_HOLD_REASON);
+    }
+
+    /**
+     * A consent hold whose company has recorded consent since (re-confirmed, or turned
+     * off) is given back, so this run decides the invoice afresh on the consent now in
+     * force. Nothing was ever sent for a hold.
+     */
+    private function releaseSupersededHolds(): void
+    {
+        $holds = InvoiceAutopayAttempt::query()
+            ->where('state', AutopayAttemptState::Claimed->value)
+            ->whereNull('payment_intent_id')
+            ->where('failure_code', self::CONSENT_HOLD_CODE)
+            ->orderBy('id')
+            ->limit(500)
+            ->get();
+        foreach ($holds as $hold) {
+            $standing = ClientAutopayConsent::query()
+                ->where('workspace_id', $hold->workspace_id)
+                ->where('client_company_id', $hold->client_company_id)
+                ->orderByDesc('id')
+                ->value('public_id');
+            if ($standing === $hold->consent_public_id) {
+                continue;
+            }
+            InvoiceAutopayAttempt::query()
+                ->where('workspace_id', $hold->workspace_id)
+                ->whereKey($hold->id)
+                ->where('state', AutopayAttemptState::Claimed->value)
+                ->whereNull('payment_intent_id')
+                ->where('failure_code', self::CONSENT_HOLD_CODE)
+                ->delete();
+        }
     }
 
     /** Give the claim back; only while nothing has been sent for it. */

@@ -318,7 +318,8 @@ it does not silently run `artisan up`.
    incomplete. `status` shows the state; `withdraw` is the only way back, for
    leaving the provider on purpose, never for an outage. After restoring the
    database from a backup taken before the cutover, record it again. See
-   auth-laravel's `docs/provider-identity-cutover.md`.
+   auth-laravel's `docs/provider-identity-cutover.md`. Every credential path and how
+   enforcement treats it is in [provider identity enforcement](provider-identity.md).
 
 ## Security release checks
 

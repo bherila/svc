@@ -21,8 +21,10 @@ use Throwable;
 
 /**
  * Closes out an autopay attempt held for review (#641): claimed, with no
- * PaymentIntent, because Stripe gave no readable answer. After a person has
- * looked in the Stripe dashboard they record what they found.
+ * PaymentIntent, because Stripe gave no readable answer, or because the client
+ * contact whose consent it relied on no longer has a live identity (a consent
+ * hold, which never reached Stripe). After a person has looked in the Stripe
+ * dashboard they record what they found.
  *
  * - **Charged**, with the PaymentIntent id. The intent is read back from Stripe
  *   ({@see verify()}, outside any transaction) and must be this workspace's,
@@ -46,12 +48,17 @@ final class AutopayResolutionService
         private readonly WorkspaceClock $clock = new WorkspaceClock,
     ) {}
 
-    /** Whether the invoice's attempt can be closed out by a person now. */
+    /**
+     * Whether the invoice's attempt can be closed out by a person now. A consent hold
+     * (docs/provider-identity.md, gap 2) can be at once: Stripe was never called, so
+     * there is no answer in flight to wait for.
+     */
     public function resolvable(InvoiceAutopayAttempt $attempt): bool
     {
         return $attempt->state === AutopayAttemptState::Claimed
             && $attempt->payment_intent_id === null
-            && $attempt->claimed_at->lessThanOrEqualTo($this->clock->now()->utc()->subMinutes(AutopayChargeService::REVIEW_AFTER_MINUTES));
+            && (AutopayChargeService::isConsentHold($attempt)
+                || $attempt->claimed_at->lessThanOrEqualTo($this->clock->now()->utc()->subMinutes(AutopayChargeService::REVIEW_AFTER_MINUTES)));
     }
 
     /**
