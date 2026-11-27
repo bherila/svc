@@ -16,10 +16,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $passportConnection = config('passport.connection');
+        $passportConnection = is_string($passportConnection) ? $passportConnection : null;
         foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens'] as $table) {
             $this->addColumn($table, 'provider_epoch', function (Blueprint $blueprint): void {
                 $blueprint->unsignedInteger('provider_epoch')->nullable();
-            });
+            }, $passportConnection);
         }
         $this->addColumn('provider_remembered_logins', 'epoch', function (Blueprint $blueprint): void {
             $blueprint->unsignedInteger('epoch')->nullable();
@@ -30,12 +32,13 @@ return new class extends Migration
     public function down(): void {}
 
     /** @param Closure(Blueprint): void $definition */
-    private function addColumn(string $tableName, string $column, Closure $definition): void
+    private function addColumn(string $tableName, string $column, Closure $definition, ?string $connection = null): void
     {
-        if (! Schema::hasTable($tableName) || Schema::hasColumn($tableName, $column)) {
+        $schema = Schema::connection($connection);
+        if (! $schema->hasTable($tableName) || $schema->hasColumn($tableName, $column)) {
             return;
         }
 
-        Schema::table($tableName, $definition);
+        $schema->table($tableName, $definition);
     }
 };

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use BWH\Auth\OAuth\Session\RememberedProviderLogins;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -11,6 +12,35 @@ use Tests\TestCase;
 class ProviderRecoveryEpochMigrationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_oauth_epochs_use_the_passport_connection_and_remembered_epochs_use_the_app_connection(): void
+    {
+        config([
+            'database.connections.epoch_passport' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true],
+            'passport.connection' => 'epoch_passport',
+        ]);
+        try {
+            $passport = Schema::connection('epoch_passport');
+            foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens'] as $table) {
+                $passport->create($table, fn (Blueprint $blueprint) => $blueprint->string('id')->primary());
+            }
+            Schema::dropColumns('provider_remembered_logins', ['epoch']);
+            $migration = require database_path('migrations/2026_11_24_000000_add_provider_epoch_columns.php');
+            $migration->up();
+            $migration->up();
+
+            foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens'] as $table) {
+                $this->assertTrue($passport->hasColumn($table, 'provider_epoch'));
+                DB::connection('epoch_passport')->table($table)->insert(['id' => 'synthetic-legacy-token']);
+                $this->assertNull(DB::connection('epoch_passport')->table($table)->value('provider_epoch'));
+            }
+            $this->assertTrue(Schema::hasColumn('provider_remembered_logins', 'epoch'));
+            $this->assertFalse($passport->hasTable('provider_remembered_logins'));
+        } finally {
+            config(['passport.connection' => null]);
+            DB::purge('epoch_passport');
+        }
+    }
 
     public function test_remembered_logins_persist_the_recovery_epoch_on_the_application_connection(): void
     {
