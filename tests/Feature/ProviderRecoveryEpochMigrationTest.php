@@ -28,6 +28,9 @@ class ProviderRecoveryEpochMigrationTest extends TestCase
             $migration = require database_path('migrations/2026_11_24_000000_add_provider_epoch_columns.php');
             $migration->up();
             $migration->up();
+            $rememberedMigration = require database_path('migrations/2026_11_24_000001_add_epoch_to_provider_remembered_logins.php');
+            $rememberedMigration->up();
+            $rememberedMigration->up();
 
             foreach (['oauth_auth_codes', 'oauth_access_tokens', 'oauth_refresh_tokens'] as $table) {
                 $this->assertTrue($passport->hasColumn($table, 'provider_epoch'));
@@ -78,7 +81,9 @@ class ProviderRecoveryEpochMigrationTest extends TestCase
         ]);
 
         $migration = require database_path('migrations/2026_11_24_000000_add_provider_epoch_columns.php');
+        $rememberedMigration = require database_path('migrations/2026_11_24_000001_add_epoch_to_provider_remembered_logins.php');
         $migration->up();
+        $rememberedMigration->up();
         $this->assertDatabaseHas('provider_remembered_logins', [
             'user_id' => 'legacy-account', 'generation' => 7, 'token_hash' => $hash, 'epoch' => null,
         ]);
@@ -86,6 +91,8 @@ class ProviderRecoveryEpochMigrationTest extends TestCase
 
         $migration->up();
         $migration->down();
+        $rememberedMigration->up();
+        $rememberedMigration->down();
 
         $this->assertDatabaseHas('provider_remembered_logins', [
             'user_id' => 'legacy-account', 'generation' => 7, 'token_hash' => $hash, 'epoch' => 4,
