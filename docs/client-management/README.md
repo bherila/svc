@@ -469,13 +469,22 @@ alone - so an update or delete names the workspace in its own SQL. See
   ci:check` runs both suites. In Actions, `composer ci:checks` runs the static
   and frontend checks independently of PHPUnit. SQLite and MariaDB 11.4 each
   use four shards with four ParaTest workers per runner. The shard planner
-  (`scripts/ci/phpunit-shard.php`) balances files by test count and verifies
+  (`scripts/ci/phpunit-shard.php`) balances files by recorded MariaDB time and verifies
   that each file PHPUnit lists belongs to exactly one nonempty shard. Each
   MariaDB shard has its own disposable service container. The required `ci`
   and `Tests on MariaDB` checks aggregate the lanes and reject failed,
   skipped or cancelled dependencies. Compare the slowest shard's elapsed
-  time after a run before increasing the shard count; file test counts are
-  a balancing estimate rather than measured durations.
+  time after a run before increasing the shard count. Refresh recorded times
+  from all four `junit-mariadb-*` artifacts of one completed run with
+  `scripts/ci/test-times.php`; unknown files use the recorded seconds per test.
+  The current timings come from [run 46111989906](https://github.com/bherila/svc/actions/runs/46111989906).
+  Its generated billing sequences are recorded separately by agreement world,
+  using each world's actual data-set times, including the extra monthly-rollover
+  seed-6 regression. Each world has a concrete test file so ParaTest can schedule
+  it independently; the shared runner and assertions live in
+  `tests/Support/Billing/BillingHistorySequenceCase.php`. The coverage census
+  preserves every world/seed tuple and the extra regression when those scheduling
+  units change. CI still runs 16 seeds per world on both database engines.
 
   CI caches Composer download archives and the pnpm store by lockfile and
   architecture. Composer authentication and private VCS clones are excluded

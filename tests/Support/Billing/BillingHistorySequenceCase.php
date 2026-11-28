@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature\Billing;
+namespace Tests\Support\Billing;
 
 use App\Models\ClientAgreement;
 use App\Models\ClientCompany;
@@ -30,7 +30,6 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Random\Engine\Mt19937;
 use Random\Randomizer;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -77,9 +76,11 @@ use Throwable;
  * A failure prints its seed and steps. Replay one with
  * `--filter 'hourly, monthly, seed 3'`; widen a run with BILLING_HISTORY_SEEDS.
  */
-final class BillingHistorySequenceTest extends TestCase
+abstract class BillingHistorySequenceCase extends TestCase
 {
     use RefreshDatabase;
+
+    protected const string WORLD = '';
 
     private const int DEFAULT_SEEDS = 4;
 
@@ -152,15 +153,13 @@ final class BillingHistorySequenceTest extends TestCase
     public static function histories(): iterable
     {
         $seeds = max(1, (int) (getenv('BILLING_HISTORY_SEEDS') ?: self::DEFAULT_SEEDS));
-        foreach (array_keys(self::WORLDS) as $world) {
-            foreach (range(1, $seeds) as $seed) {
-                yield "{$world}, seed {$seed}" => [$world, $seed];
-            }
+        $world = static::WORLD;
+        foreach (range(1, $seeds) as $seed) {
+            yield "{$world}, seed {$seed}" => [$world, $seed];
         }
     }
 
-    #[DataProvider('histories')]
-    public function test_a_generated_history_keeps_its_invariants(string $world, int $seed): void
+    protected function runHistory(string $world, int $seed): void
     {
         Carbon::setTestNow('2027-02-01 12:00:00');
         CarbonImmutable::setTestNow('2027-02-01 12:00:00');
@@ -178,12 +177,6 @@ final class BillingHistorySequenceTest extends TestCase
                 $world, $seed, $failure::class, basename($failure->getFile()), $failure->getLine(), $failure->getMessage(), implode("\n  ", $this->trace),
             ));
         }
-    }
-
-    /** #704: January billed only the retainer before a 1110-minute row arrived. */
-    public function test_late_work_after_an_empty_retainer_invoice_seed_6(): void
-    {
-        $this->test_a_generated_history_keeps_its_invariants('retainer with rollover, monthly', 6);
     }
 
     // ---- the generator ----
