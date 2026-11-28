@@ -93,7 +93,7 @@ enum LockResource: string
 
     // Numbering, which every generator reaches only once it has an invoice to
     // number, and the workspace row that serialises the counter.
-    // Reused processor credentials lock their source before replacing a target;
+    // Reused processor credentials rank source, target and target borrowers by id;
     // source revocation then locks current dependents before writing workspace
     // credential generations. Health itself locks only the workspace fence.
     case WorkspacePaymentConnection = 'workspace_payment_connections';

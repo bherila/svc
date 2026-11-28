@@ -994,8 +994,13 @@ after B reconnects. Health and its once-per-breakage activity commit together;
 the external Stripe request and actual payment recording are outside that short
 transaction.
 
-Connection reuse locks the effective source before retiring/inserting the target;
-source revocation serializes on that source and takes a current locking read of
+Connection reuse takes a current locking read of the effective source, target
+and target's borrowers together, ordered by connection id, before retiring or
+inserting anything (#757). Reciprocal requests therefore rank the same rows
+together rather than locking their different chosen sources first. It revalidates
+the selected source after waiting and retires the target it locked, rather than
+one from an ordinary-read snapshot. Source revocation still serializes on that
+source and takes a current locking read of
 its dependents on `(reuses_connection_id, id)`. These credential locks precede the
 workspace-generation writes. The new `WorkspacePaymentConnection` registry entry
 therefore sits before `Workspace`; existing billing locks retain their relative order.
@@ -1005,6 +1010,10 @@ revoker's ordinary snapshot. Each dependent's generation is invalidated in the
 same transaction as revocation, including source reconnects and same-second
 replacements. The MariaDB two-session controls in
 `StripeCredentialGenerationSnapshotTest` exercise those current-read boundaries.
+`ReciprocalPaymentReuseConcurrencyTest` pauses at the actual SQL lock boundary
+and observes an InnoDB lock wait in a second process, in both start orders. One
+request completes and the other sees its selected source revoked and returns the
+ordinary domain refusal; neither leaks a deadlock or lock-timeout exception.
 
 The refusal marker also records the effective generation, including a keyed
 nonsecret environment-key version for the legacy path. Reads compare that

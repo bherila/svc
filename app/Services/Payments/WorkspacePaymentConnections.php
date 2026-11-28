@@ -13,6 +13,7 @@ use App\Support\Payments\PaymentProcessor;
 use App\Support\Payments\StripeCredentialIdentity;
 use App\Support\WorkspaceClock;
 use DomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
@@ -303,7 +304,7 @@ final class WorkspacePaymentConnections
     public function reuse(Workspace $target, WorkspacePaymentConnection $source, User $actor): WorkspacePaymentConnection
     {
         $origin = $this->credentialSource($source);
-        if ($origin === null || $source->workspace_id === $target->id) {
+        if ($origin === null || $source->workspace_id === $target->id || $origin->workspace_id === $target->id) {
             throw new DomainException('That connection cannot be reused.');
         }
         $sourceWorkspace = Workspace::query()->whereKey($source->workspace_id)->firstOrFail();
@@ -315,19 +316,17 @@ final class WorkspacePaymentConnections
 
         try {
             return DB::transaction(function () use ($target, $origin, $processor, $actor): WorkspacePaymentConnection {
-                // Serialize reuse with the source's revocation cascade: a new
-                // dependent must be visible before revoke can invalidate it.
-                $origin = WorkspacePaymentConnection::query()
-                    ->where('workspace_id', $origin->workspace_id)
-                    ->whereKey($origin->id)
-                    ->where('processor', $processor->value)
-                    ->whereNull('revoked_at')
-                    ->whereNull('reuses_connection_id')
-                    ->tap(Locks::forUpdate())->first();
-                if ($origin === null) {
+                $sourceWorkspaceId = $origin->workspace_id;
+                $sourceAccountId = $origin->external_account_id;
+                $locked = $this->lockForReuse($target, $origin, $processor);
+                $origin = $locked->firstWhere('id', $origin->id);
+                if ($origin === null || $origin->isReused() || $origin->workspace_id !== $sourceWorkspaceId || $origin->external_account_id !== $sourceAccountId) {
                     throw new DomainException('That connection cannot be reused.');
                 }
-                $this->retireActive($target, $processor, $actor);
+                $existing = $locked->firstWhere('workspace_id', $target->id);
+                if ($existing !== null) {
+                    $this->revoke($existing, $actor);
+                }
 
                 $created = WorkspacePaymentConnection::query()->create([
                     'workspace_id' => $target->id,
@@ -350,6 +349,32 @@ final class WorkspacePaymentConnections
         } finally {
             $this->forget();
         }
+    }
+
+    /**
+     * Rank the source, target and target's borrowers together before any retirement or workspace
+     * generation write. Reciprocal reuse must not choose its source as the first lock. The source
+     * stays locked until admission commits, so revoke's current dependent read still sees a new
+     * borrower. These are current reads, including a target replaced after an ordinary snapshot.
+     *
+     * @return Collection<int, WorkspacePaymentConnection>
+     */
+    private function lockForReuse(Workspace $target, WorkspacePaymentConnection $origin, PaymentProcessor $processor): Collection
+    {
+        $targetIds = WorkspacePaymentConnection::query()->select('id')
+            ->where('workspace_id', $target->id)->where('processor', $processor->value)->whereNull('revoked_at');
+
+        return WorkspacePaymentConnection::query()
+            ->where('processor', $processor->value)
+            ->whereNull('revoked_at')
+            ->where(function (Builder $query) use ($target, $origin, $targetIds): void {
+                $query->where('workspace_id', $target->id)
+                    ->orWhere(function (Builder $source) use ($origin): void {
+                        $source->where('workspace_id', $origin->workspace_id)->whereKey($origin->id);
+                    })
+                    ->orWhereIn('reuses_connection_id', $targetIds);
+            })
+            ->orderBy('id')->tap(Locks::forUpdate())->get();
     }
 
     /**
