@@ -9,6 +9,7 @@ use App\Services\Payments\WorkspacePaymentConnections;
 use App\Support\Payments\ConnectionOrigin;
 use App\Support\Payments\PaymentProcessor;
 use DomainException;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,16 @@ final class PaymentConnectionReuseTest extends TestCase
         $source = $this->connect($connections, $sourceWorkspace, $processor, $actor);
         $borrower = $connections->reuse($borrowerWorkspace, $old, $actor);
         $unrelated = $this->connect($connections, $unrelatedWorkspace, $processor, null);
+        $retrieved = [];
+        WorkspacePaymentConnection::retrieved(static function (WorkspacePaymentConnection $row) use (&$retrieved): void {
+            $retrieved[] = $row->id;
+        });
+        $duringInsert = [];
+        WorkspacePaymentConnection::creating(static function (WorkspacePaymentConnection $row) use ($connections, $target, $processor, &$duringInsert): void {
+            if ($row->workspace_id === $target->id && $row->processor === $processor->value && $row->isReused()) {
+                $duringInsert[] = $connections->activeRow($target, $processor)?->id;
+            }
+        });
         $queries = [];
         DB::listen(static function (QueryExecuted $query) use (&$queries): void {
             if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'workspace_payment_connections')) {
@@ -54,6 +65,9 @@ final class PaymentConnectionReuseTest extends TestCase
 
         $this->assertNotEmpty($queries);
         $this->assertMatchesRegularExpression('/order by [`"]id[`"] asc/i', $queries[0], 'The first connection lock must rank source and target together, not take the chosen source first.');
+        $this->assertNotContains($unrelated->id, $retrieved, 'Reuse must not read or lock an unrelated tenant connection.');
+        $this->assertNotContains($other->id, $retrieved, 'Reuse must not read or lock another processor.');
+        $this->assertSame([null], $duringInsert, 'A model observer can read the retired target before insertion; the final flush must discard that cached answer.');
         $this->assertSame($source->id, $created->reuses_connection_id);
         $this->assertSame($target->id, $created->workspace_id);
         $this->assertSame($source->external_account_id, $created->external_account_id);
@@ -119,6 +133,59 @@ final class PaymentConnectionReuseTest extends TestCase
         $this->assertNull($source->fresh()->revoked_at);
         $this->assertNull($borrower->fresh()->revoked_at);
         $this->assertSame(2, WorkspacePaymentConnection::query()->whereNull('revoked_at')->count());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function sourceChanges(): iterable
+    {
+        yield 'different account identity' => ['account'];
+        yield 'source moved into the empty target' => ['workspace'];
+        yield 'source now borrows the target' => ['reused'];
+    }
+
+    #[DataProvider('sourceChanges')]
+    public function test_a_source_changed_at_the_current_read_boundary_is_refused_without_retiring_anything(string $change): void
+    {
+        $actor = User::factory()->create();
+        $target = $this->workspace($actor, 'target');
+        $sourceWorkspace = $this->workspace($actor, 'source');
+        $connections = new WorkspacePaymentConnections;
+        $old = $change === 'workspace' ? null : $this->connect($connections, $target, PaymentProcessor::Stripe, $actor);
+        if ($old !== null) {
+            $old->forceFill(['external_account_id' => '00123'])->save();
+        }
+        $source = $this->connect($connections, $sourceWorkspace, PaymentProcessor::Stripe, $actor);
+        $source->forceFill(['external_account_id' => '00123'])->save();
+        if ($change === 'reused') {
+            $this->assertNotNull($old);
+            $changes = ['origin' => ConnectionOrigin::Reused->value, 'reuses_connection_id' => $old->id, 'secret' => null];
+        } elseif ($change === 'workspace') {
+            $changes = ['workspace_id' => $target->id];
+        } else {
+            $changes = ['external_account_id' => '123'];
+        }
+        $before = WorkspacePaymentConnection::query()->count();
+        $changed = false;
+        DB::connection()->beforeExecuting(static function (string $query, array $bindings, Connection $connection) use ($source, $sourceWorkspace, $changes, &$changed): void {
+            if (! $changed && str_starts_with(strtolower($query), 'select') && str_contains($query, 'workspace_payment_connections') && str_contains(strtolower($query), 'order by')) {
+                $changed = true;
+                $connection->table('workspace_payment_connections')->where('workspace_id', $sourceWorkspace->id)->where('id', $source->id)->update($changes);
+            }
+        });
+
+        try {
+            $connections->reuse($target, $source, $actor);
+            $this->fail('Eligibility captured before locking cannot authorize a changed source.');
+        } catch (DomainException $exception) {
+            $this->assertSame('That connection cannot be reused.', $exception->getMessage());
+        }
+
+        $this->assertTrue($changed, 'The source change must reach the actual current-read SQL boundary.');
+        $this->assertSame($before, WorkspacePaymentConnection::query()->count());
+        $this->assertNull($source->fresh()->revoked_at);
+        if ($old !== null) {
+            $this->assertNull($old->fresh()->revoked_at);
+        }
     }
 
     private function workspace(User $owner, string $slug): Workspace
